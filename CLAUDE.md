@@ -1,0 +1,66 @@
+# CLAUDE.md
+
+Guidance for Claude Code in this repository.
+
+# DM's Koldron
+
+An open-source (MPL-2.0) desktop companion for Dungeon Masters running in-person D&D sessions: a readable SRD 5.2 library and catalog, global search, campaigns, characters, and encounters (prepare and run). The core stays small; the community extends it with plugins.
+
+## Product spec
+- The source of truth is `docs/SPEC.md` (local only; `docs/` is git-ignored). Read it before building or changing a screen.
+- If code and spec disagree, or the spec is silent, ask. Don't invent features. If a decision changes behaviour, update `SPEC.md` in the same change.
+- This is a rebuild of the author's private app "Masters Companion". Code may be copied from it where it fits, but never change that repository.
+
+## Stack
+- Tauri 2 (Rust backend) + SvelteKit (Svelte 5, static adapter, SPA) + TypeScript, built with Vite
+- Targets: Windows and macOS. UI language: English only. Package manager: npm.
+
+## Content and plugins
+- **The core has no rules content of its own.** Rules come from content packs (`pack.json` + JSON data in the Koldron pack schema, documented in `docs/packs.md`). The SRD 5.2 pack (`packs/srd/`) loads through the same loader as community packs.
+- The SRD pack is generated from `5e-bits/5e-database` (`src/2024/en`) by `scripts/build-srd-pack`. Keep its attribution (SRD 5.2.1, CC-BY-4.0, Wizards of the Coast; 5e-database, MIT) in the pack and in Settings → About.
+- Packs are validated on load in Rust. An invalid pack is reported and skipped, never half-loaded.
+- Code plugins come in a later phase. Don't build plugin APIs before the spec describes them.
+
+## Domain rules (never break these)
+- **The ruleset is not hard-coded.** Monster stats, conditions, XP tables and encounter difficulty budgets come from pack data.
+- **Dice:** all rolls go through one Rust dice parser (e.g. `2d20kh1+4`), with tests for its notation.
+- **Data is local and per campaign**: characters, encounters and campaign settings live in the campaign's folder. Never lose data on a crash: write atomically, and only after a valid parse. A running encounter is saved as it changes.
+- **Update rules** downloads only the SRD data from 5e-database's GitHub releases, and swaps it in only after conversion and validation succeed. The app must work fully offline with the SRD it ships with.
+- **Search must feel instant while typing.** SQLite FTS5 index in Rust, never search on the UI thread.
+
+## Code principles
+- Make the smallest change that fully solves the task. Don't refactor unrelated code.
+- Ask before adding any new dependency (npm or crate).
+- Heavy work (file I/O, parsing, indexing) belongs in Rust commands. Tauri commands are async; never block the UI.
+- Least privilege: only the Tauri plugins and capabilities a feature needs.
+- Svelte 5 runes only (`$state`, `$derived`, `$props`, `$effect`).
+- Return errors from Rust as typed results; show them to the user, never swallow them.
+- `src/lib/api/` is the only place the frontend calls `invoke`.
+
+## UX rules
+- Use tokens from `src/lib/styles/tokens.css`. No hard-coded colors, spacing or font sizes.
+- Every view handles empty, loading and error states.
+- Fully keyboard accessible, visible focus, WCAG AA contrast.
+- Light and dark mode via `<html data-theme="light|dark">`; Settings → UI picks Light, Dark or System. Don't use `prefers-color-scheme` in components.
+- Animations follow Settings → UI → Animations via `data-motion`; in code use `reduceMotion()`. Don't query `prefers-reduced-motion` directly.
+- Platform-correct modifier keys (Cmd on macOS, Ctrl on Windows). No global shortcuts. Next turn is Space, only when focus isn't in a text field.
+- Dates and numbers via `Intl` with the system locale. All UI text in `src/lib/strings.ts`.
+- Lazy-load views not needed on the Start screen.
+
+## Workflow
+- Build in this order: scaffold → app shell, Start screen, Settings (UI, Campaigns) → pack loader + SRD pack + Rules reader → Catalog → global search → campaign Home + Characters → Encounters Prepare → Encounters Run → Update rules.
+- For changes touching more than two files, outline the plan before writing code.
+- After every change, run the type check and the relevant tests, and fix failures before calling it done.
+
+## Model routing
+- Before implementing a task, judge its nature and delegate the implementation through the `model-router` skill, without asking for confirmation:
+  - `tier-haiku`: mechanical work (CSS, labels, renaming, formatting, codebase search, bulk data conversion with a clear spec)
+  - `tier-sonnet` (default): standard features, components, bug fixes with a repro, tests, docs
+  - `tier-opus`: architecture, the pack schema, subtle debugging, cross-cutting refactors
+- Keep in the main session: planning, spec decisions, questions to the user, and trivial edits, where a cold subagent would cost more than it saves.
+- Give each worker a self-contained brief (files, spec section, acceptance checks), and verify its result (type check, tests) before calling the task done.
+
+## Commits and releases
+- Commit only through the `commit` skill; publish only through the `publish` skill.
+- Pre-1.0 versioning: **minor** for a new area or screen, **patch** for everything else. 1.0.0 is the finished v1 core.
+- Every commit adds its entries to `CHANGELOG.md` and keeps `README.md` current. Never use `--no-verify`.

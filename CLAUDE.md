@@ -48,7 +48,7 @@ An open-source (MPL-2.0) desktop companion for Dungeon Masters running in-person
 - Lazy-load views not needed on the Start screen.
 
 ## Workflow
-- Build in this order: scaffold → app shell, Start screen, Settings (UI, Campaigns) → pack loader + SRD pack + Rules reader → Catalog → global search → campaign Home + Characters → Encounters Prepare → Encounters Run → Update rules.
+- Build in the order of `TODO.md` (local only): app shell, Start screen, Settings (UI, Campaigns) → About and legal notices → SRD rules text → pack loader + SRD pack → Rules reader → Catalog → global search → campaign shell + Characters → Encounters Prepare → Encounters Run → campaign Home → community packs + Update rules.
 - For changes touching more than two files, outline the plan before writing code.
 - After every change, run the type check and the relevant tests, and fix failures before calling it done.
 

@@ -13,3 +13,4 @@ vite.config.ts.timestamp-*
 
 # Local only, never committed
 /docs/
+TODO.md

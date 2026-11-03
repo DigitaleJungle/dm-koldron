@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4] - 2026-11-04
+
+### Changed
+
+- README: removed the Wizards of the Coast disclaimer line; the SRD attribution statement will be the only mention of Wizards.
+- Project guidance: a new build order, kept in a local TODO list.
+
 ## [0.0.3] - 2026-11-03
 
 ### Added

@@ -1,0 +1,17 @@
+{
+  "identifier": "be.digitalejungle.koldron.dev",
+  "productName": "DM's Koldron (dev)",
+  "app": {
+    "windows": [
+      {
+        "title": "DM's Koldron (dev)",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 360,
+        "minHeight": 600,
+        "dragDropEnabled": false,
+        "visible": false
+      }
+    ]
+  }
+}

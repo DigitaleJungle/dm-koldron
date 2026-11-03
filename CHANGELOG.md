@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.3] - 2026-11-03
+
+### Added
+
+- App scaffold: Tauri 2 + SvelteKit (Svelte 5, TypeScript) with a placeholder start screen, design tokens and UI strings.
+- Separate dev identifier so dev builds keep their own data folder; a debug build without it refuses to start.
+- Tabler Icons 3.50.0 in `packs/tabler-icons/` (MIT).
+- Version script, pre-commit hook and `npm run verify` (type check, tests, clippy, cargo tests).
+
 ## [0.0.2] - 2026-11-03
 
 ### Added

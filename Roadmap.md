@@ -4,7 +4,7 @@ Plugin Marketplace & licensing
 
 Plugins:
 - DnD5e tools importer
-- Character Builder
+- Character Builder + Print Layout
 - Local PDF librar Including DriveThruRPG integration
 - Homebrew items
 - Player facing screen management

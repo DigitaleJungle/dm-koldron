@@ -4,7 +4,16 @@ import { invoke } from "@tauri-apps/api/core";
 export type CatalogRow = { kind: string; pack: string; source: string; index: string; name: string; fields: Record<string, any> };
 
 /** Mirrors `CatalogEntry`: the whole entry, and its description as HTML (raw HTML, links and images removed). */
-export type CatalogEntry = { pack: string; source: string; entry: Record<string, any>; html: string };
+export type CatalogEntry = {
+  pack: string;
+  source: string;
+  entry: Record<string, any>;
+  html: string;
+  /** Other texts as HTML: `higher_level`, and `<list>.<n>` for each monster trait or action (`actions.0`…). */
+  parts: Record<string, string>;
+  /** A class's levels and features, a species' traits (same pack), with their description as HTML. */
+  related: { kind: string; entry: Record<string, any>; html: string }[];
+};
 
 /** One category's entries from the switched-on packs. Rejects with a StorageError. */
 export function catalogRows(kind: string, fields: string[]): Promise<CatalogRow[]> {

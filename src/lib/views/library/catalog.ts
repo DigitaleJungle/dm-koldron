@@ -20,7 +20,7 @@ const c = strings.catalog.columns;
 const none = "—";
 const names = (refs: unknown): string[] => (Array.isArray(refs) ? refs.map((r) => r?.name).filter(Boolean) : []);
 /** "fighting-style" → "Fighting Style". */
-const title = (s: string) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+export const title = (s: string) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
 const num = (n: unknown) => (typeof n === "number" ? n : Number.NaN);
 const sortNum = (n: unknown) => (Number.isNaN(num(n)) ? -1 : num(n));
 

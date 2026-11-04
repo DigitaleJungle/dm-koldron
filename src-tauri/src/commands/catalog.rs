@@ -7,6 +7,7 @@ use crate::packs::Pack;
 use crate::storage::StorageError;
 use serde::Serialize;
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use tauri::AppHandle;
 
 /// The entry types the Catalog has a tab for.
@@ -32,7 +33,22 @@ pub struct CatalogEntry {
     pub entry: Map<String, Value>,
     /// The entry's description (`description` or `desc`), as HTML.
     pub html: String,
+    /// Other texts of the entry as HTML: `higher_level`, and `<list>.<n>` for each monster trait or action's `desc`.
+    pub parts: BTreeMap<String, String>,
+    /// Entries of the same pack the page shows: a class's levels and features, a species' traits.
+    pub related: Vec<Related>,
 }
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Related {
+    pub kind: String,
+    pub entry: Map<String, Value>,
+    /// Its description as HTML; empty for levels.
+    pub html: String,
+}
+
+/// The lists of named texts in a monster entry.
+const ACTION_LISTS: [&str; 5] = ["special_abilities", "actions", "bonus_actions", "reactions", "legendary_actions"];
 
 fn check_kind(kind: &str) -> Result<(), StorageError> {
     if KINDS.contains(&kind) { Ok(()) } else { Err(StorageError::Invalid(format!("No Catalog category \"{kind}\"."))) }
@@ -68,17 +84,77 @@ pub fn entry(packs: &[&Pack], kind: &str, pack: &str, index: &str) -> Result<Cat
     let not_found = || StorageError::NotFound(format!("No {kind} entry \"{index}\" in the switched-on packs."));
     let found_pack = packs.iter().find(|p| p.manifest.id == pack).ok_or_else(not_found)?;
     let found = list(found_pack, kind).iter().find(|e| text(e, "index") == index).ok_or_else(not_found)?;
-    let description = match found.get("description").or_else(|| found.get("desc")) {
+    Ok(CatalogEntry {
+        pack: pack.into(),
+        source: found_pack.manifest.name.clone(),
+        html: description_html(found),
+        parts: parts(found),
+        related: related(found_pack, kind, found),
+        entry: found.clone(),
+    })
+}
+
+fn description_html(entry: &Map<String, Value>) -> String {
+    let description = match entry.get("description").or_else(|| entry.get("desc")) {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(parts)) => parts.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"),
         _ => String::new(),
     };
-    Ok(CatalogEntry {
-        pack: pack.into(),
-        source: found_pack.manifest.name.clone(),
-        html: render(&paragraphs(&description), text(found, "name")),
-        entry: found.clone(),
-    })
+    render(&paragraphs(&description), text(entry, "name"))
+}
+
+fn parts(entry: &Map<String, Value>) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    if let Some(higher) = entry.get("higher_level").and_then(Value::as_str) {
+        out.insert("higher_level".into(), render(&paragraphs(higher), ""));
+    }
+    for list in ACTION_LISTS {
+        for (i, item) in entry.get(list).and_then(Value::as_array).into_iter().flatten().enumerate() {
+            if let Some(desc) = item.get("desc").and_then(Value::as_str) {
+                out.insert(format!("{list}.{i}"), render(&paragraphs(desc), ""));
+            }
+        }
+    }
+    out
+}
+
+fn ref_index(value: Option<&Value>) -> &str {
+    value.and_then(|r| r.get("index")).and_then(Value::as_str).unwrap_or("")
+}
+
+/// A class: its own levels in order (not a subclass's), then the features those levels list, in that order.
+/// A species: its traits, in its order.
+fn related(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Vec<Related> {
+    let index = text(entry, "index");
+    let find = |kind: &str, wanted: &str| list(pack, kind).iter().find(|e| text(e, "index") == wanted);
+    let item = |kind: &str, e: &Map<String, Value>, html: String| Related { kind: kind.into(), entry: e.clone(), html };
+    match kind {
+        "classes" => {
+            let mut levels: Vec<_> =
+                list(pack, "levels").iter().filter(|l| ref_index(l.get("class")) == index && l.get("subclass").is_none()).collect();
+            levels.sort_by_key(|l| l.get("level").and_then(Value::as_u64).unwrap_or(0));
+            // A feature several levels list (Ability Score Improvement) comes once, at its first level.
+            let mut seen = std::collections::HashSet::new();
+            let features: Vec<_> = levels
+                .iter()
+                .flat_map(|l| l.get("features").and_then(Value::as_array).into_iter().flatten())
+                .map(|r| ref_index(Some(r)))
+                .filter(|index| seen.insert(*index))
+                .filter_map(|index| find("features", index))
+                .map(|f| item("features", f, description_html(f)))
+                .collect();
+            levels.into_iter().map(|l| item("levels", l, String::new())).chain(features).collect()
+        }
+        "species" => entry
+            .get("traits")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| find("traits", ref_index(Some(r))))
+            .map(|t| item("traits", t, description_html(t)))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// 5e-database text breaks paragraphs with a single newline; Markdown needs a blank line. Consecutive table rows and
@@ -146,6 +222,27 @@ mod tests {
         let slaying = entry(&on, "magic-items", "srd", "ammunition-of-slaying").unwrap();
         assert!(slaying.html.contains("<table>"), "{}", slaying.html);
         assert!(matches!(entry(&on, "spells", "srd", "nope"), Err(StorageError::NotFound(_))));
+    }
+
+    #[test]
+    fn entries_bring_their_texts_and_related_entries() {
+        let packs = srd();
+        let on: Vec<_> = packs.iter().collect();
+        let fireball = entry(&on, "spells", "srd", "fireball").unwrap();
+        assert!(fireball.parts["higher_level"].contains("1d6"));
+        let dragon = entry(&on, "monsters", "srd", "adult-red-dragon").unwrap();
+        assert!(dragon.parts.contains_key("actions.0") && dragon.parts.contains_key("legendary_actions.0"));
+        let barbarian = entry(&on, "classes", "srd", "barbarian").unwrap();
+        let levels: Vec<_> = barbarian.related.iter().filter(|r| r.kind == "levels").map(|r| r.entry["level"].as_u64().unwrap()).collect();
+        assert_eq!(levels, (1..=20).collect::<Vec<_>>());
+        let first = barbarian.related.iter().find(|r| r.kind == "features").unwrap();
+        assert_eq!((first.entry["name"].as_str().unwrap(), first.html.is_empty()), ("Rage", false));
+        let features: Vec<_> = barbarian.related.iter().filter(|r| r.kind == "features").map(|r| r.entry["index"].as_str().unwrap()).collect();
+        let unique: std::collections::HashSet<_> = features.iter().collect();
+        assert_eq!(unique.len(), features.len(), "Ability Score Improvement is listed at 4, 8, 12 and 16 but shown once");
+        let dragonborn = entry(&on, "species", "srd", "dragonborn").unwrap();
+        assert!(!dragonborn.related.is_empty() && dragonborn.related.iter().all(|r| r.kind == "traits" && !r.html.is_empty()));
+        assert!(entry(&on, "feats", "srd", "alert").unwrap().related.is_empty());
     }
 
     #[test]

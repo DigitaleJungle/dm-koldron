@@ -3,6 +3,10 @@
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
   import type { Category } from "./catalog";
+  import ClassDetails from "./entries/ClassDetails.svelte";
+  import MonsterBlock from "./entries/MonsterBlock.svelte";
+  import SpeciesDetails from "./entries/SpeciesDetails.svelte";
+  import SpellDetails from "./entries/SpellDetails.svelte";
 
   let {
     category,
@@ -49,16 +53,26 @@
     <article class="prose">
       <h1>{loaded.entry.name}</h1>
       <p class="source">{loaded.source}</p>
-      {#if facts.length}
-        <dl>
-          {#each facts as fact (fact.label)}
-            <dt>{fact.label}</dt>
-            <dd>{fact.value}</dd>
-          {/each}
-        </dl>
+      {#if category.id === "spells"}
+        <SpellDetails {loaded} />
+      {:else if category.id === "monsters"}
+        <MonsterBlock {loaded} />
+      {:else if category.id === "classes"}
+        <ClassDetails {loaded} />
+      {:else if category.id === "species"}
+        <SpeciesDetails {loaded} />
+      {:else}
+        {#if facts.length}
+          <dl class="facts">
+            {#each facts as fact (fact.label)}
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            {/each}
+          </dl>
+        {/if}
+        <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
+        {@html loaded.html}
       {/if}
-      <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
-      {@html loaded.html}
     </article>
   {/if}
 </div>
@@ -90,22 +104,6 @@
     margin-top: calc(-1 * var(--space-3));
     color: var(--color-text-muted);
     font-size: var(--text-sm);
-  }
-
-  dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--space-1) var(--space-4);
-    margin: 0 0 var(--space-4);
-    font-size: var(--text-sm);
-  }
-
-  dt {
-    font-weight: var(--weight-semibold);
-  }
-
-  dd {
-    margin: 0;
   }
 
   .message {

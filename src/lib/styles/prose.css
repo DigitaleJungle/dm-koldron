@@ -83,3 +83,37 @@
   font-weight: var(--weight-semibold);
   background: var(--color-surface-sunken);
 }
+
+/* Entry pages: a line under the name, label/value facts, and a bold name running into its text ("Rage. You can…"). */
+.prose .subtitle {
+  margin-top: calc(-1 * var(--space-2));
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.prose .facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+
+.prose .facts dt {
+  font-weight: var(--weight-semibold);
+}
+
+.prose .facts dd {
+  margin: 0;
+}
+
+.prose .named {
+  margin: 0 0 var(--space-3);
+}
+
+.prose .named > p:first-of-type {
+  display: inline;
+}
+
+.prose .named > p:last-child {
+  margin-bottom: 0;
+}

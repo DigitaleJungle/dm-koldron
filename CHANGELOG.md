@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2] - 2026-11-04
+
+### Added
+
+- Catalog entry pages per type: spells with their casting details and higher-level text; a monster stat block with ability modifiers, defences, senses, CR and its traits and actions; classes with their level table and features; species with their traits.
+
 ## [0.1.1] - 2026-11-04
 
 ### Added

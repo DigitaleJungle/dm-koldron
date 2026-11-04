@@ -1,0 +1,1018 @@
+[
+  {
+    "index": "playing-the-game",
+    "name": "Playing the Game",
+    "desc": "# Playing the Game",
+    "subsections": [
+      {
+        "index": "rhythm-of-play",
+        "name": "Rhythm of Play",
+        "url": "/api/2024/rule-sections/rhythm-of-play"
+      },
+      {
+        "index": "the-six-abilities",
+        "name": "The Six Abilities",
+        "url": "/api/2024/rule-sections/the-six-abilities"
+      },
+      {
+        "index": "d20-tests",
+        "name": "D20 Tests",
+        "url": "/api/2024/rule-sections/d20-tests"
+      },
+      {
+        "index": "proficiency",
+        "name": "Proficiency",
+        "url": "/api/2024/rule-sections/proficiency"
+      },
+      {
+        "index": "actions",
+        "name": "Actions",
+        "url": "/api/2024/rule-sections/actions"
+      },
+      {
+        "index": "social-interaction",
+        "name": "Social Interaction",
+        "url": "/api/2024/rule-sections/social-interaction"
+      },
+      {
+        "index": "exploration",
+        "name": "Exploration",
+        "url": "/api/2024/rule-sections/exploration"
+      },
+      {
+        "index": "combat",
+        "name": "Combat",
+        "url": "/api/2024/rule-sections/combat"
+      },
+      {
+        "index": "damage-and-healing",
+        "name": "Damage and Healing",
+        "url": "/api/2024/rule-sections/damage-and-healing"
+      }
+    ],
+    "url": "/api/2024/rules/playing-the-game"
+  },
+  {
+    "index": "character-creation",
+    "name": "Character Creation",
+    "desc": "# Character Creation",
+    "subsections": [
+      {
+        "index": "choose-a-character-sheet",
+        "name": "Choose a Character Sheet",
+        "url": "/api/2024/rule-sections/choose-a-character-sheet"
+      },
+      {
+        "index": "create-your-character",
+        "name": "Create Your Character",
+        "url": "/api/2024/rule-sections/create-your-character"
+      },
+      {
+        "index": "level-advancement",
+        "name": "Level Advancement",
+        "url": "/api/2024/rule-sections/level-advancement"
+      },
+      {
+        "index": "starting-at-higher-levels",
+        "name": "Starting at Higher Levels",
+        "url": "/api/2024/rule-sections/starting-at-higher-levels"
+      },
+      {
+        "index": "multiclassing",
+        "name": "Multiclassing",
+        "url": "/api/2024/rule-sections/multiclassing"
+      },
+      {
+        "index": "trinkets",
+        "name": "Trinkets",
+        "url": "/api/2024/rule-sections/trinkets"
+      }
+    ],
+    "url": "/api/2024/rules/character-creation"
+  },
+  {
+    "index": "spells",
+    "name": "Spells",
+    "desc": "# Spells",
+    "subsections": [
+      {
+        "index": "gaining-spells",
+        "name": "Gaining Spells",
+        "url": "/api/2024/rule-sections/gaining-spells"
+      },
+      {
+        "index": "casting-spells",
+        "name": "Casting Spells",
+        "url": "/api/2024/rule-sections/casting-spells"
+      }
+    ],
+    "url": "/api/2024/rules/spells"
+  },
+  {
+    "index": "rules-glossary",
+    "name": "Rules Glossary",
+    "desc": "# Rules Glossary",
+    "subsections": [
+      {
+        "index": "glossary-conventions",
+        "name": "Glossary Conventions",
+        "url": "/api/2024/rule-sections/glossary-conventions"
+      },
+      {
+        "index": "rules-definitions",
+        "name": "Rules Definitions",
+        "url": "/api/2024/rule-sections/rules-definitions"
+      },
+      {
+        "index": "ability-check",
+        "name": "Ability Check",
+        "url": "/api/2024/rule-sections/ability-check"
+      },
+      {
+        "index": "ability-score-and-modifier",
+        "name": "Ability Score and Modifier",
+        "url": "/api/2024/rule-sections/ability-score-and-modifier"
+      },
+      {
+        "index": "action",
+        "name": "Action",
+        "url": "/api/2024/rule-sections/action"
+      },
+      {
+        "index": "advantage",
+        "name": "Advantage",
+        "url": "/api/2024/rule-sections/advantage"
+      },
+      {
+        "index": "adventure",
+        "name": "Adventure",
+        "url": "/api/2024/rule-sections/adventure"
+      },
+      {
+        "index": "alignment",
+        "name": "Alignment",
+        "url": "/api/2024/rule-sections/alignment"
+      },
+      {
+        "index": "ally",
+        "name": "Ally",
+        "url": "/api/2024/rule-sections/ally"
+      },
+      {
+        "index": "area-of-effect",
+        "name": "Area of Effect",
+        "url": "/api/2024/rule-sections/area-of-effect"
+      },
+      {
+        "index": "armor-class",
+        "name": "Armor Class",
+        "url": "/api/2024/rule-sections/armor-class"
+      },
+      {
+        "index": "armor-training",
+        "name": "Armor Training",
+        "url": "/api/2024/rule-sections/armor-training"
+      },
+      {
+        "index": "attack-action",
+        "name": "Attack [Action]",
+        "url": "/api/2024/rule-sections/attack-action"
+      },
+      {
+        "index": "attack-roll",
+        "name": "Attack Roll",
+        "url": "/api/2024/rule-sections/attack-roll"
+      },
+      {
+        "index": "attitude",
+        "name": "Attitude",
+        "url": "/api/2024/rule-sections/attitude"
+      },
+      {
+        "index": "attunement",
+        "name": "Attunement",
+        "url": "/api/2024/rule-sections/attunement"
+      },
+      {
+        "index": "blinded-condition",
+        "name": "Blinded [Condition]",
+        "url": "/api/2024/rule-sections/blinded-condition"
+      },
+      {
+        "index": "blindsight",
+        "name": "Blindsight",
+        "url": "/api/2024/rule-sections/blindsight"
+      },
+      {
+        "index": "bloodied",
+        "name": "Bloodied",
+        "url": "/api/2024/rule-sections/bloodied"
+      },
+      {
+        "index": "bonus-action",
+        "name": "Bonus Action",
+        "url": "/api/2024/rule-sections/bonus-action"
+      },
+      {
+        "index": "breaking-objects",
+        "name": "Breaking Objects",
+        "url": "/api/2024/rule-sections/breaking-objects"
+      },
+      {
+        "index": "bright-light",
+        "name": "Bright Light",
+        "url": "/api/2024/rule-sections/bright-light"
+      },
+      {
+        "index": "burning-hazard",
+        "name": "Burning [Hazard]",
+        "url": "/api/2024/rule-sections/burning-hazard"
+      },
+      {
+        "index": "burrow-speed",
+        "name": "Burrow Speed",
+        "url": "/api/2024/rule-sections/burrow-speed"
+      },
+      {
+        "index": "campaign",
+        "name": "Campaign",
+        "url": "/api/2024/rule-sections/campaign"
+      },
+      {
+        "index": "cantrip",
+        "name": "Cantrip",
+        "url": "/api/2024/rule-sections/cantrip"
+      },
+      {
+        "index": "carrying-capacity",
+        "name": "Carrying Capacity",
+        "url": "/api/2024/rule-sections/carrying-capacity"
+      },
+      {
+        "index": "challenge-rating",
+        "name": "Challenge Rating",
+        "url": "/api/2024/rule-sections/challenge-rating"
+      },
+      {
+        "index": "character-sheet",
+        "name": "Character Sheet",
+        "url": "/api/2024/rule-sections/character-sheet"
+      },
+      {
+        "index": "charmed-condition",
+        "name": "Charmed [Condition]",
+        "url": "/api/2024/rule-sections/charmed-condition"
+      },
+      {
+        "index": "climbing",
+        "name": "Climbing",
+        "url": "/api/2024/rule-sections/climbing"
+      },
+      {
+        "index": "climb-speed",
+        "name": "Climb Speed",
+        "url": "/api/2024/rule-sections/climb-speed"
+      },
+      {
+        "index": "concentration",
+        "name": "Concentration",
+        "url": "/api/2024/rule-sections/concentration"
+      },
+      {
+        "index": "condition",
+        "name": "Condition",
+        "url": "/api/2024/rule-sections/condition"
+      },
+      {
+        "index": "cone-area-of-effect",
+        "name": "Cone [Area of Effect]",
+        "url": "/api/2024/rule-sections/cone-area-of-effect"
+      },
+      {
+        "index": "cover",
+        "name": "Cover",
+        "url": "/api/2024/rule-sections/cover"
+      },
+      {
+        "index": "crawling",
+        "name": "Crawling",
+        "url": "/api/2024/rule-sections/crawling"
+      },
+      {
+        "index": "creature",
+        "name": "Creature",
+        "url": "/api/2024/rule-sections/creature"
+      },
+      {
+        "index": "creature-type",
+        "name": "Creature Type",
+        "url": "/api/2024/rule-sections/creature-type"
+      },
+      {
+        "index": "critical-hit",
+        "name": "Critical Hit",
+        "url": "/api/2024/rule-sections/critical-hit"
+      },
+      {
+        "index": "cube-area-of-effect",
+        "name": "Cube [Area of Effect]",
+        "url": "/api/2024/rule-sections/cube-area-of-effect"
+      },
+      {
+        "index": "curses",
+        "name": "Curses",
+        "url": "/api/2024/rule-sections/curses"
+      },
+      {
+        "index": "cylinder-area-of-effect",
+        "name": "Cylinder [Area of Effect]",
+        "url": "/api/2024/rule-sections/cylinder-area-of-effect"
+      },
+      {
+        "index": "d20-test",
+        "name": "D20 Test",
+        "url": "/api/2024/rule-sections/d20-test"
+      },
+      {
+        "index": "damage",
+        "name": "Damage",
+        "url": "/api/2024/rule-sections/damage"
+      },
+      {
+        "index": "damage-roll",
+        "name": "Damage Roll",
+        "url": "/api/2024/rule-sections/damage-roll"
+      },
+      {
+        "index": "damage-threshold",
+        "name": "Damage Threshold",
+        "url": "/api/2024/rule-sections/damage-threshold"
+      },
+      {
+        "index": "damage-types",
+        "name": "Damage Types",
+        "url": "/api/2024/rule-sections/damage-types"
+      },
+      {
+        "index": "darkness",
+        "name": "Darkness",
+        "url": "/api/2024/rule-sections/darkness"
+      },
+      {
+        "index": "darkvision",
+        "name": "Darkvision",
+        "url": "/api/2024/rule-sections/darkvision"
+      },
+      {
+        "index": "dash-action",
+        "name": "Dash [Action]",
+        "url": "/api/2024/rule-sections/dash-action"
+      },
+      {
+        "index": "dead",
+        "name": "Dead",
+        "url": "/api/2024/rule-sections/dead"
+      },
+      {
+        "index": "deafened-condition",
+        "name": "Deafened [Condition]",
+        "url": "/api/2024/rule-sections/deafened-condition"
+      },
+      {
+        "index": "death-saving-throw",
+        "name": "Death Saving Throw",
+        "url": "/api/2024/rule-sections/death-saving-throw"
+      },
+      {
+        "index": "dehydration-hazard",
+        "name": "Dehydration [Hazard]",
+        "url": "/api/2024/rule-sections/dehydration-hazard"
+      },
+      {
+        "index": "difficult-terrain",
+        "name": "Difficult Terrain",
+        "url": "/api/2024/rule-sections/difficult-terrain"
+      },
+      {
+        "index": "difficulty-class",
+        "name": "Difficulty Class",
+        "url": "/api/2024/rule-sections/difficulty-class"
+      },
+      {
+        "index": "dim-light",
+        "name": "Dim Light",
+        "url": "/api/2024/rule-sections/dim-light"
+      },
+      {
+        "index": "disadvantage",
+        "name": "Disadvantage",
+        "url": "/api/2024/rule-sections/disadvantage"
+      },
+      {
+        "index": "disengage-action",
+        "name": "Disengage [Action]",
+        "url": "/api/2024/rule-sections/disengage-action"
+      },
+      {
+        "index": "dodge-action",
+        "name": "Dodge [Action]",
+        "url": "/api/2024/rule-sections/dodge-action"
+      },
+      {
+        "index": "emanation-area-of-effect",
+        "name": "Emanation [Area of Effect]",
+        "url": "/api/2024/rule-sections/emanation-area-of-effect"
+      },
+      {
+        "index": "encounter",
+        "name": "Encounter",
+        "url": "/api/2024/rule-sections/encounter"
+      },
+      {
+        "index": "enemy",
+        "name": "Enemy",
+        "url": "/api/2024/rule-sections/enemy"
+      },
+      {
+        "index": "exhaustion-condition",
+        "name": "Exhaustion [Condition]",
+        "url": "/api/2024/rule-sections/exhaustion-condition"
+      },
+      {
+        "index": "experience-points",
+        "name": "Experience Points",
+        "url": "/api/2024/rule-sections/experience-points"
+      },
+      {
+        "index": "expertise",
+        "name": "Expertise",
+        "url": "/api/2024/rule-sections/expertise"
+      },
+      {
+        "index": "falling-hazard",
+        "name": "Falling [Hazard]",
+        "url": "/api/2024/rule-sections/falling-hazard"
+      },
+      {
+        "index": "flying",
+        "name": "Flying",
+        "url": "/api/2024/rule-sections/flying"
+      },
+      {
+        "index": "fly-speed",
+        "name": "Fly Speed",
+        "url": "/api/2024/rule-sections/fly-speed"
+      },
+      {
+        "index": "friendly-attitude",
+        "name": "Friendly [Attitude]",
+        "url": "/api/2024/rule-sections/friendly-attitude"
+      },
+      {
+        "index": "frightened-condition",
+        "name": "Frightened [Condition]",
+        "url": "/api/2024/rule-sections/frightened-condition"
+      },
+      {
+        "index": "grappled-condition",
+        "name": "Grappled [Condition]",
+        "url": "/api/2024/rule-sections/grappled-condition"
+      },
+      {
+        "index": "grappling",
+        "name": "Grappling",
+        "url": "/api/2024/rule-sections/grappling"
+      },
+      {
+        "index": "hazard",
+        "name": "Hazard",
+        "url": "/api/2024/rule-sections/hazard"
+      },
+      {
+        "index": "healing",
+        "name": "Healing",
+        "url": "/api/2024/rule-sections/healing"
+      },
+      {
+        "index": "heavily-obscured",
+        "name": "Heavily Obscured",
+        "url": "/api/2024/rule-sections/heavily-obscured"
+      },
+      {
+        "index": "help-action",
+        "name": "Help [Action]",
+        "url": "/api/2024/rule-sections/help-action"
+      },
+      {
+        "index": "heroic-inspiration",
+        "name": "Heroic Inspiration",
+        "url": "/api/2024/rule-sections/heroic-inspiration"
+      },
+      {
+        "index": "hide-action",
+        "name": "Hide [Action]",
+        "url": "/api/2024/rule-sections/hide-action"
+      },
+      {
+        "index": "high-jump",
+        "name": "High Jump",
+        "url": "/api/2024/rule-sections/high-jump"
+      },
+      {
+        "index": "hit-point-dice",
+        "name": "Hit Point Dice",
+        "url": "/api/2024/rule-sections/hit-point-dice"
+      },
+      {
+        "index": "hit-points",
+        "name": "Hit Points",
+        "url": "/api/2024/rule-sections/hit-points"
+      },
+      {
+        "index": "hostile-attitude",
+        "name": "Hostile [Attitude]",
+        "url": "/api/2024/rule-sections/hostile-attitude"
+      },
+      {
+        "index": "hover",
+        "name": "Hover",
+        "url": "/api/2024/rule-sections/hover"
+      },
+      {
+        "index": "illusions",
+        "name": "Illusions",
+        "url": "/api/2024/rule-sections/illusions"
+      },
+      {
+        "index": "immunity",
+        "name": "Immunity",
+        "url": "/api/2024/rule-sections/immunity"
+      },
+      {
+        "index": "improvised-weapons",
+        "name": "Improvised Weapons",
+        "url": "/api/2024/rule-sections/improvised-weapons"
+      },
+      {
+        "index": "incapacitated-condition",
+        "name": "Incapacitated [Condition]",
+        "url": "/api/2024/rule-sections/incapacitated-condition"
+      },
+      {
+        "index": "indifferent-attitude",
+        "name": "Indifferent [Attitude]",
+        "url": "/api/2024/rule-sections/indifferent-attitude"
+      },
+      {
+        "index": "influence-action",
+        "name": "Influence [Action]",
+        "url": "/api/2024/rule-sections/influence-action"
+      },
+      {
+        "index": "initiative",
+        "name": "Initiative",
+        "url": "/api/2024/rule-sections/initiative"
+      },
+      {
+        "index": "invisible-condition",
+        "name": "Invisible [Condition]",
+        "url": "/api/2024/rule-sections/invisible-condition"
+      },
+      {
+        "index": "jumping",
+        "name": "Jumping",
+        "url": "/api/2024/rule-sections/jumping"
+      },
+      {
+        "index": "knocking-out-a-creature",
+        "name": "Knocking Out a Creature",
+        "url": "/api/2024/rule-sections/knocking-out-a-creature"
+      },
+      {
+        "index": "lightly-obscured",
+        "name": "Lightly Obscured",
+        "url": "/api/2024/rule-sections/lightly-obscured"
+      },
+      {
+        "index": "line-area-of-effect",
+        "name": "Line [Area of Effect]",
+        "url": "/api/2024/rule-sections/line-area-of-effect"
+      },
+      {
+        "index": "long-jump",
+        "name": "Long Jump",
+        "url": "/api/2024/rule-sections/long-jump"
+      },
+      {
+        "index": "long-rest",
+        "name": "Long Rest",
+        "url": "/api/2024/rule-sections/long-rest"
+      },
+      {
+        "index": "magic-action",
+        "name": "Magic [Action]",
+        "url": "/api/2024/rule-sections/magic-action"
+      },
+      {
+        "index": "magical-effect",
+        "name": "Magical Effect",
+        "url": "/api/2024/rule-sections/magical-effect"
+      },
+      {
+        "index": "malnutrition-hazard",
+        "name": "Malnutrition [Hazard]",
+        "url": "/api/2024/rule-sections/malnutrition-hazard"
+      },
+      {
+        "index": "monster",
+        "name": "Monster",
+        "url": "/api/2024/rule-sections/monster"
+      },
+      {
+        "index": "nonplayer-character",
+        "name": "Nonplayer Character",
+        "url": "/api/2024/rule-sections/nonplayer-character"
+      },
+      {
+        "index": "object",
+        "name": "Object",
+        "url": "/api/2024/rule-sections/object"
+      },
+      {
+        "index": "occupied-space",
+        "name": "Occupied Space",
+        "url": "/api/2024/rule-sections/occupied-space"
+      },
+      {
+        "index": "opportunity-attacks",
+        "name": "Opportunity Attacks",
+        "url": "/api/2024/rule-sections/opportunity-attacks"
+      },
+      {
+        "index": "paralyzed-condition",
+        "name": "Paralyzed [Condition]",
+        "url": "/api/2024/rule-sections/paralyzed-condition"
+      },
+      {
+        "index": "passive-perception",
+        "name": "Passive Perception",
+        "url": "/api/2024/rule-sections/passive-perception"
+      },
+      {
+        "index": "per-day",
+        "name": "Per Day",
+        "url": "/api/2024/rule-sections/per-day"
+      },
+      {
+        "index": "petrified-condition",
+        "name": "Petrified [Condition]",
+        "url": "/api/2024/rule-sections/petrified-condition"
+      },
+      {
+        "index": "player-character",
+        "name": "Player Character",
+        "url": "/api/2024/rule-sections/player-character"
+      },
+      {
+        "index": "poisoned-condition",
+        "name": "Poisoned [Condition]",
+        "url": "/api/2024/rule-sections/poisoned-condition"
+      },
+      {
+        "index": "possession",
+        "name": "Possession",
+        "url": "/api/2024/rule-sections/possession"
+      },
+      {
+        "index": "proficiency-rules-glossary",
+        "name": "Proficiency",
+        "url": "/api/2024/rule-sections/proficiency-rules-glossary"
+      },
+      {
+        "index": "prone-condition",
+        "name": "Prone [Condition]",
+        "url": "/api/2024/rule-sections/prone-condition"
+      },
+      {
+        "index": "reach",
+        "name": "Reach",
+        "url": "/api/2024/rule-sections/reach"
+      },
+      {
+        "index": "reaction",
+        "name": "Reaction",
+        "url": "/api/2024/rule-sections/reaction"
+      },
+      {
+        "index": "ready-action",
+        "name": "Ready [Action]",
+        "url": "/api/2024/rule-sections/ready-action"
+      },
+      {
+        "index": "resistance",
+        "name": "Resistance",
+        "url": "/api/2024/rule-sections/resistance"
+      },
+      {
+        "index": "restrained-condition",
+        "name": "Restrained [Condition]",
+        "url": "/api/2024/rule-sections/restrained-condition"
+      },
+      {
+        "index": "ritual",
+        "name": "Ritual",
+        "url": "/api/2024/rule-sections/ritual"
+      },
+      {
+        "index": "round-down",
+        "name": "Round Down",
+        "url": "/api/2024/rule-sections/round-down"
+      },
+      {
+        "index": "save",
+        "name": "Save",
+        "url": "/api/2024/rule-sections/save"
+      },
+      {
+        "index": "saving-throw",
+        "name": "Saving Throw",
+        "url": "/api/2024/rule-sections/saving-throw"
+      },
+      {
+        "index": "search-action",
+        "name": "Search [Action]",
+        "url": "/api/2024/rule-sections/search-action"
+      },
+      {
+        "index": "shape-shifting",
+        "name": "Shape-Shifting",
+        "url": "/api/2024/rule-sections/shape-shifting"
+      },
+      {
+        "index": "short-rest",
+        "name": "Short Rest",
+        "url": "/api/2024/rule-sections/short-rest"
+      },
+      {
+        "index": "simultaneous-effects",
+        "name": "Simultaneous Effects",
+        "url": "/api/2024/rule-sections/simultaneous-effects"
+      },
+      {
+        "index": "size",
+        "name": "Size",
+        "url": "/api/2024/rule-sections/size"
+      },
+      {
+        "index": "skill",
+        "name": "Skill",
+        "url": "/api/2024/rule-sections/skill"
+      },
+      {
+        "index": "speed",
+        "name": "Speed",
+        "url": "/api/2024/rule-sections/speed"
+      },
+      {
+        "index": "spell",
+        "name": "Spell",
+        "url": "/api/2024/rule-sections/spell"
+      },
+      {
+        "index": "spell-attack",
+        "name": "Spell Attack",
+        "url": "/api/2024/rule-sections/spell-attack"
+      },
+      {
+        "index": "spellcasting-focus",
+        "name": "Spellcasting Focus",
+        "url": "/api/2024/rule-sections/spellcasting-focus"
+      },
+      {
+        "index": "sphere-area-of-effect",
+        "name": "Sphere [Area of Effect]",
+        "url": "/api/2024/rule-sections/sphere-area-of-effect"
+      },
+      {
+        "index": "stable",
+        "name": "Stable",
+        "url": "/api/2024/rule-sections/stable"
+      },
+      {
+        "index": "stat-block",
+        "name": "Stat Block",
+        "url": "/api/2024/rule-sections/stat-block"
+      },
+      {
+        "index": "study-action",
+        "name": "Study [Action]",
+        "url": "/api/2024/rule-sections/study-action"
+      },
+      {
+        "index": "stunned-condition",
+        "name": "Stunned [Condition]",
+        "url": "/api/2024/rule-sections/stunned-condition"
+      },
+      {
+        "index": "suffocation-hazard",
+        "name": "Suffocation [Hazard]",
+        "url": "/api/2024/rule-sections/suffocation-hazard"
+      },
+      {
+        "index": "surprise",
+        "name": "Surprise",
+        "url": "/api/2024/rule-sections/surprise"
+      },
+      {
+        "index": "swimming",
+        "name": "Swimming",
+        "url": "/api/2024/rule-sections/swimming"
+      },
+      {
+        "index": "swim-speed",
+        "name": "Swim Speed",
+        "url": "/api/2024/rule-sections/swim-speed"
+      },
+      {
+        "index": "target",
+        "name": "Target",
+        "url": "/api/2024/rule-sections/target"
+      },
+      {
+        "index": "telepathy",
+        "name": "Telepathy",
+        "url": "/api/2024/rule-sections/telepathy"
+      },
+      {
+        "index": "teleportation",
+        "name": "Teleportation",
+        "url": "/api/2024/rule-sections/teleportation"
+      },
+      {
+        "index": "temporary-hit-points",
+        "name": "Temporary Hit Points",
+        "url": "/api/2024/rule-sections/temporary-hit-points"
+      },
+      {
+        "index": "tremorsense",
+        "name": "Tremorsense",
+        "url": "/api/2024/rule-sections/tremorsense"
+      },
+      {
+        "index": "truesight",
+        "name": "Truesight",
+        "url": "/api/2024/rule-sections/truesight"
+      },
+      {
+        "index": "unarmed-strike",
+        "name": "Unarmed Strike",
+        "url": "/api/2024/rule-sections/unarmed-strike"
+      },
+      {
+        "index": "unconscious-condition",
+        "name": "Unconscious [Condition]",
+        "url": "/api/2024/rule-sections/unconscious-condition"
+      },
+      {
+        "index": "unoccupied-space",
+        "name": "Unoccupied Space",
+        "url": "/api/2024/rule-sections/unoccupied-space"
+      },
+      {
+        "index": "utilize-action",
+        "name": "Utilize [Action]",
+        "url": "/api/2024/rule-sections/utilize-action"
+      },
+      {
+        "index": "vulnerability",
+        "name": "Vulnerability",
+        "url": "/api/2024/rule-sections/vulnerability"
+      },
+      {
+        "index": "weapon",
+        "name": "Weapon",
+        "url": "/api/2024/rule-sections/weapon"
+      },
+      {
+        "index": "weapon-attack",
+        "name": "Weapon Attack",
+        "url": "/api/2024/rule-sections/weapon-attack"
+      }
+    ],
+    "url": "/api/2024/rules/rules-glossary"
+  },
+  {
+    "index": "gameplay-toolbox",
+    "name": "Gameplay Toolbox",
+    "desc": "# Gameplay Toolbox",
+    "subsections": [
+      {
+        "index": "travel-pace",
+        "name": "Travel Pace",
+        "url": "/api/2024/rule-sections/travel-pace"
+      },
+      {
+        "index": "creating-a-background",
+        "name": "Creating a Background",
+        "url": "/api/2024/rule-sections/creating-a-background"
+      },
+      {
+        "index": "curses-and-magical-contagions",
+        "name": "Curses and Magical Contagions",
+        "url": "/api/2024/rule-sections/curses-and-magical-contagions"
+      },
+      {
+        "index": "environmental-effects",
+        "name": "Environmental Effects",
+        "url": "/api/2024/rule-sections/environmental-effects"
+      },
+      {
+        "index": "fear-and-mental-stress",
+        "name": "Fear and Mental Stress",
+        "url": "/api/2024/rule-sections/fear-and-mental-stress"
+      },
+      {
+        "index": "poison",
+        "name": "Poison",
+        "url": "/api/2024/rule-sections/poison"
+      },
+      {
+        "index": "traps",
+        "name": "Traps",
+        "url": "/api/2024/rule-sections/traps"
+      },
+      {
+        "index": "combat-encounters",
+        "name": "Combat Encounters",
+        "url": "/api/2024/rule-sections/combat-encounters"
+      }
+    ],
+    "url": "/api/2024/rules/gameplay-toolbox"
+  },
+  {
+    "index": "magic-items",
+    "name": "Magic Items",
+    "desc": "# Magic Items\n\nMagic items are gleaned from the hoards of felled monsters or discovered in long-lost vaults. Such items grant capabilities a character could rarely have otherwise, or they complement their owner's capabilities in wondrous ways.",
+    "subsections": [
+      {
+        "index": "magic-item-categories",
+        "name": "Magic Item Categories",
+        "url": "/api/2024/rule-sections/magic-item-categories"
+      },
+      {
+        "index": "magic-item-rarity",
+        "name": "Magic Item Rarity",
+        "url": "/api/2024/rule-sections/magic-item-rarity"
+      },
+      {
+        "index": "activating-a-magic-item",
+        "name": "Activating a Magic Item",
+        "url": "/api/2024/rule-sections/activating-a-magic-item"
+      },
+      {
+        "index": "the-next-dawn",
+        "name": "\"The Next Dawn\"",
+        "url": "/api/2024/rule-sections/the-next-dawn"
+      },
+      {
+        "index": "cursed-items",
+        "name": "Cursed Items",
+        "url": "/api/2024/rule-sections/cursed-items"
+      },
+      {
+        "index": "magic-item-resilience",
+        "name": "Magic Item Resilience",
+        "url": "/api/2024/rule-sections/magic-item-resilience"
+      },
+      {
+        "index": "crafting-magic-items",
+        "name": "Crafting Magic Items",
+        "url": "/api/2024/rule-sections/crafting-magic-items"
+      },
+      {
+        "index": "sentient-magic-items",
+        "name": "Sentient Magic Items",
+        "url": "/api/2024/rule-sections/sentient-magic-items"
+      }
+    ],
+    "url": "/api/2024/rules/magic-items"
+  },
+  {
+    "index": "monsters",
+    "name": "Monsters",
+    "desc": "# Monsters",
+    "subsections": [
+      {
+        "index": "stat-block-overview",
+        "name": "Stat Block Overview",
+        "url": "/api/2024/rule-sections/stat-block-overview"
+      },
+      {
+        "index": "parts-of-a-stat-block",
+        "name": "Parts of a Stat Block",
+        "url": "/api/2024/rule-sections/parts-of-a-stat-block"
+      }
+    ],
+    "url": "/api/2024/rules/monsters"
+  }
+]

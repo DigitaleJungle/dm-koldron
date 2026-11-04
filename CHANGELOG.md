@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.0.7] - 2026-11-04
+
+### Added
+
+- SRD rules text: the rules chapters of the SRD 5.2.1 (Playing the Game, Character Creation, Spellcasting, Rules Glossary with each term as its own entry, Gameplay Toolbox, and the Magic Items and Monsters intros) as 5e-SRD-Rules.json and 5e-SRD-Rule-Sections.json in the pack source.
+
+### Changed
+
+- The SRD pack license now also covers 5e-SRD-Rule-Sections.json; the SRD source notes moved out of the pack folder.
+
 ## [0.0.6] - 2026-11-04
 
 ### Added

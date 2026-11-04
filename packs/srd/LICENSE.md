@@ -4,7 +4,7 @@ This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1
 
 The SRD material was converted into the DM's Koldron pack format.
 
-`source/2024/en/5e-SRD-Rules.json` was converted from the SRD 5.2.1 by the DM's Koldron contributors and is licensed under CC-BY-4.0.
+`source/2024/en/5e-SRD-Rules.json` and `source/2024/en/5e-SRD-Rule-Sections.json` were converted from the SRD 5.2.1 by the DM's Koldron contributors and are licensed under CC-BY-4.0.
 
 The other data files in `source/2024/en/` are from [5e-bits/5e-srd-api](https://github.com/5e-bits/5e-srd-api), under this license:
 

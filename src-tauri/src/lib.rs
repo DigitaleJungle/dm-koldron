@@ -31,6 +31,8 @@ pub fn run() {
             commands::campaigns::delete_campaign,
             commands::campaigns::set_campaign_picture,
             commands::campaigns::remove_campaign_picture,
+            commands::catalog::catalog_rows,
+            commands::catalog::catalog_entry,
             commands::packs::list_packs,
             commands::rules::rules_contents,
             commands::rules::rules_chapter,

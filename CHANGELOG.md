@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1] - 2026-11-04
+
+### Added
+
+- Library → Catalog: a Rules | Catalog tab bar, and category tabs (All, Spells, Monsters, Equipment, Magic items, Feats, Classes, Species, Backgrounds, Conditions), each a table with its own columns, sortable both ways.
+- Catalog search (every word in the name), filter chips per category with Clear filters, and 50 rows per page; search, filters, sort and page are kept when coming back from an entry.
+- Catalog entry pages with the entry's facts and its description.
+
 ## [0.1.0] - 2026-11-04
 
 ### Added

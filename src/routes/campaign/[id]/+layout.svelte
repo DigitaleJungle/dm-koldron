@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BackButton from "$lib/components/BackButton.svelte";
   import { onDestroy, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { openCampaign } from "$lib/api/campaigns";
@@ -42,7 +43,7 @@
   <main class="status">
     {#if error}
       <p class="error" role="alert">{error}</p>
-      <a class="btn" href="/">{strings.campaign.backToStart}</a>
+      <BackButton />
     {:else}
       <p role="status">{strings.campaign.loading}</p>
     {/if}
@@ -64,10 +65,5 @@
     background: var(--color-danger-soft);
     color: var(--color-danger);
     font-size: var(--text-sm);
-  }
-
-  .btn {
-    color: var(--color-text);
-    text-decoration: none;
   }
 </style>

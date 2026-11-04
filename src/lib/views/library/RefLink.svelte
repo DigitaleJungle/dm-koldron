@@ -62,7 +62,7 @@
       {/if}
     </div>
     <footer>
-      <a href={entryAddress(kind, pack, ref.index)} data-sveltekit-replacestate>{t.open}</a>
+      <a href={entryAddress(kind, pack, ref.index)}>{t.open}</a>
     </footer>
   </div>
 {:else}

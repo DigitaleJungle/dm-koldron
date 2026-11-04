@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import BackButton from "$lib/components/BackButton.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import type { SectionId } from "$lib/components/SettingsDialog.svelte";
   import { strings } from "$lib/strings";
@@ -45,12 +46,6 @@
     settingsWasOpen = settingsOpen;
   });
 
-  function back(event: MouseEvent) {
-    if (history.length <= 1) return; // opened right here: the link goes to the Start screen
-    event.preventDefault();
-    history.back();
-  }
-
   function openRulesSettings() {
     settingsSection = "rules";
     settingsOpen = true;
@@ -61,10 +56,7 @@
 
 <div class="library">
   <header class="top">
-    <a class="btn back" href="/" onclick={back}>
-      <i class="ti ti-chevron-left" aria-hidden="true"></i>
-      {t.back}
-    </a>
+    <BackButton />
     {#if tab === "rules" && rulesHasContents}
       <button
         class="icon-btn"
@@ -77,10 +69,9 @@
         <i class="ti {collapsed ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}" aria-hidden="true"></i>
       </button>
     {/if}
-    <!-- Switching tabs replaces the address, so Back leaves the Library. -->
     <nav class="tabs" aria-label={t.tabs}>
-      <a href="/library" data-sveltekit-replacestate aria-current={tab === "rules" ? "page" : undefined}>{t.rulesTab}</a>
-      <a href="/library?tab=catalog" data-sveltekit-replacestate aria-current={tab === "catalog" ? "page" : undefined}>{strings.catalog.title}</a>
+      <a href="/library" aria-current={tab === "rules" ? "page" : undefined}>{t.rulesTab}</a>
+      <a href="/library?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined}>{strings.catalog.title}</a>
     </nav>
   </header>
 
@@ -108,13 +99,6 @@
     padding: var(--space-3) var(--space-5);
     border-bottom: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
-  }
-
-  .back {
-    gap: var(--space-1);
-    padding-left: var(--space-2);
-    color: var(--color-text);
-    text-decoration: none;
   }
 
   .icon-btn {

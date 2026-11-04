@@ -1,4 +1,5 @@
 export const strings = {
+  back: "Back",
   appName: "DM's Koldron",
   notification: { dismiss: "Close notification" },
 
@@ -25,7 +26,6 @@ export const strings = {
   campaign: {
     loading: "Opening campaign…",
     openError: (reason: string) => `Couldn't open this campaign. ${reason}`,
-    backToStart: "Back to campaigns",
   },
 
   campaignSettings: {
@@ -56,7 +56,6 @@ export const strings = {
     title: "Library",
     tabs: "Library sections",
     rulesTab: "Rules",
-    back: "Back",
     contents: "Contents",
     hideContents: "Hide contents",
     showContents: "Show contents",
@@ -124,7 +123,6 @@ export const strings = {
     },
     previous: "Previous page",
     next: "Next page",
-    back: (category: string) => `Back to ${category}`,
     empty: (category: string) => `No ${category.toLowerCase()} in the switched-on packs.`,
     noMatches: "No matches.",
     loading: "Loading…",

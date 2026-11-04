@@ -1,6 +1,8 @@
 <script lang="ts">
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
+  import { page } from "$app/state";
   import { errorMessage } from "$lib/api/storage";
+  import { keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { entryAddress, entryCategory, entryFacts, sectionAddress, type Category } from "./catalog";
   import type { Also } from "$lib/api/catalog";
@@ -12,12 +14,10 @@
 
   let {
     category,
-    backLabel,
     pack,
     index,
     reloadKey,
-    backHref,
-  }: { category: Category; backLabel: string; pack: string; index: string; reloadKey: number; backHref: string } = $props();
+  }: { category: Category; pack: string; index: string; reloadKey: number } = $props();
 
   const t = strings.catalog;
   let loaded = $state<CatalogEntry>();
@@ -43,12 +43,7 @@
     `${a.chapterName ?? entryCategory(a.kind).label} → ${a.name}${a.pack !== loaded?.pack ? ` (${a.source})` : ""}`;
 </script>
 
-<div class="entry">
-  <a class="btn back" href={backHref} data-sveltekit-replacestate>
-    <i class="ti ti-chevron-left" aria-hidden="true"></i>
-    {t.back(backLabel)}
-  </a>
-
+<div class="entry" use:keepScroll={{ id: "entry", url: page.url.href, ready: !!loaded }}>
   {#if error}
     <p class="message error" role="alert">{t.loadError(error)}</p>
   {:else if !loaded}
@@ -60,7 +55,7 @@
       {#if loaded.also.length}
         <p class="also">
           {strings.entry.alsoIn}
-          {#each loaded.also as a, i (`${a.kind}/${a.pack}/${a.index}`)}{#if i > 0},{" "}{/if}<a href={alsoHref(a)} data-sveltekit-replacestate>{alsoLabel(a)}</a>{/each}
+          {#each loaded.also as a, i (`${a.kind}/${a.pack}/${a.index}`)}{#if i > 0},{" "}{/if}<a href={alsoHref(a)}>{alsoLabel(a)}</a>{/each}
         </p>
       {/if}
       {#if category.id === "spells"}
@@ -98,14 +93,6 @@
     flex-direction: column;
     gap: var(--space-4);
     padding: var(--space-4) var(--space-6) var(--corner-clearance);
-  }
-
-  .back {
-    align-self: flex-start;
-    gap: var(--space-1);
-    padding-left: var(--space-2);
-    color: var(--color-text);
-    text-decoration: none;
   }
 
   .prose {

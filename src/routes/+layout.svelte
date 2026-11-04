@@ -7,9 +7,11 @@
   import { onMount } from "svelte";
   import Notification from "$lib/components/Notification.svelte";
   import { loadTheme } from "$lib/stores/theme.svelte";
+  import { trackHistory } from "$lib/stores/history.svelte";
 
   let { children }: { children: Snippet } = $props();
 
+  trackHistory();
   onMount(loadTheme);
 </script>
 

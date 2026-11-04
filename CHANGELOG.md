@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.4] - 2026-11-04
+
+### Added
+
+- Back returns the Rules reading pane, the Catalog list and entry pages to their scroll position.
+
+### Changed
+
+- One Back button on every screen that has one: a true history back to the previous place, or the Start screen when there is none. Catalog entry pages use the Library's Back instead of their own Back to <category> link.
+- Opening a Library tab, category, chapter, section or entry is now a step Back returns from; search, filters, sort and paging change the list in place, so Back from an entry returns to the list with its search and filters.
+
 ## [0.1.3] - 2026-11-04
 
 ### Added

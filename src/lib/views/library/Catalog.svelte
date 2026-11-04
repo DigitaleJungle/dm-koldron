@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
+  import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { errorMessage } from "$lib/api/storage";
+  import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { CATEGORIES, ENTRY_CATEGORIES, categoryById, entryCategory, filterOptions, selectRows } from "./catalog";
   import CatalogEntry from "./CatalogEntry.svelte";
@@ -23,6 +24,10 @@
 
   // Typed text filters at once; the address follows, so it's kept when coming back from an entry.
   let search = $state(page.url.searchParams.get("q") ?? "");
+  // Back (or Forward) can land on another list's address while the Catalog stays on screen: take its search again.
+  afterNavigate(({ type }) => {
+    if (type === "popstate") search = page.url.searchParams.get("q") ?? "";
+  });
   let rows = $state<CatalogRow[]>();
   let error = $state<string>();
 
@@ -58,8 +63,12 @@
     return `?${next}`;
   }
 
-  // Replaces the address, so Back leaves the Library; keeps focus in the search box while typing.
-  const go = (changes: Record<string, string | string[] | null>) => goto(href(changes), { replaceState: true, keepFocus: true, noScroll: true });
+  // Search, filters, sort and paging refine the list in place (no Back step), keeping focus in the search box.
+  const go = (changes: Record<string, string | string[] | null>) => gotoReplacing(href(changes), { keepFocus: true, noScroll: true });
+  function toPage(event: MouseEvent, to: number) {
+    event.preventDefault();
+    go({ page: String(to) });
+  }
 
   function toggleOption(filterId: string, option: string) {
     const current = chosen[filterId] ?? [];
@@ -74,26 +83,19 @@
   const entryHref = (row: CatalogRow) => href({ entry: `${row.pack}/${row.index}`, kind: category.id === "all" ? row.kind : null, page: String(pageNumber) });
   const anyFilter = $derived(Object.values(chosen).some((options) => options.length > 0));
   const clearFilters = () => go(Object.fromEntries(category.filters.map((f) => [`f.${f.id}`, null])));
-  // A category tab keeps nothing of the last one's search, filters or sort.
+  // A category tab starts without the last one's search, filters or sort; Back returns to them.
   function openCategory(event: MouseEvent, id: string) {
     event.preventDefault();
     search = "";
-    goto(`?tab=catalog&cat=${id}`, { replaceState: true });
+    goto(`?tab=catalog&cat=${id}`);
   }
 </script>
 
 {#if entry}
   {@const [pack, ...rest] = entry.split("/")}
-  <CatalogEntry
-    category={category.id === "all" ? entryCategory(params.get("kind") ?? "") : category}
-    backLabel={category.label}
-    {pack}
-    index={rest.join("/")}
-    {reloadKey}
-    backHref={href({ entry: null, kind: null, page: params.get("page") })}
-  />
+  <CatalogEntry category={category.id === "all" ? entryCategory(params.get("kind") ?? "") : category} {pack} index={rest.join("/")} {reloadKey} />
 {:else}
-  <div class="catalog">
+  <div class="catalog" use:keepScroll={{ id: "catalog", url: page.url.href, ready: !!rows }}>
     <nav class="categories" aria-label={t.categoriesLabel}>
       {#each CATEGORIES as cat (cat.id)}
         <a href="?tab=catalog&cat={cat.id}" onclick={(e) => openCategory(e, cat.id)} aria-current={cat.id === category.id ? "page" : undefined}>{cat.label}</a>
@@ -154,8 +156,8 @@
             <!-- The type is in the key: an index is only unique within its type (All has the shield spell and the shield). -->
             {#each shown as row (`${row.kind}/${row.pack}/${row.index}`)}
               <!-- The name is the link (keyboard); the whole row is clickable for the mouse. -->
-              <tr onclick={() => goto(entryHref(row), { replaceState: true })}>
-                <td class="name"><a href={entryHref(row)} data-sveltekit-replacestate onclick={(e) => e.stopPropagation()}>{row.name}</a></td>
+              <tr onclick={() => goto(entryHref(row))}>
+                <td class="name"><a href={entryHref(row)} onclick={(e) => e.stopPropagation()}>{row.name}</a></td>
                 {#each category.columns as col (col.id)}
                   <td>{col.value(row)}</td>
                 {/each}
@@ -168,11 +170,11 @@
 
       {#if pages > 1}
         <div class="paging">
-          <a class="btn" href={href({ page: String(pageNumber - 1) })} data-sveltekit-replacestate aria-label={t.previous} title={t.previous} aria-disabled={pageNumber === 1} class:disabled={pageNumber === 1}>
+          <a class="btn" href={href({ page: String(pageNumber - 1) })} onclick={(e) => toPage(e, pageNumber - 1)} aria-label={t.previous} title={t.previous} aria-disabled={pageNumber === 1} class:disabled={pageNumber === 1}>
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </a>
           <span role="status">{t.range((pageNumber - 1) * PAGE_SIZE + 1, Math.min(pageNumber * PAGE_SIZE, selected.length), selected.length)}</span>
-          <a class="btn" href={href({ page: String(pageNumber + 1) })} data-sveltekit-replacestate aria-label={t.next} title={t.next} aria-disabled={pageNumber === pages} class:disabled={pageNumber === pages}>
+          <a class="btn" href={href({ page: String(pageNumber + 1) })} onclick={(e) => toPage(e, pageNumber + 1)} aria-label={t.next} title={t.next} aria-disabled={pageNumber === pages} class:disabled={pageNumber === pages}>
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </a>
         </div>

@@ -4,6 +4,7 @@
   import { page } from "$app/state";
   import { rulesChapter, rulesContents, type Chapter, type ContentsChapter } from "$lib/api/rules";
   import { errorMessage } from "$lib/api/storage";
+  import { keepScroll, reachedByBack } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import RulesContents from "./RulesContents.svelte";
@@ -71,16 +72,17 @@
     else pane?.scrollTo({ top: 0 });
   }
 
+  // Coming back with Back, the pane returns to where it was (keepScroll) instead.
   $effect(() => {
-    if (chapter) scrollToSection(section);
+    if (chapter && !reachedByBack()) scrollToSection(section);
   });
 
-  // Replaces the address, so Back leaves the Library instead of stepping through chapters.
+  // Each chapter or section opened is a step that Back returns from.
   function open(c: ContentsChapter, sectionIndex?: string) {
     const query = new URLSearchParams({ pack: c.pack, chapter: c.index });
     if (sectionIndex) query.set("section", sectionIndex);
     if (`?${query}` === page.url.search) scrollToSection(sectionIndex ?? null); // same address: just scroll again
-    else goto(`?${query}`, { replaceState: true, keepFocus: true, noScroll: true });
+    else goto(`?${query}`, { keepFocus: true, noScroll: true });
   }
 </script>
 
@@ -100,7 +102,7 @@
         <RulesContents {contents} {current} {section} onopen={open} />
       </aside>
     {/if}
-    <main bind:this={pane}>
+    <main bind:this={pane} use:keepScroll={{ id: "rules", url: page.url.href, ready: !!chapter }}>
       {#if chapterError}
         <p class="message error" role="alert">{t.loadError(chapterError)}</p>
       {:else if !chapter}

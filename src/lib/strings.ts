@@ -78,5 +78,26 @@ export const strings = {
       noActive: "No active campaigns.",
       addError: (reason: string) => `Couldn't add the campaign. ${reason}`,
     },
+    about: {
+      title: "About",
+      version: (v: string) => `Version ${v}`,
+      licenses: "Licenses",
+      licenseList: [
+        { part: "Code", license: "Mozilla Public License 2.0 (MPL-2.0)" },
+        { part: "SRD pack", license: "Creative Commons Attribution 4.0 (CC-BY-4.0)" },
+        { part: "Tabler Icons", license: "MIT" },
+      ],
+      attributions: "Attributions",
+      // Word for word as the SRD 5.2.1 Legal Information requires; don't edit.
+      srdAttribution:
+        'This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.',
+      srdModified: "The SRD material was converted into the DM's Koldron pack format.",
+      srdApi: "SRD data from 5e-bits/5e-srd-api, MIT License, Copyright (c) 2018-2020 Adrian Padua, Christopher Ward.",
+      tabler: "Tabler Icons, MIT License, Copyright (c) 2020-2026 Paweł Kuna.",
+      texts: "License texts",
+      textNames: { app: "DM's Koldron", srd: "SRD pack", "tabler-icons": "Tabler Icons" } as Record<string, string>,
+      loading: "Loading license texts…",
+      loadError: (reason: string) => `Couldn't load the license texts. ${reason}`,
+    },
   },
 };

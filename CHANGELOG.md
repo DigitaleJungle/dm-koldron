@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.6] - 2026-11-04
+
+### Added
+
+- Settings → About: app version, licenses, attributions (including the SRD 5.2.1 statement) and the full license texts, read from the app's and each pack's license file.
+
+### Changed
+
+- The SRD pack license and the README now state that the SRD material was converted into the DM's Koldron pack format; the SRD pack license includes the 5e-srd-api MIT notice.
+- Removed a trademark from the app's package description.
+
 ## [0.0.5] - 2026-11-04
 
 ### Added

@@ -20,6 +20,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::about::license_texts,
             commands::campaigns::list_campaigns,
             commands::campaigns::create_campaign,
             commands::campaigns::open_campaign,

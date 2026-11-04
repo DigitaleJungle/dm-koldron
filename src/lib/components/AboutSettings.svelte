@@ -1,0 +1,113 @@
+<script lang="ts">
+  import { strings } from "$lib/strings";
+  import { licenseTexts, type LicenseText } from "$lib/api/about";
+  import { errorMessage } from "$lib/api/storage";
+  import { version } from "../../../package.json";
+
+  const t = strings.settings.about;
+  let texts = $state<LicenseText[]>();
+  let error = $state<string>();
+
+  $effect(() => {
+    licenseTexts()
+      .then((list) => (texts = list))
+      .catch((e) => (error = errorMessage(e)));
+  });
+</script>
+
+<section>
+  <h3>{strings.appName}</h3>
+  <p class="muted">{t.version(version)}</p>
+</section>
+
+<section>
+  <h3>{t.licenses}</h3>
+  <dl>
+    {#each t.licenseList as item (item.part)}
+      <dt>{item.part}</dt>
+      <dd>{item.license}</dd>
+    {/each}
+  </dl>
+</section>
+
+<section>
+  <h3>{t.attributions}</h3>
+  <p>{t.srdAttribution}</p>
+  <p>{t.srdModified}</p>
+  <p>{t.srdApi}</p>
+  <p>{t.tabler}</p>
+</section>
+
+<section>
+  <h3>{t.texts}</h3>
+  {#if error}
+    <p class="error" role="alert">{t.loadError(error)}</p>
+  {:else if !texts}
+    <p class="muted" role="status">{t.loading}</p>
+  {:else}
+    {#each texts as license (license.id)}
+      <details>
+        <summary>{t.textNames[license.id] ?? license.id}</summary>
+        <pre>{license.text}</pre>
+      </details>
+    {/each}
+  {/if}
+</section>
+
+<style>
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  h3 {
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+  }
+
+  p {
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    overflow-wrap: anywhere;
+  }
+
+  .muted {
+    color: var(--color-text-muted);
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-4);
+    font-size: var(--text-sm);
+  }
+
+  dt {
+    font-weight: var(--weight-medium);
+  }
+
+  summary {
+    padding: var(--space-1) 0;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+  }
+
+  pre {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-sunken);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .error {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+</style>

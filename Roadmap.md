@@ -9,6 +9,7 @@ Plugins:
 - Homebrew items
 - Player facing screen management
 - LegendKeeper intergration
-- AI Integration (taggin pdf's, enhanced search, Session planning etc...)
+- AI Integration (tagging pdf's, enhanced search, Session planning etc...)
 - Addressable RGB control
 - StreamDeck support
+- Importing pdf Rule books (AI to import into something usefull?)

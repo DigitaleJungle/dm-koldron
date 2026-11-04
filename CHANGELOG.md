@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0] - 2026-11-04
+
+### Added
+
+- Library → Rules: a contents column (chapters with collapsible sections, hideable) and a reading pane showing a whole chapter; clicking a section scrolls to it. Opened from the Start screen's Library button.
+- Rules text is rendered from the packs' Markdown with tables; raw HTML shows as text and links and images are left out.
+- Settings can open on a given section; the Library's empty state opens Settings → Rules.
+
+### Changed
+
+- Duplicate rules are no longer bundled by the pack loader; bundling moves to the Catalog.
+- Packs are read and validated once per run.
+
+### Fixed
+
+- A chapter that lists the same section twice now makes its pack invalid.
+
 ## [0.0.8] - 2026-11-04
 
 ### Added

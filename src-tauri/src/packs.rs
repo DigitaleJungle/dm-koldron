@@ -1,9 +1,9 @@
-//! Content packs (`packs/packs.md`): finding them, validating each completely, and bundling duplicate rules.
+//! Content packs (`packs/packs.md`): finding them and validating each completely.
 //! Game-rules interpretation (difficulty, stat blocks…) lives elsewhere; this only checks the declared schema.
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Component, Path};
@@ -209,8 +209,12 @@ fn check_entries(entries: &BTreeMap<String, Vec<Map<String, Value>>>) -> Vec<Str
             errors.push(format!("rules entry {}: \"subsections\" must be a list.", i + 1));
             continue;
         };
+        let mut listed = HashSet::new();
         for r in refs {
             match r.get("index").and_then(Value::as_str) {
+                Some(index) if !listed.insert(index) => {
+                    errors.push(format!("rules entry {}: section \"{index}\" is listed twice.", i + 1))
+                }
                 Some(index) if sections.contains(index) => {}
                 Some(index) => errors.push(format!("rules entry {}: no rule section \"{index}\" in this pack.", i + 1)),
                 None => errors.push(format!("rules entry {}: a subsection has no \"index\".", i + 1)),
@@ -235,118 +239,6 @@ fn check_budgets(list: &[Map<String, Value>], errors: &mut Vec<String>) {
             }
         }
     }
-}
-
-/// One entry in a pack.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct EntryRef {
-    pub pack: String,
-    pub kind: String,
-    pub index: String,
-}
-
-/// The least text two same-named entries must share to be one rule (see `similarity`).
-const SAME_RULE: u32 = 80;
-
-/// Groups of entries that are the same rule: the same name (ignoring [tags] and plurals) and at least 80% of the
-/// shorter text repeated in the other. The entries all stay in their packs; this only links them.
-// shortcut: unused until the Rules reader and search (TODO 5, 7) show bundles; remove the allow then.
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn bundles(packs: &[&Pack]) -> Vec<Vec<EntryRef>> {
-    let mut by_name: HashMap<String, Vec<(EntryRef, Vec<String>)>> = HashMap::new();
-    for pack in packs {
-        for (kind, list) in &pack.entries {
-            if kind == "rules" || kind == "encounter-budgets" {
-                continue; // chapters are containers, budgets aren't rules text
-            }
-            for entry in list {
-                let words = words_of(&entry_text(entry));
-                let (Some(index), Some(name)) = (text_field(entry, "index"), text_field(entry, "name")) else { continue };
-                if words.is_empty() {
-                    continue;
-                }
-                let r = EntryRef { pack: pack.manifest.id.clone(), kind: kind.clone(), index: index.into() };
-                by_name.entry(norm(name)).or_default().push((r, words));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    for members in by_name.values().filter(|m| m.len() > 1) {
-        // Connected groups: a links b and b links c bundles all three.
-        let mut group: Vec<usize> = (0..members.len()).collect();
-        for a in 0..members.len() {
-            for b in a + 1..members.len() {
-                if similarity(&members[a].1, &members[b].1) >= SAME_RULE {
-                    let (ga, gb) = (group[a], group[b]);
-                    group.iter_mut().filter(|g| **g == gb).for_each(|g| *g = ga);
-                }
-            }
-        }
-        let mut sets: BTreeMap<usize, Vec<EntryRef>> = BTreeMap::new();
-        for (i, (r, _)) in members.iter().enumerate() {
-            sets.entry(group[i]).or_default().push(r.clone());
-        }
-        out.extend(sets.into_values().filter(|s| s.len() > 1).map(|mut s| {
-            s.sort();
-            s
-        }));
-    }
-    out.sort();
-    out
-}
-
-fn entry_text(entry: &Map<String, Value>) -> String {
-    match entry.get("desc").or_else(|| entry.get("description")) {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Array(parts)) => parts.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "),
-        _ => String::new(),
-    }
-}
-
-/// Name for spotting duplicates: no [tag], no plural s, lowercase (as `docs/convert_srd_rules.py`'s `norm`).
-fn norm(name: &str) -> String {
-    let mut plain = String::new();
-    let mut in_tag = false;
-    for c in name.chars() {
-        match c {
-            '[' => in_tag = true,
-            ']' => in_tag = false,
-            '\'' => {}
-            _ if !in_tag => plain.extend(c.to_lowercase()),
-            _ => {}
-        }
-    }
-    let plain: String = plain.chars().map(|c| if c.is_ascii_lowercase() || c.is_ascii_digit() { c } else { ' ' }).collect();
-    let singular = |w: &str| {
-        let plural = w.len() > 3 && w.ends_with('s') && !w.ends_with("ss") && !w.ends_with("us");
-        if plural { w[..w.len() - 1].to_string() } else { w.to_string() }
-    };
-    plain.split_whitespace().map(singular).collect::<Vec<_>>().join(" ")
-}
-
-fn words_of(text: &str) -> Vec<String> {
-    text.to_lowercase()
-        .split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit()))
-        .filter(|w| !w.is_empty())
-        .map(String::from)
-        .collect()
-}
-
-/// How much of the shorter word list the other repeats in order, 0–100: the longest common word subsequence.
-fn similarity(a: &[String], b: &[String]) -> u32 {
-    if a.is_empty() || b.is_empty() {
-        return 0;
-    }
-    let mut row = vec![0u32; b.len() + 1];
-    for wa in a {
-        let mut diagonal = 0;
-        for (j, wb) in b.iter().enumerate() {
-            let up = row[j + 1];
-            row[j + 1] = if wa == wb { diagonal + 1 } else { up.max(row[j]) };
-            diagonal = up;
-        }
-    }
-    (100.0 * row[b.len()] as f64 / a.len().min(b.len()) as f64).round() as u32
 }
 
 #[cfg(test)]
@@ -391,19 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn srd_duplicates_bundle_by_name_and_text() {
-        let (packs, _) = real_packs();
-        let found = bundles(&packs.iter().collect::<Vec<_>>());
-        let has = |a: (&str, &str), b: (&str, &str)| {
-            found.iter().any(|g| [a, b].iter().all(|(k, i)| g.iter().any(|r| r.kind == *k && r.index == *i)))
-        };
-        assert!(has(("rule-sections", "blinded-condition"), ("conditions", "blinded")));
-        assert!(has(("rule-sections", "charmed-condition"), ("conditions", "charmed")));
-        assert!(!has(("rule-sections", "d20-tests"), ("rule-sections", "d20-test"))); // 33% alike
-        assert!(!has(("rule-sections", "curses"), ("rule-sections", "curses-and-magical-contagions")));
-    }
-
-    #[test]
     fn an_invalid_pack_is_reported_and_skipped_without_stopping_the_others() {
         let dir = temp_dir("mixed");
         let good = serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]);
@@ -432,7 +311,7 @@ mod tests {
         let dir = temp_dir("entries");
         let feats = serde_json::json!([{ "index": "a", "name": "A" }, { "index": "a" }, { "name": "C" }]);
         let monsters = serde_json::json!([{ "index": "m", "name": "M", "xp": 10 }]);
-        let rules = serde_json::json!([{ "index": "ch", "name": "Ch", "subsections": [{ "index": "elsewhere" }] }]);
+        let rules = serde_json::json!([{ "index": "ch", "name": "Ch", "subsections": [{ "index": "elsewhere" }, { "index": "elsewhere" }] }]);
         let budgets = serde_json::json!([{ "level": 1, "low": 1, "moderate": 2, "high": 3 }, { "level": 1, "low": -1, "moderate": 2, "high": 3 }]);
         let files = serde_json::json!([
             { "type": "feats", "path": "f.json" }, { "type": "monsters", "path": "m.json" },
@@ -441,7 +320,7 @@ mod tests {
         let (_, errors) = load_pack(&dir.join("p")).unwrap_err();
         let all = errors.join("\n");
         for want in ["index \"a\" is used twice", "feats entry 2: \"name\" is missing", "feats entry 3: \"index\" is missing",
-            "\"challenge_rating\" must be a number", "no rule section \"elsewhere\"", "level 1 is listed twice", "\"low\" must be a whole number"] {
+            "\"challenge_rating\" must be a number", "no rule section \"elsewhere\"", "section \"elsewhere\" is listed twice", "level 1 is listed twice", "\"low\" must be a whole number"] {
             assert!(all.contains(want), "missing \"{want}\" in:\n{all}");
         }
     }
@@ -462,19 +341,5 @@ mod tests {
         extra["homepage"] = "x".into();
         write_pack(&dir, "q", extra, &[]);
         assert!(load_pack(&dir.join("q")).unwrap_err().1[0].contains("homepage"));
-    }
-
-    #[test]
-    fn norm_and_similarity_match_the_conversion_script() {
-        assert_eq!(norm("Blinded [Condition]"), "blinded");
-        assert_eq!(norm("Breaking Objects"), "breaking object");
-        assert_eq!(norm("Bonus Actions"), "bonus action");
-        assert_eq!(norm("Grass"), "grass");
-        assert_eq!(norm("Creature's Status"), "creature status");
-        let w = |s: &str| words_of(s);
-        assert_eq!(similarity(&w("a b c d"), &w("x a b y c d z")), 100);
-        assert_eq!(similarity(&w("a b c d"), &w("a b")), 100);
-        assert_eq!(similarity(&w("a b c d"), &w("a x c y")), 50);
-        assert_eq!(similarity(&w(""), &w("a")), 0);
     }
 }

@@ -44,10 +44,8 @@ Extra checks:
 - **`rule-sections`**: `index`, `name` and `desc` (Markdown).
 - **`encounter-budgets`**: XP per character by level, no `index` or `name`: `{ "level": 1, "low": 50, "moderate": 75, "high": 100 }`, with whole numbers and each level once.
 
+Markdown is CommonMark with tables. The reader shows the chapter and section names itself, so a `desc` that starts with a heading repeating the name has that heading left out. Raw HTML is shown as text, and links and images are left out (their text stays).
+
 ## Validation
 
 A pack is checked completely before any of it is used. A pack with any error isn't loaded at all; Settings → Rules lists it with its errors, and the other packs still load.
-
-## Duplicates
-
-The same rule often appears more than once, e.g. a Rules Glossary term and a condition entry. Entries are bundled as one rule when their names match (ignoring `[tags]`, case and a plural *s*) and at least 80% of the shorter text appears, in order, in the other. Nothing is removed from the data; chapters and encounter budgets are never bundled.

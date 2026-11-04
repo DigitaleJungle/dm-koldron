@@ -52,6 +52,19 @@ export const strings = {
     deleteError: (name: string, reason: string) => `Couldn't delete ${name}. ${reason}`,
   },
 
+  library: {
+    title: "Library",
+    back: "Back",
+    contents: "Contents",
+    hideContents: "Hide contents",
+    showContents: "Show contents",
+    showSections: (chapter: string) => `Sections of ${chapter}`,
+    loading: "Loading…",
+    empty: "No rules loaded",
+    openSettings: "Rules settings",
+    loadError: (reason: string) => `Couldn't load the rules. ${reason}`,
+  },
+
   settings: {
     title: "Settings",
     open: "Settings",

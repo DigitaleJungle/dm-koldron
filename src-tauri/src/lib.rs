@@ -32,6 +32,8 @@ pub fn run() {
             commands::campaigns::set_campaign_picture,
             commands::campaigns::remove_campaign_picture,
             commands::packs::list_packs,
+            commands::rules::rules_contents,
+            commands::rules::rules_chapter,
             commands::settings::get_settings,
             commands::settings::set_settings,
         ])

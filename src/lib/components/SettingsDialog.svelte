@@ -1,3 +1,7 @@
+<script lang="ts" module>
+  export type SectionId = "ui" | "campaigns" | "rules" | "about";
+</script>
+
 <script lang="ts">
   import { strings } from "$lib/strings";
   import { theme, chooseTheme, chooseAnimations } from "$lib/stores/theme.svelte";
@@ -6,17 +10,16 @@
   import AboutSettings from "$lib/components/AboutSettings.svelte";
   import RulesSettings from "$lib/components/RulesSettings.svelte";
 
-  let { open = $bindable(false) }: { open?: boolean } = $props();
+  let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
 
   const t = strings.settings;
-  const sections = [
+  const sections: { id: SectionId; label: string }[] = [
     { id: "ui", label: t.ui.title },
     { id: "campaigns", label: t.campaigns.title },
     { id: "rules", label: t.rules.title },
     { id: "about", label: t.about.title },
-  ] as const;
-  type SectionId = (typeof sections)[number]["id"];
+  ];
   let active = $state<SectionId>("ui");
 
   // Vertical tabs: Up/Down (and Home/End) move between sections; only the selected tab is in the Tab order.
@@ -48,7 +51,10 @@
 
   // Native modal dialog: keeps focus inside, closes on Escape, returns focus to the opener.
   $effect(() => {
-    if (open && !dialog?.open) dialog?.showModal();
+    if (open && !dialog?.open) {
+      if (section) active = section;
+      dialog?.showModal();
+    }
     if (!open && dialog?.open) dialog.close();
   });
 

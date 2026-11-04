@@ -1,6 +1,6 @@
 [package]
 name = "dm-koldron"
-version = "0.0.8"
+version = "0.1.0"
 description = "Desktop companion for Dungeon Masters running in-person sessions"
 authors = ["David Delanoye"]
 license = "MPL-2.0"
@@ -19,6 +19,8 @@ tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 # Shrinks a campaign picture; only the formats the picture picker offers.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+# Renders rules text (Markdown) to HTML for the Rules reader; raw HTML in it is escaped.
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

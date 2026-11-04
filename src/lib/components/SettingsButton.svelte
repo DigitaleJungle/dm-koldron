@@ -1,15 +1,16 @@
 <script lang="ts">
   import { strings } from "$lib/strings";
-  import SettingsDialog from "$lib/components/SettingsDialog.svelte";
+  import SettingsDialog, { type SectionId } from "$lib/components/SettingsDialog.svelte";
 
-  let { open = $bindable(false) }: { open?: boolean } = $props();
+  // `section`: the one to show when it opens; the gear keeps the last one shown.
+  let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
 </script>
 
 <button class="settings" aria-label={strings.settings.open} title={strings.settings.open} aria-haspopup="dialog" onclick={() => (open = true)}>
   <i class="ti ti-settings" aria-hidden="true"></i>
 </button>
 
-<SettingsDialog bind:open />
+<SettingsDialog bind:open {section} />
 
 <style>
   .settings {

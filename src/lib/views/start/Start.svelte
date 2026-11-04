@@ -54,11 +54,10 @@
 
 <div class="start">
   <nav class="top-links">
-    <!-- Inert until the Library is built. -->
-    <button class="btn" disabled>
+    <a class="btn" href="/library">
       <i class="ti ti-book" aria-hidden="true"></i>
       {t.library}
-    </button>
+    </a>
   </nav>
 
   <main>
@@ -145,6 +144,11 @@
     display: flex;
     justify-content: flex-end;
     padding: var(--space-3) var(--space-6);
+  }
+
+  .top-links .btn {
+    color: var(--color-text);
+    text-decoration: none;
   }
 
   main {

@@ -1,3 +1,4 @@
+mod bundles;
 mod commands;
 mod packs;
 mod storage;

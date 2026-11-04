@@ -10,12 +10,10 @@ export const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : `+${n}`);
 
 // Spells
 
-/** "Level 3 Evocation (Sorcerer, Wizard)", "Evocation Cantrip (Wizard)". */
+/** "Level 3 Evocation", "Evocation Cantrip"; the page adds the classes as references. */
 export function spellHeader(spell: Record<string, any>): string {
   const school = spell.school?.name ?? "";
-  const kind = spell.level === 0 ? t.cantrip(school) : t.spellLevel(spell.level, school);
-  const classes = names(spell.classes);
-  return classes.length ? `${kind} (${classes.join(", ")})` : kind;
+  return spell.level === 0 ? t.cantrip(school) : t.spellLevel(spell.level, school);
 }
 
 export const castingTime = (spell: Record<string, any>) => (spell.ritual ? t.orRitual(spell.casting_time ?? "") : (spell.casting_time ?? ""));
@@ -60,8 +58,6 @@ export function proficiencies(m: Record<string, any>, kind: "Saving Throw" | "Sk
 
 const words = (list: unknown) => (Array.isArray(list) ? list.map((v) => (typeof v === "string" ? title(v) : v?.name)).filter(Boolean) : []);
 export const damages = (list: unknown) => words(list).join(", ");
-/** "Fire; Charmed, Frightened": damage immunities, then condition immunities. */
-export const immunities = (m: Record<string, any>) => [words(m.damage_immunities).join(", "), names(m.condition_immunities).join(", ")].filter(Boolean).join("; ");
 
 /** "Darkvision 120 ft., Blindsight 60 ft.; Passive Perception 23". */
 export function senses(s: Record<string, any> | undefined): string {

@@ -85,7 +85,7 @@
   </header>
 
   {#if tab === "catalog"}
-    <Catalog {reloadKey} />
+    <Catalog {reloadKey} onopensettings={openRulesSettings} />
   {:else}
     <RulesReader {collapsed} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} />
   {/if}

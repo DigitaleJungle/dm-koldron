@@ -1,23 +1,25 @@
 <script lang="ts">
   import type { CatalogEntry } from "$lib/api/catalog";
   import { strings } from "$lib/strings";
-  import { ABILITIES, ACTION_LISTS, challenge, damages, hitPoints, immunities, modifier, monsterHeader, proficiencies, senses, signed, speed } from "./format";
+  import RefLink from "../RefLink.svelte";
+  import { ABILITIES, ACTION_LISTS, challenge, damages, hitPoints, modifier, monsterHeader, proficiencies, senses, signed, speed } from "./format";
 
   let { loaded }: { loaded: CatalogEntry } = $props();
   const t = strings.entry;
   const m = $derived(loaded.entry);
-  // Lines with nothing to say are left out.
+  // Lines with nothing to say are left out. Condition immunities are references after the damage immunities.
+  type Line = { label: string; value: string; refs?: { index: string; name: string; url?: string }[] };
   const lines = $derived(
-    [
-      [t.savingThrows, proficiencies(m, "Saving Throw")],
-      [t.skills, proficiencies(m, "Skill")],
-      [t.vulnerabilities, damages(m.damage_vulnerabilities)],
-      [t.resistances, damages(m.damage_resistances)],
-      [t.immunities, immunities(m)],
-      [t.senses, senses(m.senses)],
-      [t.languages, m.languages ?? ""],
-      [t.cr, challenge(m)],
-    ].filter(([, value]) => value),
+    ([
+      { label: t.savingThrows, value: proficiencies(m, "Saving Throw") },
+      { label: t.skills, value: proficiencies(m, "Skill") },
+      { label: t.vulnerabilities, value: damages(m.damage_vulnerabilities) },
+      { label: t.resistances, value: damages(m.damage_resistances) },
+      { label: t.immunities, value: damages(m.damage_immunities), refs: m.condition_immunities ?? [] },
+      { label: t.senses, value: senses(m.senses) },
+      { label: t.languages, value: m.languages ?? "" },
+      { label: t.cr, value: challenge(m) },
+    ] as Line[]).filter((line) => line.value || line.refs?.length),
   );
 </script>
 
@@ -44,8 +46,12 @@
 </table>
 
 <dl class="facts">
-  {#each lines as [label, value] (label)}
-    <dt>{label}</dt><dd>{value}</dd>
+  {#each lines as line (line.label)}
+    <dt>{line.label}</dt>
+    <dd>
+      {line.value}{#if line.value && line.refs?.length};{" "}{/if}
+      {#each line.refs ?? [] as ref, i (ref.index)}{#if i > 0},{" "}{/if}<RefLink {ref} pack={loaded.pack} />{/each}
+    </dd>
   {/each}
 </dl>
 

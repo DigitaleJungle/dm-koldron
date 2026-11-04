@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { challenge, components, duration, immunities, levelColumns, modifier, monsterHeader, proficiencies, senses, signed, speed, spellHeader } from "./format";
+import { challenge, components, damages, duration, levelColumns, modifier, monsterHeader, proficiencies, senses, signed, speed, spellHeader } from "./format";
 
 describe("spells", () => {
   it("header, components and duration", () => {
-    expect(spellHeader({ level: 3, school: { name: "Evocation" }, classes: [{ name: "Sorcerer" }, { name: "Wizard" }] })).toBe("Level 3 Evocation (Sorcerer, Wizard)");
+    expect(spellHeader({ level: 3, school: { name: "Evocation" }, classes: [{ name: "Sorcerer" }] })).toBe("Level 3 Evocation");
     expect(spellHeader({ level: 0, school: { name: "Evocation" }, classes: [] })).toBe("Evocation Cantrip");
     expect(components({ components: ["V", "S", "M"], material: "a ball of bat guano" })).toBe("V, S, M (a ball of bat guano)");
     expect(components({ components: ["V"], material: "ignored" })).toBe("V");
@@ -25,8 +25,8 @@ describe("monsters", () => {
   });
 
   it("immunities, senses and challenge", () => {
-    expect(immunities({ damage_immunities: ["fire"], condition_immunities: [{ name: "Charmed" }] })).toBe("Fire; Charmed");
-    expect(immunities({ damage_immunities: [], condition_immunities: [] })).toBe("");
+    expect(damages(["fire", "cold"])).toBe("Fire, Cold");
+    expect(damages(undefined)).toBe("");
     expect(senses({ darkvision: "120 ft.", passive_perception: 23 })).toBe("Darkvision 120 ft.; Passive Perception 23");
     expect(challenge({ challenge_rating: 0.5, xp: 1800, proficiency_bonus: 2 })).toMatch(/^1\/2 \(XP 1.800|^1\/2 \(XP 1,800|^1\/2 \(XP 1800/);
   });

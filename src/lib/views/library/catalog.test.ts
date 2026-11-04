@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
-import { categoryById, crText, filterOptions, rarities, selectRows } from "./catalog";
+import { categoryById, crText, entryAddress, filterOptions, rarities, refKind, sectionAddress, selectRows } from "./catalog";
 
-const row = (name: string, fields: Record<string, any>, source = "SRD 5.2.1", kind = "spells"): CatalogRow => ({ kind, pack: "srd", source, index: name.toLowerCase(), name, fields });
+const row = (name: string, fields: Record<string, any>, source = "SRD 5.2.1", kind = "spells"): CatalogRow => ({ kind, pack: "srd", source, index: name.toLowerCase(), name, fields, others: [] });
 const spells = categoryById("spells");
 const rows = [
   row("Fireball", { level: 3, school: { name: "Evocation" }, classes: [{ name: "Wizard" }, { name: "Sorcerer" }] }),
@@ -67,4 +67,12 @@ it("All lists every type with its category, filterable by it", () => {
   expect(all.columns[0].value(mixed[1])).toBe("Monsters");
   expect(filterOptions(mixed, all.filters[0])).toEqual(["Spells", "Monsters", "Conditions"]);
   expect(names(selectRows(mixed, all, { ...query, filters: { category: ["Monsters", "Conditions"] } }))).toEqual(["Blinded", "Ogre"]);
+});
+
+it("reads where a reference points, and builds Library addresses", () => {
+  expect(refKind("/api/2024/conditions/blinded")).toBe("conditions");
+  expect(refKind("/api/2024/ability-scores/str")).toBeNull();
+  expect(refKind(undefined)).toBeNull();
+  expect(entryAddress("feats", "srd", "alert")).toBe("/library?tab=catalog&cat=feats&entry=srd%2Falert");
+  expect(sectionAddress("srd", "rules-glossary", "blinded-condition")).toBe("/library?pack=srd&chapter=rules-glossary&section=blinded-condition");
 });

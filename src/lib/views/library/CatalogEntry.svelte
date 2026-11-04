@@ -2,7 +2,9 @@
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
-  import type { Category } from "./catalog";
+  import { entryAddress, entryCategory, entryFacts, sectionAddress, type Category } from "./catalog";
+  import type { Also } from "$lib/api/catalog";
+  import BackgroundDetails from "./entries/BackgroundDetails.svelte";
   import ClassDetails from "./entries/ClassDetails.svelte";
   import MonsterBlock from "./entries/MonsterBlock.svelte";
   import SpeciesDetails from "./entries/SpeciesDetails.svelte";
@@ -33,10 +35,12 @@
     return () => (stale = true);
   });
 
-  // The same facts as the row's columns; the whole entry's fields stand in for the row's.
-  const facts = $derived(
-    loaded ? category.columns.map((col) => ({ label: col.label, value: col.value({ ...loaded!, kind: category.id, index, name: "", fields: loaded!.entry }) })) : [],
-  );
+  const facts = $derived(loaded ? entryFacts(category, loaded) : []);
+
+  // A rule section opens in the Rules tab; another entry on its own page. The pack shows when it's another one.
+  const alsoHref = (a: Also) => (a.chapterIndex ? sectionAddress(a.pack, a.chapterIndex, a.index) : entryAddress(a.kind, a.pack, a.index));
+  const alsoLabel = (a: Also) =>
+    `${a.chapterName ?? entryCategory(a.kind).label} → ${a.name}${a.pack !== loaded?.pack ? ` (${a.source})` : ""}`;
 </script>
 
 <div class="entry">
@@ -53,6 +57,12 @@
     <article class="prose">
       <h1>{loaded.entry.name}</h1>
       <p class="source">{loaded.source}</p>
+      {#if loaded.also.length}
+        <p class="also">
+          {strings.entry.alsoIn}
+          {#each loaded.also as a, i (`${a.kind}/${a.pack}/${a.index}`)}{#if i > 0},{" "}{/if}<a href={alsoHref(a)} data-sveltekit-replacestate>{alsoLabel(a)}</a>{/each}
+        </p>
+      {/if}
       {#if category.id === "spells"}
         <SpellDetails {loaded} />
       {:else if category.id === "monsters"}
@@ -61,6 +71,8 @@
         <ClassDetails {loaded} />
       {:else if category.id === "species"}
         <SpeciesDetails {loaded} />
+      {:else if category.id === "backgrounds"}
+        <BackgroundDetails {loaded} />
       {:else}
         {#if facts.length}
           <dl class="facts">
@@ -98,6 +110,11 @@
 
   .prose {
     width: 100%;
+  }
+
+  .also {
+    margin-top: calc(-1 * var(--space-2));
+    font-size: var(--text-sm);
   }
 
   .source {

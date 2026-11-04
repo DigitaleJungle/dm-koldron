@@ -131,7 +131,15 @@ export const strings = {
     loadError: (reason: string) => `Couldn't load the catalog. ${reason}`,
   },
 
+  preview: {
+    close: "Close",
+    loading: "Loading…",
+    open: "Open entry",
+  },
+
   entry: {
+    alsoIn: "Also in:",
+    feat: "Feat",
     cantrip: (school: string) => `${school} Cantrip`,
     spellLevel: (level: number, school: string) => `Level ${level} ${school}`,
     orRitual: (time: string) => `${time} or Ritual`,

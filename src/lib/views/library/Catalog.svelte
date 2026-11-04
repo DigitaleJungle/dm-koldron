@@ -7,7 +7,7 @@
   import { CATEGORIES, ENTRY_CATEGORIES, categoryById, entryCategory, filterOptions, selectRows } from "./catalog";
   import CatalogEntry from "./CatalogEntry.svelte";
 
-  let { reloadKey }: { reloadKey: number } = $props();
+  let { reloadKey, onopensettings }: { reloadKey: number; onopensettings: () => void } = $props();
 
   const t = strings.catalog;
   const PAGE_SIZE = 50;
@@ -124,7 +124,15 @@
     {:else if !rows}
       <p class="message" role="status">{t.loading}</p>
     {:else if rows.length === 0}
-      <p class="message">{t.empty(category.label)}</p>
+      {#if category.id === "all"}
+        <!-- Nothing in any category: no pack with entries is on. -->
+        <div class="empty">
+          <h1>{strings.library.empty}</h1>
+          <button class="btn btn-primary" onclick={onopensettings}>{strings.library.openSettings}</button>
+        </div>
+      {:else}
+        <p class="message">{t.empty(category.label)}</p>
+      {/if}
     {:else if selected.length === 0}
       <p class="message">{t.noMatches}</p>
     {:else}
@@ -151,7 +159,7 @@
                 {#each category.columns as col (col.id)}
                   <td>{col.value(row)}</td>
                 {/each}
-                <td class="muted">{row.source}</td>
+                <td class="muted">{[row.source, ...row.others.map((o) => o.source)].join(", ")}</td>
               </tr>
             {/each}
           </tbody>
@@ -325,6 +333,18 @@
 
   .message {
     color: var(--color-text-muted);
+  }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .empty h1 {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
   }
 
   .message.error {

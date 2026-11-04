@@ -1,7 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/** Mirrors `Also`: another place with the same rule. A rule section has its chapter, to open it in the Rules tab. */
+export type Also = {
+  kind: string;
+  pack: string;
+  source: string;
+  index: string;
+  name: string;
+  chapterIndex: string | null;
+  chapterName: string | null;
+};
+
 /** Mirrors `CatalogRow` in src-tauri/src/commands/catalog.rs: `fields` holds only the requested fields the entry has. */
-export type CatalogRow = { kind: string; pack: string; source: string; index: string; name: string; fields: Record<string, any> };
+export type CatalogRow = {
+  kind: string;
+  pack: string;
+  source: string;
+  index: string;
+  name: string;
+  fields: Record<string, any>;
+  /** The same entry in other packs, shown as this one row. */
+  others: Also[];
+};
 
 /** Mirrors `CatalogEntry`: the whole entry, and its description as HTML (raw HTML, links and images removed). */
 export type CatalogEntry = {
@@ -13,6 +33,8 @@ export type CatalogEntry = {
   parts: Record<string, string>;
   /** A class's levels and features, a species' traits (same pack), with their description as HTML. */
   related: { kind: string; entry: Record<string, any>; html: string }[];
+  /** The same rule elsewhere: another Catalog entry or a rule section, any switched-on pack. */
+  also: Also[];
 };
 
 /** One category's entries from the switched-on packs. Rejects with a StorageError. */

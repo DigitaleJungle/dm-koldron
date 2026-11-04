@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3] - 2026-11-04
+
+### Added
+
+- Catalog preview cards: a spell's classes, a monster's condition immunities and a background's feat open a card with the entry's facts and text, and Open entry; Escape, ✕ or clicking outside closes it.
+- Duplicates are bundled in the Catalog: the same entry in two packs is one row listing both sources, and an entry page shows Also in: with links to the same rule elsewhere (a condition's Rules Glossary term opens in the Rules tab).
+- A background entry page (ability scores, feat, proficiencies).
+- The Catalog says No rules loaded, with a button to Settings → Rules, when no pack with entries is on.
+
 ## [0.1.2] - 2026-11-04
 
 ### Added

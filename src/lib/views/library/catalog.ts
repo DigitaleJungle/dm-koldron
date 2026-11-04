@@ -1,6 +1,6 @@
 // What the Catalog shows per category (docs/SPEC.md): the fields it loads, its columns and its filters, and how rows
 // are searched, filtered and sorted. Values come from the 5e-database fields of the entries.
-import type { CatalogRow } from "$lib/api/catalog";
+import type { CatalogEntry, CatalogRow } from "$lib/api/catalog";
 import { strings } from "$lib/strings";
 
 export type Column = {
@@ -200,3 +200,20 @@ export function selectRows(rows: CatalogRow[], category: Category, query: Query)
   const sign = query.desc ? -1 : 1;
   return rows.filter(matches).sort((a, b) => sign * compare(a, b) || byName(a, b));
 }
+
+/** An entry page's facts: the same as its row's columns, with the whole entry standing in for the row's fields. */
+export function entryFacts(category: Category, loaded: CatalogEntry): { label: string; value: string }[] {
+  const row: CatalogRow = { kind: category.id, pack: loaded.pack, source: loaded.source, index: loaded.entry.index, name: loaded.entry.name, fields: loaded.entry, others: [] };
+  return category.columns.map((col) => ({ label: col.label, value: col.value(row) }));
+}
+
+/** The Catalog type a 5e-database reference points to ("/api/2024/conditions/blinded" → "conditions"), if it has a tab. */
+export function refKind(url: unknown): string | null {
+  const kind = typeof url === "string" ? url.split("/").filter(Boolean).at(-2) : undefined;
+  return kind && ENTRY_CATEGORIES.some((cat) => cat.id === kind) ? kind : null;
+}
+
+/** Library addresses: a Catalog entry page, and a rule section in the Rules tab. */
+export const entryAddress = (kind: string, pack: string, index: string) =>
+  `/library?${new URLSearchParams({ tab: "catalog", cat: kind, entry: `${pack}/${index}` })}`;
+export const sectionAddress = (pack: string, chapter: string, section: string) => `/library?${new URLSearchParams({ pack, chapter, section })}`;

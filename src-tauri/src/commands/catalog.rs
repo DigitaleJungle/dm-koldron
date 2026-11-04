@@ -3,11 +3,12 @@
 
 use crate::commands::packs::{disabled, enabled, loaded};
 use crate::commands::rules::render;
+use crate::bundles::{groups, norm};
 use crate::packs::Pack;
 use crate::storage::StorageError;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use tauri::AppHandle;
 
 /// The entry types the Catalog has a tab for.
@@ -24,6 +25,21 @@ pub struct CatalogRow {
     pub name: String,
     /// Only the requested fields the entry has.
     pub fields: Map<String, Value>,
+    /// The same entry in other packs (same name, at least 80% the same text), shown as this one row.
+    pub others: Vec<Also>,
+}
+
+/// Another place with the same rule: a Catalog entry, or a rule section (then with its chapter, to open it in Rules).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Also {
+    pub kind: String,
+    pub pack: String,
+    pub source: String,
+    pub index: String,
+    pub name: String,
+    pub chapter_index: Option<String>,
+    pub chapter_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -37,6 +53,8 @@ pub struct CatalogEntry {
     pub parts: BTreeMap<String, String>,
     /// Entries of the same pack the page shows: a class's levels and features, a species' traits.
     pub related: Vec<Related>,
+    /// The same rule elsewhere: another Catalog entry or a rule section, in any switched-on pack.
+    pub also: Vec<Also>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -64,19 +82,85 @@ fn list<'a>(pack: &'a Pack, kind: &str) -> &'a [Map<String, Value>] {
 
 pub fn rows(packs: &[&Pack], kind: &str, fields: &[String]) -> Result<Vec<CatalogRow>, StorageError> {
     check_kind(kind)?;
-    Ok(packs
+    let all: Vec<(&Pack, &Map<String, Value>)> = packs.iter().flat_map(|p| list(p, kind).iter().map(move |e| (*p, e))).collect();
+    // Bundled entries become one row: the first (in pack order) keeps the others.
+    let mut keeper: Vec<usize> = (0..all.len()).collect();
+    let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, (_, e)) in all.iter().enumerate() {
+        by_name.entry(norm(text(e, "name"))).or_default().push(i);
+    }
+    for same_name in by_name.values().filter(|ids| ids.len() > 1) {
+        let texts: Vec<String> = same_name.iter().map(|&i| description_text(all[i].1)).collect();
+        let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+        for (k, &i) in same_name.iter().enumerate() {
+            keeper[i] = same_name[group[k]];
+        }
+    }
+    let mut others: HashMap<usize, Vec<Also>> = HashMap::new();
+    for (i, &k) in keeper.iter().enumerate().filter(|(i, k)| *i != **k) {
+        others.entry(k).or_default().push(also(all[i].0, kind, all[i].1));
+    }
+    Ok(all
         .iter()
-        .flat_map(|pack| {
-            list(pack, kind).iter().map(|entry| CatalogRow {
-                kind: kind.into(),
-                pack: pack.manifest.id.clone(),
-                source: pack.manifest.name.clone(),
-                index: text(entry, "index").into(),
-                name: text(entry, "name").into(),
-                fields: fields.iter().filter_map(|f| entry.get(f).map(|v| (f.clone(), v.clone()))).collect(),
-            })
+        .enumerate()
+        .filter(|(i, _)| keeper[*i] == *i)
+        .map(|(i, (pack, entry))| CatalogRow {
+            kind: kind.into(),
+            pack: pack.manifest.id.clone(),
+            source: pack.manifest.name.clone(),
+            index: text(entry, "index").into(),
+            name: text(entry, "name").into(),
+            fields: fields.iter().filter_map(|f| entry.get(f).map(|v| (f.clone(), v.clone()))).collect(),
+            others: others.remove(&i).unwrap_or_default(),
         })
         .collect())
+}
+
+fn also(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Also {
+    let index = text(entry, "index");
+    // A rule section opens in the Rules tab, in the chapter that lists it.
+    let chapter = if kind == "rule-sections" {
+        list(pack, "rules").iter().find(|c| {
+            c.get("subsections").and_then(Value::as_array).is_some_and(|refs| refs.iter().any(|r| ref_index(Some(r)) == index))
+        })
+    } else {
+        None
+    };
+    Also {
+        kind: kind.into(),
+        pack: pack.manifest.id.clone(),
+        source: pack.manifest.name.clone(),
+        index: index.into(),
+        name: text(entry, "name").into(),
+        chapter_index: chapter.map(|c| text(c, "index").into()),
+        chapter_name: chapter.map(|c| text(c, "name").into()),
+    }
+}
+
+/// The other places with the same rule as this entry: same-named Catalog entries and rule sections, any pack.
+fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>) -> Vec<Also> {
+    let name = norm(text(entry, "name"));
+    let candidates: Vec<(&Pack, &str, &Map<String, Value>)> = KINDS
+        .iter()
+        .copied()
+        .chain(["rule-sections"])
+        .flat_map(|k| packs.iter().flat_map(move |p| list(p, k).iter().map(move |e| (*p, k, e))))
+        .filter(|(_, _, e)| norm(text(e, "name")) == name)
+        .collect();
+    let is_me = |(p, k, e): &(&Pack, &str, &Map<String, Value>)| {
+        p.manifest.id == pack.manifest.id && *k == kind && text(e, "index") == text(entry, "index")
+    };
+    let Some(me) = candidates.iter().position(is_me) else { return Vec::new() };
+    let texts: Vec<String> = candidates.iter().map(|(_, _, e)| description_text(e)).collect();
+    let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+    candidates
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != me && group[*i] == group[me])
+        .map(|(_, (p, k, e))| also(p, k, e))
+        // A rule section no chapter lists can't be opened in the Rules tab, so it isn't offered.
+        .filter(|a| a.kind != "rule-sections" || a.chapter_index.is_some())
+        .collect()
 }
 
 pub fn entry(packs: &[&Pack], kind: &str, pack: &str, index: &str) -> Result<CatalogEntry, StorageError> {
@@ -90,17 +174,21 @@ pub fn entry(packs: &[&Pack], kind: &str, pack: &str, index: &str) -> Result<Cat
         html: description_html(found),
         parts: parts(found),
         related: related(found_pack, kind, found),
+        also: also_for(packs, kind, found_pack, found),
         entry: found.clone(),
     })
 }
 
-fn description_html(entry: &Map<String, Value>) -> String {
-    let description = match entry.get("description").or_else(|| entry.get("desc")) {
+fn description_text(entry: &Map<String, Value>) -> String {
+    match entry.get("description").or_else(|| entry.get("desc")) {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(parts)) => parts.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"),
         _ => String::new(),
-    };
-    render(&paragraphs(&description), text(entry, "name"))
+    }
+}
+
+fn description_html(entry: &Map<String, Value>) -> String {
+    render(&paragraphs(&description_text(entry)), text(entry, "name"))
 }
 
 fn parts(entry: &Map<String, Value>) -> BTreeMap<String, String> {
@@ -243,6 +331,46 @@ mod tests {
         let dragonborn = entry(&on, "species", "srd", "dragonborn").unwrap();
         assert!(!dragonborn.related.is_empty() && dragonborn.related.iter().all(|r| r.kind == "traits" && !r.html.is_empty()));
         assert!(entry(&on, "feats", "srd", "alert").unwrap().related.is_empty());
+    }
+
+    #[test]
+    fn a_condition_is_also_its_glossary_term_but_a_name_collision_is_not() {
+        let packs = srd();
+        let on: Vec<_> = packs.iter().collect();
+        let blinded = entry(&on, "conditions", "srd", "blinded").unwrap();
+        let term = blinded.also.iter().find(|a| a.kind == "rule-sections").expect("the glossary term");
+        assert_eq!((term.index.as_str(), term.chapter_index.as_deref()), ("blinded-condition", Some("rules-glossary")));
+        assert!(blinded.also.iter().all(|a| a.kind != "rule-sections" || a.chapter_index.is_some()));
+        let darkness = entry(&on, "spells", "srd", "darkness").unwrap();
+        assert!(darkness.also.is_empty(), "the Darkness spell isn't the Darkness rule: {:?}", darkness.also);
+    }
+
+    #[test]
+    fn the_srd_alone_has_no_rows_merged() {
+        let packs = srd();
+        let on: Vec<_> = packs.iter().collect();
+        for kind in KINDS {
+            let merged: Vec<_> = rows(&on, kind, &[]).unwrap().into_iter().filter(|r| !r.others.is_empty()).map(|r| r.name).collect();
+            assert!(merged.is_empty(), "{kind}: {merged:?}");
+        }
+    }
+
+    #[test]
+    fn the_same_entry_in_two_packs_is_one_row() {
+        let dir = std::env::temp_dir().join(format!("koldron-catalog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for (id, desc) in [("a", "You see nothing at all in the dark."), ("b", "You see nothing at all in the dark, really.")] {
+            std::fs::create_dir_all(dir.join(id)).unwrap();
+            let manifest = serde_json::json!({ "schema": 1, "id": id, "name": id.to_uppercase(), "version": "1", "license": "MIT",
+                "attribution": "", "ruleset": "2024", "files": [{ "type": "conditions", "path": "c.json" }] });
+            std::fs::write(dir.join(id).join("pack.json"), manifest.to_string()).unwrap();
+            let data = serde_json::json!([{ "index": "blinded", "name": "Blinded", "description": desc }, { "index": id, "name": id, "description": "x" }]);
+            std::fs::write(dir.join(id).join("c.json"), data.to_string()).unwrap();
+        }
+        let packs = load_dir(&dir).unwrap().0;
+        let list = rows(&packs.iter().collect::<Vec<_>>(), "conditions", &[]).unwrap();
+        assert_eq!(list.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Blinded", "a", "b"]);
+        assert_eq!(list[0].others.iter().map(|o| o.source.as_str()).collect::<Vec<_>>(), ["B"]);
     }
 
     #[test]

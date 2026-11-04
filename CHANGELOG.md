@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.5] - 2026-11-04
+
+### Added
+
+- Start screen: campaign tiles (most recently opened first), + New campaign, and the Settings gear and version; the Library button and search bar are placeholders for now.
+- Settings dialog: UI (Appearance and Animations, saved app-wide and applied from the first paint) and Campaigns (add, rename inline, picture, archive / restore, delete permanently after a confirmation).
+- Notifications for campaign actions and errors.
+- Campaign storage: one folder per campaign with a unique internal id, written atomically; campaign pictures are shrunk and stored in the campaign folder.
+
+### Fixed
+
+- Icons now show in development (the icon font folder is served), and the filled icon stylesheet no longer overrides the outline icons.
+- A damaged settings file no longer blocks saving UI settings; a copy of it is kept.
+
 ## [0.0.4] - 2026-11-04
 
 ### Changed

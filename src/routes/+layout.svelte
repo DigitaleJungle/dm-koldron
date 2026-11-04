@@ -1,17 +1,17 @@
 <script lang="ts">
   import "$lib/styles/tokens.css";
+  import "$lib/styles/base.css";
+  // shortcut: filled icons left out; their stylesheet redefines .ti and every .ti-* name, so loading both breaks outline icons. Add a scoped filled class when a filled icon is needed.
   import "../../packs/tabler-icons/tabler-icons.min.css";
-  import "../../packs/tabler-icons/tabler-icons-filled.min.css";
-  let { children } = $props();
+  import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
+  import Notification from "$lib/components/Notification.svelte";
+  import { loadTheme } from "$lib/stores/theme.svelte";
+
+  let { children }: { children: Snippet } = $props();
+
+  onMount(loadTheme);
 </script>
 
 {@render children()}
-
-<style>
-  :global(body) {
-    margin: 0;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-family: var(--font-sans);
-  }
-</style>
+<Notification />

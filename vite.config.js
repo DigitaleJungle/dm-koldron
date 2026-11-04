@@ -24,6 +24,8 @@ export default defineConfig(() => ({
           port: 1421,
         }
       : undefined,
+    // The icon font lives in packs/, outside SvelteKit's default allow list.
+    fs: { allow: ["packs"] },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

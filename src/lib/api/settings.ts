@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 /** Mirrors `AppSettings` in src-tauri/src/commands/settings.rs. */
 export type Theme = "system" | "light" | "dark";
 export type Animations = "system" | "on" | "off";
-export type AppSettings = { theme: Theme; animations: Animations };
+/** `disabledPacks`: pack ids switched off in Settings → Rules. */
+export type AppSettings = { theme: Theme; animations: Animations; disabledPacks: string[] };
 
 // Both reject with a StorageError.
 export function getSettings(): Promise<AppSettings> {

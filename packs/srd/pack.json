@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "id": "srd",
+  "name": "SRD 5.2.1",
+  "version": "7.9.1",
+  "license": "CC-BY-4.0 AND MIT",
+  "attribution": "This work includes material from the System Reference Document 5.2.1 (\"SRD 5.2.1\") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.",
+  "ruleset": "2024",
+  "files": [
+    {
+      "type": "ability-scores",
+      "path": "source/2024/en/5e-SRD-Ability-Scores.json"
+    },
+    {
+      "type": "alignments",
+      "path": "source/2024/en/5e-SRD-Alignments.json"
+    },
+    {
+      "type": "backgrounds",
+      "path": "source/2024/en/5e-SRD-Backgrounds.json"
+    },
+    {
+      "type": "classes",
+      "path": "source/2024/en/5e-SRD-Classes.json"
+    },
+    {
+      "type": "conditions",
+      "path": "source/2024/en/5e-SRD-Conditions.json"
+    },
+    {
+      "type": "damage-types",
+      "path": "source/2024/en/5e-SRD-Damage-Types.json"
+    },
+    {
+      "type": "equipment-categories",
+      "path": "source/2024/en/5e-SRD-Equipment-Categories.json"
+    },
+    {
+      "type": "equipment",
+      "path": "source/2024/en/5e-SRD-Equipment.json"
+    },
+    {
+      "type": "feats",
+      "path": "source/2024/en/5e-SRD-Feats.json"
+    },
+    {
+      "type": "features",
+      "path": "source/2024/en/5e-SRD-Features.json"
+    },
+    {
+      "type": "languages",
+      "path": "source/2024/en/5e-SRD-Languages.json"
+    },
+    {
+      "type": "levels",
+      "path": "source/2024/en/5e-SRD-Levels.json"
+    },
+    {
+      "type": "magic-items",
+      "path": "source/2024/en/5e-SRD-Magic-Items.json"
+    },
+    {
+      "type": "magic-schools",
+      "path": "source/2024/en/5e-SRD-Magic-Schools.json"
+    },
+    {
+      "type": "monsters",
+      "path": "source/2024/en/5e-SRD-Monsters.json"
+    },
+    {
+      "type": "poisons",
+      "path": "source/2024/en/5e-SRD-Poisons.json"
+    },
+    {
+      "type": "proficiencies",
+      "path": "source/2024/en/5e-SRD-Proficiencies.json"
+    },
+    {
+      "type": "rule-sections",
+      "path": "source/2024/en/5e-SRD-Rule-Sections.json"
+    },
+    {
+      "type": "rules",
+      "path": "source/2024/en/5e-SRD-Rules.json"
+    },
+    {
+      "type": "skills",
+      "path": "source/2024/en/5e-SRD-Skills.json"
+    },
+    {
+      "type": "species",
+      "path": "source/2024/en/5e-SRD-Species.json"
+    },
+    {
+      "type": "spells",
+      "path": "source/2024/en/5e-SRD-Spells.json"
+    },
+    {
+      "type": "subclasses",
+      "path": "source/2024/en/5e-SRD-Subclasses.json"
+    },
+    {
+      "type": "subspecies",
+      "path": "source/2024/en/5e-SRD-Subspecies.json"
+    },
+    {
+      "type": "traits",
+      "path": "source/2024/en/5e-SRD-Traits.json"
+    },
+    {
+      "type": "weapon-mastery-properties",
+      "path": "source/2024/en/5e-SRD-Weapon-Mastery-Properties.json"
+    },
+    {
+      "type": "weapon-properties",
+      "path": "source/2024/en/5e-SRD-Weapon-Properties.json"
+    },
+    {
+      "type": "encounter-budgets",
+      "path": "encounter-budgets.json"
+    }
+  ]
+}

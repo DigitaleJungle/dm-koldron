@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.8] - 2026-11-04
+
+### Added
+
+- Content packs: a pack.json manifest and pack schema 1, documented in packs/packs.md.
+- Pack loader: every pack is validated completely; an invalid pack is listed with its errors and skipped, the others still load.
+- Settings → Rules: the installed packs with version, license and entry count, each switchable on or off.
+- The SRD pack's pack.json and encounter budgets (XP per character by level), built by scripts/build-srd-pack.mjs from the source data, which is used in place.
+- Duplicate rules (same name, at least 80% the same text) are bundled automatically, without removing any from the data.
+
+### Changed
+
+- The duplicate copy of the 5e-database MIT license in packs/srd/source/ is removed; packs/srd/LICENSE.md keeps the full text.
+
 ## [0.0.7] - 2026-11-04
 
 ### Added

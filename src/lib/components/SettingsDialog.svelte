@@ -4,6 +4,7 @@
   import type { Animations, Theme } from "$lib/api/settings";
   import CampaignSettings from "$lib/components/CampaignSettings.svelte";
   import AboutSettings from "$lib/components/AboutSettings.svelte";
+  import RulesSettings from "$lib/components/RulesSettings.svelte";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
@@ -12,6 +13,7 @@
   const sections = [
     { id: "ui", label: t.ui.title },
     { id: "campaigns", label: t.campaigns.title },
+    { id: "rules", label: t.rules.title },
     { id: "about", label: t.about.title },
   ] as const;
   type SectionId = (typeof sections)[number]["id"];
@@ -104,6 +106,10 @@
     {:else if active === "campaigns"}
       <div id="settings-panel-campaigns" class="panel" role="tabpanel" aria-labelledby="settings-tab-campaigns">
         <CampaignSettings />
+      </div>
+    {:else if active === "rules"}
+      <div id="settings-panel-rules" class="panel" role="tabpanel" aria-labelledby="settings-tab-rules">
+        <RulesSettings />
       </div>
     {:else if active === "about"}
       <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about">

@@ -78,6 +78,16 @@ export const strings = {
       noActive: "No active campaigns.",
       addError: (reason: string) => `Couldn't add the campaign. ${reason}`,
     },
+    rules: {
+      title: "Rules",
+      empty: "No packs installed.",
+      loading: "Loading packs…",
+      details: (version: string, license: string, entries: number) =>
+        `${version} · ${license} · ${new Intl.NumberFormat().format(entries)} entries`,
+      invalid: "Not loaded",
+      loadError: (reason: string) => `Couldn't load the packs. ${reason}`,
+      saveError: (name: string, reason: string) => `Couldn't switch ${name}. ${reason}`,
+    },
     about: {
       title: "About",
       version: (v: string) => `Version ${v}`,

@@ -8,7 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const FILE_NAME: &str = "settings.json";
+pub const FILE_NAME: &str = "settings.json";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,6 +36,8 @@ pub enum Animations {
 pub struct AppSettings {
     pub theme: Theme,
     pub animations: Animations,
+    /// Pack ids switched off in Settings → Rules; packs are on unless listed.
+    pub disabled_packs: Vec<String>,
 }
 
 /// Merges the given fields into the saved settings and saves them; the rest stay as they are.
@@ -106,7 +108,7 @@ mod tests {
         let path = temp_file("patch");
         update(&path, serde_json::json!({ "animations": "off" })).unwrap();
         let after = update(&path, serde_json::json!({ "theme": "dark" })).unwrap();
-        assert_eq!(after, AppSettings { theme: Theme::Dark, animations: Animations::Off });
+        assert_eq!(after, AppSettings { theme: Theme::Dark, animations: Animations::Off, ..AppSettings::default() });
         assert_eq!(load(&path).unwrap(), after);
         assert!(fs::read_to_string(&path).unwrap().contains("\"dark\""));
     }

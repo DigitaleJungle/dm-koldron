@@ -1,4 +1,5 @@
 mod commands;
+mod packs;
 mod storage;
 
 use tauri::webview::PageLoadEvent;
@@ -30,6 +31,7 @@ pub fn run() {
             commands::campaigns::delete_campaign,
             commands::campaigns::set_campaign_picture,
             commands::campaigns::remove_campaign_picture,
+            commands::packs::list_packs,
             commands::settings::get_settings,
             commands::settings::set_settings,
         ])

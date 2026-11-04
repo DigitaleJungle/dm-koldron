@@ -1,0 +1,53 @@
+# Koldron content packs (schema 1)
+
+A content pack is a folder with a `pack.json` manifest and JSON data files. DM's Koldron loads every folder in `packs/` that has a `pack.json`; other folders are ignored. The SRD pack (`srd/`) is loaded the same way as any other pack.
+
+## pack.json
+
+```json
+{
+  "schema": 1,
+  "id": "my-homebrew",
+  "name": "My Homebrew",
+  "version": "1.0.0",
+  "license": "CC-BY-4.0",
+  "attribution": "Text the license requires you to show, or empty.",
+  "ruleset": "2024",
+  "files": [
+    { "type": "spells", "path": "data/spells.json" },
+    { "type": "rules", "path": "data/rules.json" },
+    { "type": "rule-sections", "path": "data/rule-sections.json" }
+  ]
+}
+```
+
+Every field is required, and fields not listed here are an error.
+
+| Field | Rule |
+|---|---|
+| `schema` | `1`. Packs with another schema aren't loaded. |
+| `id` | Lowercase letters, digits and dashes; unique among the installed packs. |
+| `name`, `version`, `license`, `ruleset` | Not empty. `ruleset` names the rules the pack is for, e.g. `2024`. |
+| `attribution` | A string, empty if no attribution is needed. |
+| `files` | At least one. `path` is relative to the pack folder and can't leave it. Several files may have the same type. |
+
+## Data files
+
+Each file is a JSON array of objects. Entries use the field names of [5e-database](https://github.com/5e-bits/5e-srd-api/tree/main/packages/5e-database) (2024 data). Every entry has a non-empty `index`, unique within its type in the pack, and a non-empty `name`.
+
+Types: `ability-scores`, `alignments`, `backgrounds`, `classes`, `conditions`, `damage-types`, `encounter-budgets`, `equipment`, `equipment-categories`, `feats`, `features`, `languages`, `levels`, `magic-items`, `magic-schools`, `monsters`, `poisons`, `proficiencies`, `rule-sections`, `rules`, `skills`, `species`, `spells`, `subclasses`, `subspecies`, `traits`, `weapon-mastery-properties`, `weapon-properties`.
+
+Extra checks:
+
+- **`monsters`**: `challenge_rating` and `xp` are numbers.
+- **`rules`** (chapters): `index`, `name`, `desc` (Markdown, the chapter's intro) and `subsections`, a list of `{ "index": "…" }` naming `rule-sections` entries **of the same pack**. A pack adds its own chapters only; it can't add sections to another pack's chapter.
+- **`rule-sections`**: `index`, `name` and `desc` (Markdown).
+- **`encounter-budgets`**: XP per character by level, no `index` or `name`: `{ "level": 1, "low": 50, "moderate": 75, "high": 100 }`, with whole numbers and each level once.
+
+## Validation
+
+A pack is checked completely before any of it is used. A pack with any error isn't loaded at all; Settings → Rules lists it with its errors, and the other packs still load.
+
+## Duplicates
+
+The same rule often appears more than once, e.g. a Rules Glossary term and a condition entry. Entries are bundled as one rule when their names match (ignoring `[tags]`, case and a plural *s*) and at least 80% of the shorter text appears, in order, in the other. Nothing is removed from the data; chapters and encounter budgets are never bundled.

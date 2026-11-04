@@ -65,6 +65,11 @@ fn write_through(path: &Path, tmp: &Path, contents: &[u8]) -> Result<(), Storage
     Ok(())
 }
 
+/// Runs blocking work (file I/O, parsing) on a worker thread, so an `async` command doesn't hold the async runtime.
+pub async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, StorageError> + Send + 'static) -> Result<T, StorageError> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| StorageError::Io(e.to_string()))?
+}
+
 pub fn to_json<T: Serialize>(value: &T) -> Result<String, StorageError> {
     serde_json::to_string_pretty(value).map_err(|e| StorageError::Io(e.to_string()))
 }

@@ -5,7 +5,7 @@ use crate::commands::packs::{disabled, enabled, loaded};
 use crate::commands::rules::render;
 use crate::bundles::{groups, norm};
 use crate::packs::Pack;
-use crate::storage::StorageError;
+use crate::storage::{blocking, StorageError};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -267,16 +267,12 @@ fn paragraphs(text: &str) -> String {
 
 #[tauri::command]
 pub async fn catalog_rows(app: AppHandle, kind: String, fields: Vec<String>) -> Result<Vec<CatalogRow>, StorageError> {
-    tauri::async_runtime::spawn_blocking(move || rows(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &fields))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || rows(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &fields)).await
 }
 
 #[tauri::command]
 pub async fn catalog_entry(app: AppHandle, kind: String, pack: String, index: String) -> Result<CatalogEntry, StorageError> {
-    tauri::async_runtime::spawn_blocking(move || entry(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &pack, &index))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || entry(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &pack, &index)).await
 }
 
 #[cfg(test)]

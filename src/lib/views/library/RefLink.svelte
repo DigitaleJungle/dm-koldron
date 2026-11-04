@@ -41,7 +41,7 @@
   <div bind:this={card} id="ref-{id}" popover="auto" class="card" role="dialog" aria-label={ref.name} {ontoggle}>
     <header>
       <h3>{ref.name}</h3>
-      <button class="close" popovertarget="ref-{id}" popovertargetaction="hide" aria-label={t.close}>
+      <button class="icon-btn" popovertarget="ref-{id}" popovertargetaction="hide" aria-label={t.close}>
         <i class="ti ti-x" aria-hidden="true"></i>
       </button>
     </header>
@@ -113,24 +113,6 @@
     margin: 0;
     font-size: var(--text-md);
     font-weight: var(--weight-semibold);
-  }
-
-  .close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--control-height-sm);
-    height: var(--control-height-sm);
-    padding: 0;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-
-  .close:hover {
-    background: var(--color-surface-sunken);
   }
 
   .body {

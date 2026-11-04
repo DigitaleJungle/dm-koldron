@@ -59,7 +59,7 @@
     <BackButton />
     {#if tab === "rules" && rulesHasContents}
       <button
-        class="icon-btn"
+        class="icon-btn icon-btn-lg"
         aria-expanded={!collapsed}
         aria-controls="library-contents"
         aria-label={collapsed ? t.showContents : t.hideContents}
@@ -99,25 +99,6 @@
     padding: var(--space-3) var(--space-5);
     border-bottom: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
-  }
-
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--control-height);
-    height: var(--control-height);
-    padding: 0;
-    border: none;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-
-  .icon-btn:hover {
-    background: var(--color-surface-sunken);
-    color: var(--color-text);
   }
 
   .tabs {

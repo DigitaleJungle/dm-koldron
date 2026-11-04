@@ -49,6 +49,7 @@ Koldron is an open-source (MPL-2.0), local-first desktop companion for Dungeon M
 - Reuse established components, utilities, and dependencies before introducing new ones.
 - Before adding a dependency, explain its purpose and alternatives. Ask for approval for new runtime dependencies, large dependencies, or architectural changes. Avoid dependencies for trivial utilities.
 - Put heavy file operations, parsing, indexing, and computation in Rust, not on the Svelte UI thread. Use asynchronous I/O where appropriate and blocking worker threads / `spawn_blocking` for blocking or CPU-heavy work; an `async` command is not automatically nonblocking.
+- Keep the Content Security Policy in `tauri.conf.json` strict (no inline or remote scripts): pack text is untrusted and rendered as HTML. Widen it only for a real need, by the smallest source.
 - Use least-privilege Tauri permissions, capabilities, and plugins. Do not expose unrestricted filesystem or command execution to the frontend.
 - Use Svelte 5 runes (`$state`, `$derived`, `$props`, `$effect`) and current project conventions. Avoid introducing legacy reactive patterns.
 - `src/lib/api/` is the only frontend location allowed to call Tauri `invoke` directly. Components consume typed API wrappers.

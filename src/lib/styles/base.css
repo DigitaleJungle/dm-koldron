@@ -126,14 +126,22 @@ a {
   cursor: pointer;
 }
 
+/* An open menu's button stays shaded; a show/hide toggle (also aria-expanded) doesn't. */
 .icon-btn:hover,
-.icon-btn[aria-expanded="true"] {
+.icon-btn[aria-haspopup="menu"][aria-expanded="true"] {
   background: var(--color-surface-sunken);
   color: var(--color-text);
 }
 
 .icon-btn .ti {
   font-size: var(--icon-size);
+}
+
+/* The full control height (Settings gear, dialog close, show/hide contents) */
+.icon-btn-lg {
+  width: var(--control-height);
+  height: var(--control-height);
+  border-radius: var(--radius-md);
 }
 
 /* Disabled controls keep readable text (no opacity) so contrast stays AA */

@@ -2,7 +2,7 @@
 //! Active campaigns live in `<app data>/campaigns/<id>/`. Archiving moves the folder to
 //! `<app data>/archived-campaigns/<id>/`, where it can be restored or deleted for good.
 
-use crate::storage::{data_dir, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
+use crate::storage::{blocking, data_dir, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Cursor};
@@ -243,52 +243,57 @@ fn now_ms() -> u64 {
 
 #[tauri::command]
 pub async fn list_campaigns(app: AppHandle) -> Result<CampaignList, StorageError> {
-    list(&dirs(&app)?)
+    let dirs = dirs(&app)?;
+    blocking(move || list(&dirs)).await
 }
 
 #[tauri::command]
 pub async fn create_campaign(app: AppHandle, name: String) -> Result<Campaign, StorageError> {
-    create(&dirs(&app)?, &name, now_ms())
+    let dirs = dirs(&app)?;
+    blocking(move || create(&dirs, &name, now_ms())).await
 }
 
 #[tauri::command]
 pub async fn open_campaign(app: AppHandle, id: String) -> Result<Campaign, StorageError> {
-    open(&dirs(&app)?, &id, now_ms())
+    let dirs = dirs(&app)?;
+    blocking(move || open(&dirs, &id, now_ms())).await
 }
 
 #[tauri::command]
 pub async fn rename_campaign(app: AppHandle, id: String, name: String) -> Result<Campaign, StorageError> {
-    rename(&dirs(&app)?, &id, &name)
+    let dirs = dirs(&app)?;
+    blocking(move || rename(&dirs, &id, &name)).await
 }
 
 #[tauri::command]
 pub async fn archive_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
-    archive(&dirs(&app)?, &id)
+    let dirs = dirs(&app)?;
+    blocking(move || archive(&dirs, &id)).await
 }
 
 #[tauri::command]
 pub async fn restore_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
-    restore(&dirs(&app)?, &id)
+    let dirs = dirs(&app)?;
+    blocking(move || restore(&dirs, &id)).await
 }
 
 /// `path` is a file the DM picked in the system's file dialog.
 #[tauri::command]
 pub async fn set_campaign_picture(app: AppHandle, id: String, path: String) -> Result<Campaign, StorageError> {
-    // Decoding a big picture is slow CPU work; keep it off the async runtime's threads.
     let dirs = dirs(&app)?;
-    tauri::async_runtime::spawn_blocking(move || save_picture(&dirs, &id, Path::new(&path)))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || save_picture(&dirs, &id, Path::new(&path))).await
 }
 
 #[tauri::command]
 pub async fn remove_campaign_picture(app: AppHandle, id: String) -> Result<Campaign, StorageError> {
-    remove_picture(&dirs(&app)?, &id)
+    let dirs = dirs(&app)?;
+    blocking(move || remove_picture(&dirs, &id)).await
 }
 
 #[tauri::command]
 pub async fn delete_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
-    delete(&dirs(&app)?, &id)
+    let dirs = dirs(&app)?;
+    blocking(move || delete(&dirs, &id)).await
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! License texts for Settings → About: the app's own, then the one beside each pack (later also each plugin).
 
-use crate::storage::StorageError;
+use crate::storage::{blocking, StorageError};
 use serde::Serialize;
 use std::fs;
 use std::io;
@@ -38,9 +38,7 @@ pub fn read_licenses(root: &Path) -> Result<Vec<LicenseText>, StorageError> {
 #[tauri::command]
 pub async fn license_texts(app: AppHandle) -> Result<Vec<LicenseText>, StorageError> {
     let root = app.path().resource_dir().map_err(|e| StorageError::Io(e.to_string()))?;
-    tauri::async_runtime::spawn_blocking(move || read_licenses(&root))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || read_licenses(&root)).await
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 use crate::commands::settings;
 use crate::packs::{load_dir, Invalid, Pack};
-use crate::storage::{data_dir, StorageError};
+use crate::storage::{blocking, data_dir, StorageError};
 use serde::Serialize;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
@@ -15,7 +15,7 @@ pub type Loaded = (Vec<Pack>, Vec<Invalid>);
 // shortcut: the bundled packs can't change while the app runs, so they're read once; reload here when Add pack… (TODO 12) can change them.
 static LOADED: OnceLock<Loaded> = OnceLock::new();
 
-/// The bundled packs, read and validated on first use. Blocking: call it from `spawn_blocking`.
+/// The bundled packs, read and validated on first use. Blocking: call it inside `blocking`.
 pub fn loaded(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
     if let Some(loaded) = LOADED.get() {
         return Ok(loaded);
@@ -79,9 +79,7 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
 
 #[tauri::command]
 pub async fn list_packs(app: AppHandle) -> Result<Vec<PackSummary>, StorageError> {
-    tauri::async_runtime::spawn_blocking(move || Ok(summaries(loaded(&app)?, &disabled(&app)?)))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || Ok(summaries(loaded(&app)?, &disabled(&app)?))).await
 }
 
 #[cfg(test)]

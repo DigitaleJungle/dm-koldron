@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5] - 2026-11-04
+
+### Changed
+
+- The app has a strict Content Security Policy: only its own scripts run, so text from a content pack can never run code.
+- All disk work of the Rust commands (campaigns, settings, licenses, packs, rules, catalog) runs off the threads that serve the window.
+- Icon buttons share one style; the Settings dialog's close button now looks like the other icon buttons.
+
 ## [0.1.4] - 2026-11-04
 
 ### Added

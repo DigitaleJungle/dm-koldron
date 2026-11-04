@@ -1,6 +1,6 @@
 //! App-wide settings (not per campaign), saved as `settings.json` in the app data folder.
 
-use crate::storage::{data_dir, lock_update, to_json, write_atomic, StorageError};
+use crate::storage::{blocking, data_dir, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -80,12 +80,14 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, StorageError> {
 
 #[tauri::command]
 pub async fn get_settings(app: AppHandle) -> Result<AppSettings, StorageError> {
-    load(&settings_path(&app)?)
+    let path = settings_path(&app)?;
+    blocking(move || load(&path)).await
 }
 
 #[tauri::command]
 pub async fn set_settings(app: AppHandle, settings: Value) -> Result<AppSettings, StorageError> {
-    update(&settings_path(&app)?, settings)
+    let path = settings_path(&app)?;
+    blocking(move || update(&path, settings)).await
 }
 
 #[cfg(test)]

@@ -66,7 +66,7 @@
 <dialog bind:this={dialog} aria-labelledby="settings-title" onclose={() => (open = false)} onclick={onBackdropClick}>
   <header>
     <h2 id="settings-title">{t.title}</h2>
-    <button class="btn close" aria-label={t.close} onclick={() => (open = false)}>
+    <button class="icon-btn icon-btn-lg" aria-label={t.close} onclick={() => (open = false)}>
       <i class="ti ti-x" aria-hidden="true"></i>
     </button>
   </header>
@@ -160,13 +160,6 @@
   h2 {
     font-size: var(--text-xl);
     font-weight: var(--weight-bold);
-  }
-
-  .close {
-    padding: 0;
-    width: var(--control-height);
-    border-color: transparent;
-    background: transparent;
   }
 
   .body {

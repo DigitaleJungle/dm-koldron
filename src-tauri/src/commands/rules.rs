@@ -2,7 +2,7 @@
 
 use crate::commands::packs::{disabled, enabled, loaded};
 use crate::packs::Pack;
-use crate::storage::StorageError;
+use crate::storage::{blocking, StorageError};
 use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -115,16 +115,12 @@ fn without_title<'a>(markdown: &'a str, name: &str) -> &'a str {
 
 #[tauri::command]
 pub async fn rules_contents(app: AppHandle) -> Result<Vec<ContentsChapter>, StorageError> {
-    tauri::async_runtime::spawn_blocking(move || Ok(contents(&enabled(&loaded(&app)?.0, &disabled(&app)?))))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || Ok(contents(&enabled(&loaded(&app)?.0, &disabled(&app)?)))).await
 }
 
 #[tauri::command]
 pub async fn rules_chapter(app: AppHandle, pack: String, index: String) -> Result<Chapter, StorageError> {
-    tauri::async_runtime::spawn_blocking(move || chapter(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index))
-        .await
-        .map_err(|e| StorageError::Io(e.to_string()))?
+    blocking(move || chapter(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index)).await
 }
 
 #[cfg(test)]

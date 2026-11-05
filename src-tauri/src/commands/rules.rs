@@ -90,6 +90,15 @@ pub fn chapter(packs: &[&Pack], pack: &str, index: &str) -> Result<Chapter, Stor
     })
 }
 
+/// One rule section as HTML (the search screen's preview).
+pub fn section(packs: &[&Pack], pack: &str, index: &str) -> Result<Section, StorageError> {
+    let not_found = || StorageError::NotFound(format!("No rule section \"{index}\" in the switched-on packs."));
+    let pack = packs.iter().find(|p| p.manifest.id == pack).ok_or_else(not_found)?;
+    let all = pack.entries.get("rule-sections").map_or(&[][..], Vec::as_slice);
+    let s = all.iter().find(|s| field(s, "index") == index).ok_or_else(not_found)?;
+    Ok(Section { index: index.into(), name: field(s, "name").into(), html: render(field(s, "desc"), field(s, "name")) })
+}
+
 /// Markdown to HTML. Raw HTML in a pack's text is shown as text, and links and images are left out (keeping their
 /// text), so nothing from a pack can run or load in the window. A leading heading that repeats `name` is dropped:
 /// the reader shows the name itself.
@@ -121,6 +130,11 @@ pub async fn rules_contents(app: AppHandle) -> Result<Vec<ContentsChapter>, Stor
 #[tauri::command]
 pub async fn rules_chapter(app: AppHandle, pack: String, index: String) -> Result<Chapter, StorageError> {
     blocking(move || chapter(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index)).await
+}
+
+#[tauri::command]
+pub async fn rules_section(app: AppHandle, pack: String, index: String) -> Result<Section, StorageError> {
+    blocking(move || section(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index)).await
 }
 
 #[cfg(test)]
@@ -162,5 +176,8 @@ mod tests {
         assert!(!glossary.sections.iter().any(|s| s.html.starts_with("<h2>")), "section titles are dropped");
         assert!(matches!(chapter(&on, "srd", "nope"), Err(StorageError::NotFound(_))));
         assert!(matches!(chapter(&[], "srd", "rules-glossary"), Err(StorageError::NotFound(_))));
+        let blinded = &glossary.sections.iter().find(|s| s.index == "blinded-condition").unwrap().html;
+        assert_eq!(&section(&on, "srd", "blinded-condition").unwrap().html, blinded);
+        assert!(matches!(section(&on, "srd", "nope"), Err(StorageError::NotFound(_))));
     }
 }

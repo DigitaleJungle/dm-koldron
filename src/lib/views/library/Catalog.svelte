@@ -240,26 +240,6 @@
     margin-right: var(--space-2);
   }
 
-  .chip {
-    padding: 0 var(--space-2);
-    min-height: var(--control-height-sm);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-pill);
-    background: var(--color-surface);
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  .chip:hover {
-    background: var(--color-surface-sunken);
-  }
-
-  .chip[aria-pressed="true"] {
-    border-color: var(--color-accent);
-    background: var(--color-accent-soft);
-    color: var(--color-link);
-  }
-
   .table-wrap {
     overflow-x: auto;
   }

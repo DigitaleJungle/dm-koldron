@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
+  import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import type { SectionId } from "$lib/components/SettingsDialog.svelte";
   import { strings } from "$lib/strings";
@@ -73,6 +74,7 @@
       <a href="/library" aria-current={tab === "rules" ? "page" : undefined}>{t.rulesTab}</a>
       <a href="/library?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined}>{strings.catalog.title}</a>
     </nav>
+    <div class="search"><SearchBar /></div>
   </header>
 
   {#if tab === "catalog"}
@@ -120,6 +122,11 @@
   .tabs a[aria-current="page"] {
     background: var(--color-accent);
     color: var(--color-accent-text);
+  }
+
+  .search {
+    flex: 0 1 var(--search-width);
+    margin-left: auto;
   }
 
   .corner {

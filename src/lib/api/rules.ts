@@ -21,3 +21,8 @@ export function rulesContents(): Promise<ContentsChapter[]> {
 export function rulesChapter(pack: string, index: string): Promise<Chapter> {
   return invoke("rules_chapter", { pack, index });
 }
+
+/** One rule section as HTML. Rejects with a StorageError (`notFound` when it isn't in a switched-on pack). */
+export function rulesSection(pack: string, index: string): Promise<Chapter["sections"][number]> {
+  return invoke("rules_section", { pack, index });
+}

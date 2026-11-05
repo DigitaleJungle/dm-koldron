@@ -2,6 +2,7 @@
   import { onMount, tick } from "svelte";
   import { fly } from "svelte/transition";
   import { goto } from "$app/navigation";
+  import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { pictureSrc } from "$lib/api/campaigns";
   import { errorMessage } from "$lib/api/storage";
@@ -63,11 +64,7 @@
   <main>
     <h1>{strings.appName}</h1>
 
-    <!-- Inert until global search is built. -->
-    <div class="search">
-      <label for="start-search" class="sr-only">{t.searchLabel}</label>
-      <input id="start-search" type="search" placeholder={t.searchPlaceholder} disabled />
-    </div>
+    <div class="search"><SearchBar large /></div>
 
     <section aria-labelledby="campaigns-title">
       <div class="section-head">
@@ -172,24 +169,6 @@
   .search {
     width: min(100%, var(--start-width));
     margin: 0 auto;
-  }
-
-  .search input {
-    width: 100%;
-    min-height: var(--control-height-lg);
-    padding: 0 var(--space-4);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-  }
-
-  .search input:disabled {
-    background: var(--color-surface-sunken);
-    cursor: not-allowed;
-  }
-
-  .search input::placeholder {
-    color: var(--color-text-muted);
   }
 
   section {

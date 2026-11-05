@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, HashMap};
 use tauri::AppHandle;
 
 /// The entry types the Catalog has a tab for.
-const KINDS: [&str; 9] = ["spells", "monsters", "equipment", "magic-items", "feats", "classes", "species", "backgrounds", "conditions"];
+pub const KINDS: [&str; 9] = ["spells", "monsters", "equipment", "magic-items", "feats", "classes", "species", "backgrounds", "conditions"];
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct CatalogRow {
@@ -116,7 +116,7 @@ pub fn rows(packs: &[&Pack], kind: &str, fields: &[String]) -> Result<Vec<Catalo
         .collect())
 }
 
-fn also(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Also {
+pub fn also(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Also {
     let index = text(entry, "index");
     // A rule section opens in the Rules tab, in the chapter that lists it.
     let chapter = if kind == "rule-sections" {
@@ -179,7 +179,7 @@ pub fn entry(packs: &[&Pack], kind: &str, pack: &str, index: &str) -> Result<Cat
     })
 }
 
-fn description_text(entry: &Map<String, Value>) -> String {
+pub fn description_text(entry: &Map<String, Value>) -> String {
     match entry.get("description").or_else(|| entry.get("desc")) {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(parts)) => parts.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"),

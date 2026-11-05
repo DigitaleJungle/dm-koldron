@@ -3,4 +3,5 @@ pub mod campaigns;
 pub mod catalog;
 pub mod packs;
 pub mod rules;
+pub mod search;
 pub mod settings;

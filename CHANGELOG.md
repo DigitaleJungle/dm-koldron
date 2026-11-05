@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0] - 2026-11-05
+
+### Added
+
+- Global search: a search bar on the Start screen, in the Library and on the campaign page. Every word matches, also as the start of a word ("fire ball" finds Fireball), over the switched-on packs' Catalog entries and rule sections.
+- While typing, a dropdown of the best 8 results (name, type, source and where it opens); arrow keys move, Enter opens the highlighted result or the search screen, Escape closes.
+- Search screen: every result grouped by type, with type filters and counts and a preview of the selected result.
+
 ## [0.1.5] - 2026-11-04
 
 ### Changed

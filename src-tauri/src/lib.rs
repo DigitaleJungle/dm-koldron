@@ -13,6 +13,7 @@ pub fn run() {
             if cfg!(debug_assertions) && !app.config().identifier.ends_with(".dev") {
                 return Err("Debug builds must run with the dev config: npm run app".into());
             }
+            commands::search::warm(app.handle().clone());
             Ok(())
         })
         // The window starts hidden; show it once the page is ready.
@@ -37,6 +38,8 @@ pub fn run() {
             commands::packs::list_packs,
             commands::rules::rules_contents,
             commands::rules::rules_chapter,
+            commands::rules::rules_section,
+            commands::search::search_all,
             commands::settings::get_settings,
             commands::settings::set_settings,
         ])

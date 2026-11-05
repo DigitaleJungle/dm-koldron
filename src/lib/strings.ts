@@ -19,8 +19,6 @@ export const strings = {
     createError: (reason: string) => `Couldn't create the campaign. ${reason}`,
     version: (v: string) => `v${v}`,
     library: "Library",
-    searchLabel: "Search",
-    searchPlaceholder: "Search rules, characters and more…",
   },
 
   campaign: {
@@ -127,6 +125,22 @@ export const strings = {
     noMatches: "No matches.",
     loading: "Loading…",
     loadError: (reason: string) => `Couldn't load the catalog. ${reason}`,
+  },
+
+  search: {
+    title: "Search",
+    label: "Search",
+    placeholder: "Search rules, characters and more…",
+    results: "Search results",
+    types: "Result types",
+    all: "All",
+    rules: "Rules",
+    inChapter: (chapter: string) => `Rules · ${chapter}`,
+    count: (n: number) => new Intl.NumberFormat().format(n),
+    typeToSearch: "Type to search…",
+    noResults: (query: string) => `No results for "${query}".`,
+    loading: "Searching…",
+    error: (reason: string) => `Search failed. ${reason}`,
   },
 
   preview: {

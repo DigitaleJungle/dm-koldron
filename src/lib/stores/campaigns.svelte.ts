@@ -10,6 +10,8 @@ export const campaigns = $state({
   loadError: null as string | null,
   /** The campaign whose screens are open, if any. */
   current: null as Campaign | null,
+  /** The campaign the DM is working in: set when its screens open, kept in the Library, cleared on the Start screen. Search stays inside it. */
+  scope: null as string | null,
 });
 
 export async function refreshCampaigns() {
@@ -46,6 +48,7 @@ export async function setCampaignPicture(id: string, choose: boolean) {
 export async function archiveCampaign(id: string) {
   await api.archiveCampaign(id);
   await refreshCampaigns();
+  if (campaigns.scope === id) campaigns.scope = null; // also when only the Library from it is open
   // The open campaign is gone from the active list, so leave its screens.
   if (campaigns.current?.id === id) await goto("/");
 }
@@ -59,5 +62,6 @@ export async function restoreCampaign(id: string) {
 export async function deleteCampaign(id: string) {
   await api.deleteCampaign(id);
   await refreshCampaigns();
+  if (campaigns.scope === id) campaigns.scope = null;
   if (campaigns.current?.id === id) await goto("/");
 }

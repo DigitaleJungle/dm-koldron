@@ -92,6 +92,9 @@
   --select-width: 280px;
   --start-width: 720px;
   --search-width: 360px;
+  --character-form-width: 640px;
+  --level-input-width: 80px;
+  --stat-input-width: 140px;
   --tile-min-width: 260px;
   --start-hero-height: 280px;
   --library-books-width: 260px;

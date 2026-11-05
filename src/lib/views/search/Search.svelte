@@ -6,14 +6,17 @@
   import BackButton from "$lib/components/BackButton.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { catalogEntry } from "$lib/api/catalog";
+  import { listCharacters } from "$lib/api/characters";
   import { rulesSection } from "$lib/api/rules";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
+  import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { entryCategory, entryFacts } from "$lib/views/library/catalog";
+  import { classLine, totalLevel } from "$lib/views/characters/characters";
   import "$lib/styles/prose.css";
-  import { groupByKind, hitAddress, kindLabel, placeLabel } from "./search";
+  import { groupByKind, hitAddress, hitMeta, kindLabel } from "./search";
 
   const t = strings.search;
   const key = (hit: SearchHit) => `${hit.kind}/${hit.pack}/${hit.index}`;
@@ -24,6 +27,12 @@
     if (type === "popstate") query = page.url.searchParams.get("q") ?? "";
   });
 
+  // ?campaign=: only that campaign's characters (and the packs); Search everything drops it.
+  const campaign = $derived(page.url.searchParams.get("campaign") ?? undefined);
+  const campaignName = $derived(campaigns.list?.campaigns.find((c) => c.id === campaign)?.name);
+  $effect(() => {
+    if (campaign && !campaigns.list) refreshCampaigns();
+  });
   let hits = $state<SearchHit[] | null>(null); // null while searching
   let error = $state<string | null>(null);
   let asked = 0;
@@ -38,9 +47,10 @@
   $effect(() => {
     const mine = ++asked;
     const text = query;
+    const scope = campaign;
     void reloadKey;
     if (!text.trim()) return void ([hits, error] = [[], null]);
-    searchAll(text).then(
+    searchAll(text, undefined, scope).then(
       (found) => mine === asked && ([hits, error] = [found, null]),
       (e) => mine === asked && ([hits, error] = [[], t.error(errorMessage(e))]),
     );
@@ -69,7 +79,20 @@
   });
 
   async function load(hit: SearchHit): Promise<Preview> {
-    const label = `${kindLabel(hit.kind)} · ${hit.source} · ${placeLabel(hit)}`;
+    const label = hitMeta(hit);
+    if (hit.kind === "characters") {
+      const found = (await listCharacters(hit.campaign ?? "")).characters.find((c) => c.id === hit.index);
+      if (!found) throw new Error(strings.characters.gone);
+      const c = strings.characters.form;
+      const stats: [string, number | null][] = [[c.maxHp, found.maxHp], [c.currentHp, found.currentHp], [c.tempHp, found.tempHp], [c.ac, found.ac], [c.passivePerception, found.passivePerception], [c.passiveInsight, found.passiveInsight], [c.passiveInvestigation, found.passiveInvestigation]];
+      const facts = [
+        { label: c.player, value: found.player },
+        { label: c.classes, value: classLine(found) },
+        { label: strings.characters.byLevel, value: String(totalLevel(found)) },
+        ...stats.filter(([, v]) => v !== null).map(([label, v]) => ({ label, value: String(v) })),
+      ].filter((f) => f.value);
+      return { label, facts, html: "" };
+    }
     if (hit.kind === "rule-sections") {
       return { label, facts: [], html: (await rulesSection(hit.pack, hit.index)).html };
     }
@@ -108,6 +131,13 @@
     />
   </header>
 
+  {#if campaign}
+    <p class="scope">
+      {#if campaignName}{t.inCampaign(campaignName)}{/if}
+      <button class="btn small" onclick={() => refine({ campaign: null })}>{t.everything}</button>
+    </p>
+  {/if}
+
   {#if !query.trim()}
     <p class="message">{t.typeToSearch}</p>
   {:else if error}
@@ -138,7 +168,7 @@
                 <li>
                   <button class="result" aria-current={hit === selected ? "true" : undefined} onclick={() => (chosen = key(hit))}>
                     <span class="name">{hit.name}</span>
-                    <span class="meta">{hit.source} · {placeLabel(hit)}</span>
+                    <span class="meta">{hitMeta(hit, false)}</span>
                   </button>
                 </li>
               {/each}
@@ -206,6 +236,22 @@
 
   .top input::placeholder {
     color: var(--color-text-muted);
+  }
+
+  .scope {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0;
+    padding: var(--space-3) var(--space-5) 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .small {
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
   }
 
   .message {

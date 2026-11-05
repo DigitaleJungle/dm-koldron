@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] - 2026-11-05
+
+### Added
+
+- Campaign sidebar: Home, Library, Characters and Encounters (not yet available), a campaign switcher with a cog that opens Settings → Campaigns, and the Settings gear. It collapses to an icon strip, and becomes a drawer in a narrow window. The search bar sits above every campaign screen.
+- Characters screen: a card per character with picture, name, total level and class line, and a home icon when the character is on Home. Search by name or player, sort by name or level. Each card's menu (shown on hover) has Edit, Add to / Remove from Home and Delete.
+- Character form: picture, name, player, one or more classes with levels (total at most 20), Max / Current / Temp HP, AC, passive Perception / Insight / Investigation, and Add to Home. A picked picture is dragged (or moved with the arrow keys) into a square; a red ✕ removes it.
+- Global search finds characters by name, player or class. Inside a campaign, and in the Library opened from it, search shows only that campaign's characters; the search screen offers Search everything.
+
 ## [0.2.0] - 2026-11-05
 
 ### Added

@@ -21,7 +21,10 @@
 
   const list = $derived(campaigns.list);
 
-  onMount(() => void refreshCampaigns());
+  onMount(() => {
+    campaigns.scope = null; // out of any campaign: search everything
+    void refreshCampaigns();
+  });
 
   // The name field slides in from the right, from behind the + New campaign / Cancel button.
   const slide = () => ({ x: 24, duration: reduceMotion() ? 0 : 200 });

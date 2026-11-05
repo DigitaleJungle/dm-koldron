@@ -2,6 +2,7 @@
 //! Active campaigns live in `<app data>/campaigns/<id>/`. Archiving moves the folder to
 //! `<app data>/archived-campaigns/<id>/`, where it can be restored or deleted for good.
 
+use crate::commands::search;
 use crate::storage::{blocking, data_dir, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -209,6 +210,14 @@ pub fn save_picture(dirs: &Dirs, id: &str, source: &Path) -> Result<Campaign, St
     read(&dir)
 }
 
+/// An active campaign's folder, after checking the campaign exists (an archived one is read-only).
+pub fn active_dir(dirs: &Dirs, id: &str) -> Result<PathBuf, StorageError> {
+    check_id(id)?;
+    let dir = dirs.active.join(id);
+    read(&dir)?;
+    Ok(dir)
+}
+
 /// Removes an active campaign's picture. Returns the campaign.
 pub fn remove_picture(dirs: &Dirs, id: &str) -> Result<Campaign, StorageError> {
     check_id(id)?;
@@ -232,12 +241,12 @@ pub fn delete(dirs: &Dirs, id: &str) -> Result<(), StorageError> {
     Ok(fs::remove_dir_all(dir)?)
 }
 
-fn dirs(app: &AppHandle) -> Result<Dirs, StorageError> {
+pub fn dirs(app: &AppHandle) -> Result<Dirs, StorageError> {
     let data = data_dir(app)?;
     Ok(Dirs { active: data.join("campaigns"), archived: data.join("archived-campaigns") })
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
@@ -262,19 +271,19 @@ pub async fn open_campaign(app: AppHandle, id: String) -> Result<Campaign, Stora
 #[tauri::command]
 pub async fn rename_campaign(app: AppHandle, id: String, name: String) -> Result<Campaign, StorageError> {
     let dirs = dirs(&app)?;
-    blocking(move || rename(&dirs, &id, &name)).await
+    blocking(move || rename(&dirs, &id, &name).inspect(|_| search::changed())).await
 }
 
 #[tauri::command]
 pub async fn archive_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
     let dirs = dirs(&app)?;
-    blocking(move || archive(&dirs, &id)).await
+    blocking(move || archive(&dirs, &id).inspect(|_| search::changed())).await
 }
 
 #[tauri::command]
 pub async fn restore_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
     let dirs = dirs(&app)?;
-    blocking(move || restore(&dirs, &id)).await
+    blocking(move || restore(&dirs, &id).inspect(|_| search::changed())).await
 }
 
 /// `path` is a file the DM picked in the system's file dialog.
@@ -293,7 +302,7 @@ pub async fn remove_campaign_picture(app: AppHandle, id: String) -> Result<Campa
 #[tauri::command]
 pub async fn delete_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
     let dirs = dirs(&app)?;
-    blocking(move || delete(&dirs, &id)).await
+    blocking(move || delete(&dirs, &id).inspect(|_| search::changed())).await
 }
 
 #[cfg(test)]

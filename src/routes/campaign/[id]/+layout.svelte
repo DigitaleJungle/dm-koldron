@@ -1,5 +1,6 @@
 <script lang="ts">
   import BackButton from "$lib/components/BackButton.svelte";
+  import CampaignShell from "$lib/components/CampaignShell.svelte";
   import { onDestroy, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { openCampaign } from "$lib/api/campaigns";
@@ -18,7 +19,7 @@
     error = null;
     let current = true; // ignore a slow answer for a campaign we've already left
     openCampaign(id).then(
-      (c) => current && (campaigns.current = c),
+      (c) => current && ([campaigns.current, campaigns.scope] = [c, c.id]),
       (e) => {
         if (!current) return;
         campaigns.current = null;
@@ -38,7 +39,7 @@
 
 <!-- Pages under this layout only render once the campaign is loaded. -->
 {#if campaigns.current}
-  {@render children()}
+  <CampaignShell campaign={campaigns.current}>{@render children()}</CampaignShell>
 {:else}
   <main class="status">
     {#if error}

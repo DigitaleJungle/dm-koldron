@@ -4,8 +4,9 @@
   import { goto } from "$app/navigation";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
+  import { campaigns } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
-  import { hitAddress, kindLabel, placeLabel, searchAddress } from "$lib/views/search/search";
+  import { hitAddress, hitMeta, searchAddress } from "$lib/views/search/search";
 
   let { large = false }: { large?: boolean } = $props();
 
@@ -18,6 +19,8 @@
   let active = $state(-1);
   let asked = 0; // answers to older keystrokes are dropped
   let answered = $state(""); // the text the shown hits are for
+  // Inside a campaign (also in the Library opened from it): its characters (and the packs), not other campaigns'.
+  const campaign = $derived(campaigns.scope ?? undefined);
 
   async function find() {
     const mine = ++asked;
@@ -25,7 +28,7 @@
     open = !!query.trim();
     if (!open) return void (hits = []);
     try {
-      const found = await searchAll(query, 8);
+      const found = await searchAll(query, 8, campaign);
       if (mine === asked) [hits, error, answered] = [found, null, query];
     } catch (e) {
       if (mine === asked) [hits, error, answered] = [[], t.error(errorMessage(e)), query];
@@ -45,7 +48,7 @@
       active = Math.max(-1, Math.min(hits.length - 1, active + step));
     } else if (event.key === "Enter" && query.trim()) {
       event.preventDefault();
-      go(open && active >= 0 ? hitAddress(hits[active]) : searchAddress(query));
+      go(open && active >= 0 ? hitAddress(hits[active]) : searchAddress(query, campaign));
     } else if (event.key === "Escape" && open) {
       event.preventDefault();
       open = false;
@@ -95,7 +98,7 @@
           onmousemove={() => (active = i)}
         >
           <span class="name">{hit.name}</span>
-          <span class="meta">{kindLabel(hit.kind)} · {hit.source} · {placeLabel(hit)}</span>
+          <span class="meta">{hitMeta(hit)}</span>
         </li>
       {/each}
     </ul>

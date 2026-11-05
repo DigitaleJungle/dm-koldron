@@ -6,7 +6,7 @@
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
 </script>
 
-<button class="icon-btn icon-btn-lg" aria-label={strings.settings.open} title={strings.settings.open} aria-haspopup="dialog" onclick={() => (open = true)}>
+<button class="icon-btn icon-btn-lg" aria-label={strings.settings.open} aria-haspopup="dialog" onclick={() => (open = true)}>
   <i class="ti ti-settings" aria-hidden="true"></i>
 </button>
 

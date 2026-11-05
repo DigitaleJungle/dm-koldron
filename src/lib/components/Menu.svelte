@@ -124,7 +124,6 @@
     {id}
     class={triggerClass}
     aria-label={label}
-    title={label}
     aria-haspopup="menu"
     aria-expanded={open}
     aria-controls="{id}-list"

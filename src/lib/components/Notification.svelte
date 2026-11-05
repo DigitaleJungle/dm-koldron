@@ -16,7 +16,7 @@
 <div class="region" role="status" aria-live="polite">
   {#if notification.current}
     {#key notification.current.id}
-      <button class="popup" popover="manual" use:topLayer title={strings.notification.dismiss} in:fly={motion()} onclick={dismiss}>
+      <button class="popup" popover="manual" use:topLayer in:fly={motion()} onclick={dismiss}>
         <span class="message">{notification.current.message}</span>
         <i class="ti ti-x" aria-hidden="true"></i>
         <span class="sr-only">{strings.notification.dismiss}</span>

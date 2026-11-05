@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-11-06
+
+### Added
+
+- Encounters: the campaign's encounters, most recently saved first, and Create encounter. The sidebar's Encounters link is now available.
+- Encounters → Prepare: a monster browser (search, CR range, type, sortable, 50 per page) with the stat block on hover or focus; a roster with quantities and XP; a party dropdown (the characters in the party start ticked); and a difficulty meter with five bands (Trivial, Easy, Medium, Hard, Deadly) from the packs' 2024 XP budgets. The name is edited in place and saved with Save; leaving with unsaved changes asks Save / Don't save / Cancel.
+
+### Changed
+
+- Characters: "Add to Home" is now "Add to party". A card's bottom-right corner has a party button: users-plus on hover adds the character, and for a character in the party the users icon turns into users-minus on hover to remove it, with a fade.
+- The player's name no longer shows on character cards; the total level is shown under the name instead.
+- Hover tooltips are removed from every button and link; screen readers keep their labels.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

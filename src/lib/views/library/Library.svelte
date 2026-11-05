@@ -64,7 +64,6 @@
         aria-expanded={!collapsed}
         aria-controls="library-contents"
         aria-label={collapsed ? t.showContents : t.hideContents}
-        title={collapsed ? t.showContents : t.hideContents}
         onclick={() => setCollapsed(!collapsed)}
       >
         <i class="ti {collapsed ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}" aria-hidden="true"></i>

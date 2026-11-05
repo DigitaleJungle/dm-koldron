@@ -1,7 +1,8 @@
 <script lang="ts">
   // The campaign's characters as cards: search by name or player (?q=), sort by name or level (?sort=level), each
-  // with a menu (Edit, Add to / Remove from Home, Delete). ?edit=<id> opens that character's form (from search).
+  // with a menu (Edit, Add to / Remove from party, Delete). ?edit=<id> opens that character's form (from search).
   import { tick } from "svelte";
+  import { fade } from "svelte/transition";
   import { afterNavigate } from "$app/navigation";
   import { page } from "$app/state";
   import { catalogRows } from "$lib/api/catalog";
@@ -12,6 +13,7 @@
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import CharacterForm from "./CharacterForm.svelte";
   import { blankCharacter, classLine, selectCharacters, totalLevel, type CharacterSort } from "./characters";
@@ -76,6 +78,11 @@
   let deletingId = $state<string | null>(null);
   let rowError = $state<{ id: string; text: string } | null>(null);
   let busy = $state(false);
+  /** The character whose party button the pointer (or keyboard focus) is on: it then shows "remove". */
+  let pointing = $state<string | null>(null);
+  const partyIcon = (c: Character) => (!c.onHome ? "ti-users-plus" : pointing === c.id ? "ti-users-minus" : "ti-users");
+  /** Each half of the icon swap (the new one in, then the old one out); none with reduced motion. */
+  const swapMs = () => (reduceMotion() ? 0 : 120);
 
   async function focusMenu(id: string) {
     await tick();
@@ -181,9 +188,24 @@
                 <Menu id="character-menu-{character.id}" label={t.actionsFor(character.name)} items={itemsFor(character)} triggerClass="icon-btn">
                   {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
                 </Menu>
-                {#if character.onHome}
-                  <i class="ti ti-home on-home" role="img" aria-label={t.onHome} title={t.onHome}></i>
-                {/if}
+                <!-- Bottom-right: in the party, a users icon that turns into "remove" on hover; otherwise "add", on card hover. -->
+                <button
+                  class="icon-btn party"
+                  class:in={character.onHome}
+                  aria-label={character.onHome ? t.removeFromHome : t.addToHome}
+                  aria-disabled={busy}
+                  onclick={() => !busy && toggleHome(character)}
+                  onpointerenter={() => (pointing = character.id)}
+                  onpointerleave={() => (pointing = null)}
+                  onfocus={(e) => e.currentTarget.matches(":focus-visible") && (pointing = character.id)}
+                  onblur={() => (pointing = null)}
+                >
+                  <!-- Keyed on the icon. The new one fades in first, then the old one fades out: never both half-faded at
+                       once, so the users figure they share stays solid and only the + or − sign fades. -->
+                  {#key partyIcon(character)}
+                    <i class="ti {partyIcon(character)}" aria-hidden="true" in:fade={{ duration: swapMs() }} out:fade={{ delay: swapMs(), duration: swapMs() }}></i>
+                  {/key}
+                </button>
               </article>
             {/if}
             {#if rowError?.id === character.id}<p class="error" role="alert">{rowError.text}</p>{/if}
@@ -293,22 +315,49 @@
   }
 
   /* The menu shows on hover, while focus is in the card (so the keyboard still finds it), and while it's open. */
-  .card :global(.menu-root > .icon-btn) {
+  .card :global(.menu-root > .icon-btn),
+  .party:not(.in) {
     opacity: 0;
   }
 
   .card:hover :global(.menu-root > .icon-btn),
   .card:focus-within :global(.menu-root > .icon-btn),
+  .card:hover .party,
+  .card:focus-within .party,
   .card :global(.menu-root > .icon-btn[aria-expanded="true"]) {
     opacity: 1;
   }
 
   /* Bottom-right corner of the card. */
-  .on-home {
+  .party {
     position: absolute;
-    right: var(--space-3);
-    bottom: var(--space-3);
+    right: var(--space-2);
+    bottom: var(--space-2);
+    display: inline-grid;
+    place-items: center;
+  }
+
+  .party.in {
     color: var(--color-accent);
+  }
+
+  /* While one icon fades into the next, both sit in the same spot. */
+  .party .ti {
+    grid-area: 1 / 1;
+  }
+
+  /* The menu and the party button ease in and out on card hover; Settings → Animations can turn it off.
+     (The icon swap fades through Svelte's fade, which follows the same setting.) */
+  .card :global(.menu-root > .icon-btn),
+  .party {
+    transition:
+      opacity 150ms ease,
+      color 150ms ease;
+  }
+
+  :global([data-motion="reduce"]) .card :global(.menu-root > .icon-btn),
+  :global([data-motion="reduce"]) .party {
+    transition: none;
   }
 
   .name {

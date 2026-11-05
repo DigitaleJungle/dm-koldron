@@ -170,11 +170,11 @@
 
       {#if pages > 1}
         <div class="paging">
-          <a class="btn" href={href({ page: String(pageNumber - 1) })} onclick={(e) => toPage(e, pageNumber - 1)} aria-label={t.previous} title={t.previous} aria-disabled={pageNumber === 1} class:disabled={pageNumber === 1}>
+          <a class="btn" href={href({ page: String(pageNumber - 1) })} onclick={(e) => toPage(e, pageNumber - 1)} aria-label={t.previous} aria-disabled={pageNumber === 1} class:disabled={pageNumber === 1}>
             <i class="ti ti-chevron-left" aria-hidden="true"></i>
           </a>
           <span role="status">{t.range((pageNumber - 1) * PAGE_SIZE + 1, Math.min(pageNumber * PAGE_SIZE, selected.length), selected.length)}</span>
-          <a class="btn" href={href({ page: String(pageNumber + 1) })} onclick={(e) => toPage(e, pageNumber + 1)} aria-label={t.next} title={t.next} aria-disabled={pageNumber === pages} class:disabled={pageNumber === pages}>
+          <a class="btn" href={href({ page: String(pageNumber + 1) })} onclick={(e) => toPage(e, pageNumber + 1)} aria-label={t.next} aria-disabled={pageNumber === pages} class:disabled={pageNumber === pages}>
             <i class="ti ti-chevron-right" aria-hidden="true"></i>
           </a>
         </div>

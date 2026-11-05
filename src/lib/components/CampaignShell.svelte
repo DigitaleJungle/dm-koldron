@@ -75,6 +75,7 @@
     { href: base, label: t.home, icon: "ti-home", current: page.url.pathname === base },
     { href: "/library", label: t.library, icon: "ti-book", current: false },
     { href: `${base}/characters`, label: t.characters, icon: "ti-users", current: page.url.pathname.startsWith(`${base}/characters`) },
+    { href: `${base}/encounters`, label: t.encounters, icon: "ti-swords", current: page.url.pathname.startsWith(`${base}/encounters`) },
   ]);
 </script>
 
@@ -86,7 +87,8 @@
   {/if}
 
   <aside id="campaign-sidebar" class:open={drawerOpen}>
-    <a class="app-name" href="/" title={strings.appName}>
+    <!-- In the icon strip the text is hidden, so the label names the link. -->
+    <a class="app-name" href="/" aria-label={strings.appName}>
       <i class="ti ti-flask" aria-hidden="true"></i>
       <span class="text">{strings.appName}</span>
     </a>
@@ -98,7 +100,7 @@
           <i class="ti ti-selector" aria-hidden="true"></i>
         {/snippet}
       </Menu>
-      <button class="icon-btn cog" aria-label={t.campaignSettings} title={t.campaignSettings} aria-haspopup="dialog" onclick={openCampaignSettings}>
+      <button class="icon-btn cog" aria-label={t.campaignSettings} aria-haspopup="dialog" onclick={openCampaignSettings}>
         <i class="ti ti-settings-cog" aria-hidden="true"></i>
       </button>
     </div>
@@ -107,19 +109,12 @@
       <ul>
         {#each links as link (link.href)}
           <li>
-            <a href={link.href} aria-current={link.current ? "page" : undefined} title={collapsed ? link.label : undefined}>
+            <a href={link.href} aria-current={link.current ? "page" : undefined} aria-label={link.label}>
               <i class="ti {link.icon}" aria-hidden="true"></i>
               <span class="text">{link.label}</span>
             </a>
           </li>
         {/each}
-        <li>
-          <!-- Not a link until Encounters is built (TODO 9). -->
-          <span class="disabled" aria-disabled="true" title={t.comingSoon}>
-            <i class="ti ti-swords" aria-hidden="true"></i>
-            <span class="text">{t.encounters}</span>
-          </span>
-        </li>
       </ul>
     </nav>
 
@@ -130,7 +125,6 @@
         aria-expanded={!collapsed}
         aria-controls="campaign-sidebar"
         aria-label={collapsed ? t.expand : t.collapse}
-        title={collapsed ? t.expand : t.collapse}
         onclick={() => setCollapsed(!collapsed)}
       >
         <i class="ti {collapsed ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}" aria-hidden="true"></i>
@@ -231,8 +225,7 @@
     gap: var(--space-1);
   }
 
-  nav a,
-  nav .disabled {
+  nav a {
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -252,10 +245,6 @@
     color: var(--color-accent-text);
   }
 
-  nav .disabled {
-    color: var(--color-text-muted);
-    cursor: not-allowed;
-  }
 
   .ti {
     font-size: var(--icon-size);
@@ -278,8 +267,7 @@
     display: none;
   }
 
-  .collapsed nav a,
-  .collapsed nav .disabled {
+  .collapsed nav a {
     justify-content: center;
     padding: 0;
     width: var(--control-height);
@@ -355,8 +343,7 @@
       display: revert;
     }
 
-    .collapsed nav a,
-    .collapsed nav .disabled {
+    .collapsed nav a {
       justify-content: flex-start;
       padding: 0 var(--space-3);
       width: auto;

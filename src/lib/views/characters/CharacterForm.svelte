@@ -179,7 +179,6 @@
                 aria-label={t.picture}
                 aria-valuenow={Math.round((picked.image.width >= picked.image.height ? picked.crop.x : picked.crop.y) * 100)}
                 aria-valuetext={t.picturePosition(Math.round(picked.crop.x * 100), Math.round(picked.crop.y * 100))}
-                title={t.dragPicture}
                 style:background-image="url({picked.url})"
                 style:background-position="{picked.crop.x * 100}% {picked.crop.y * 100}%"
                 onpointerdown={startDrag}
@@ -194,7 +193,7 @@
               <span class="avatar" aria-hidden="true"><i class="ti ti-user"></i></span>
             {/if}
             {#if picked || savedSrc}
-              <button type="button" class="remove" aria-label={t.removePicture} title={t.removePicture} onclick={removePicture}>
+              <button type="button" class="remove" aria-label={t.removePicture} onclick={removePicture}>
                 <i class="ti ti-x" aria-hidden="true"></i>
               </button>
             {/if}
@@ -226,7 +225,7 @@
             <input aria-label={t.className(i + 1)} list="{id}-classes" bind:value={row.name} required maxlength="100" autocomplete="off" />
             <input class="level" aria-label={t.classLevel(i + 1)} type="number" min="1" max="20" step="1" bind:value={row.level} required />
             {#if draft.classes.length > 1}
-              <button type="button" class="icon-btn" aria-label={t.removeClass(i + 1)} title={t.removeClass(i + 1)} onclick={() => draft.classes.splice(i, 1)}>
+              <button type="button" class="icon-btn" aria-label={t.removeClass(i + 1)} onclick={() => draft.classes.splice(i, 1)}>
                 <i class="ti ti-x" aria-hidden="true"></i>
               </button>
             {/if}

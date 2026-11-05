@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { fly } from "svelte/transition";
+  import { fade, fly } from "svelte/transition";
   import { dismiss, notification } from "$lib/stores/notifications.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
 
   // The single notification popup in the bottom-right corner. Clicking it closes it.
-  // Only an entrance animation: a replaced one must vanish at once, so there's never two on screen.
   const motion = () => ({ y: 16, duration: reduceMotion() ? 0 : 200 });
+  // Fades out when dismissed or timed out. A replaced one (a new notification is already set)
+  // vanishes at once, so there's never two on screen. Params are read when the outro starts.
+  const fadeOut = () => ({ duration: reduceMotion() || notification.current ? 0 : 300 });
 
   // A popover sits in the browser's top layer, so it shows over an open Settings dialog too.
   const topLayer = (node: HTMLElement) => node.showPopover();
@@ -16,7 +18,7 @@
 <div class="region" role="status" aria-live="polite">
   {#if notification.current}
     {#key notification.current.id}
-      <button class="popup" popover="manual" use:topLayer in:fly={motion()} onclick={dismiss}>
+      <button class="popup" popover="manual" use:topLayer in:fly={motion()} out:fade|global={fadeOut()} onclick={dismiss}>
         <span class="message">{notification.current.message}</span>
         <i class="ti ti-x" aria-hidden="true"></i>
         <span class="sr-only">{strings.notification.dismiss}</span>

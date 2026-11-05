@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - 2026-11-06
+
+### Changed
+
+- Notifications fade out when they close or time out, instead of vanishing at once.
+
 ## [0.4.0] - 2026-11-06
 
 ### Added

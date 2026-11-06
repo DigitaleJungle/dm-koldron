@@ -173,6 +173,9 @@
   --roster-mini-remove-size: 20px;
   --roster-touch-size: 32px;
   --monster-portrait-size: 120px;
+  /* Encounter list: the collage's band on each card, and one hexagon's width (smaller when many must fit). */
+  --encounter-art-height: 208px;
+  --encounter-hex-width: 64px;
   --entry-picture-size: 400px;
   --meter-width: 168px;
   --meter-height: 448px;

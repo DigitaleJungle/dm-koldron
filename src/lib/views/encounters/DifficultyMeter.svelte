@@ -52,7 +52,7 @@
   {@render children?.()}
   <!-- Always two lines: the band (or "–") and the XP total (or why there's no rating). -->
   <div class="reading" role="status">
-    <span class="band {result.band ?? 'none'}">{result.band ? t.bands[result.band] : t.noRating}</span>
+    <span class="band band-{result.band ?? 'none'}">{result.band ? t.bands[result.band] : t.noRating}</span>
     <span class="xp" class:warn={note?.warn}>{note ? note.text : t.xp(fmt.format(result.total))}</span>
     {#if budgetError}<span class="sr-only">{budgetError}</span>{/if}
   </div>
@@ -60,7 +60,7 @@
   <div class="scale" role="img" aria-label={showBudgets ? scaleLabel : t.label}>
     <div class="track">
       {#if showBudgets}
-        <div class="fill {result.band ?? 'none'}" style:height={pct(result.total)}></div>
+        <div class="fill band-{result.band ?? 'none'}" style:height={pct(result.total)}></div>
         {#each edges as xp, i (i)}
           <div class="mark" style:bottom={pct(xp)}><span class="threshold">{t.xp(fmt.format(Math.floor(xp)))}</span></div>
         {/each}
@@ -93,6 +93,7 @@
   }
 
   .band {
+    color: var(--band);
     font-size: var(--text-xl);
     font-weight: var(--weight-bold);
   }
@@ -104,24 +105,6 @@
     font-size: var(--text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .trivial,
-  .none {
-    color: var(--color-text-muted);
-  }
-
-  .easy {
-    color: var(--color-success);
-  }
-
-  .medium {
-    color: var(--color-inspiration-strong);
-  }
-
-  .hard,
-  .deadly {
-    color: var(--color-danger);
   }
 
   .scale {
@@ -144,20 +127,7 @@
     position: absolute;
     inset: auto 0 0 0;
     border-radius: var(--radius-sm);
-    background: var(--color-text-muted);
-  }
-
-  .fill.easy {
-    background: var(--color-success);
-  }
-
-  .fill.medium {
-    background: var(--color-inspiration-strong);
-  }
-
-  .fill.hard,
-  .fill.deadly {
-    background: var(--color-danger);
+    background: var(--band);
   }
 
   .mark {

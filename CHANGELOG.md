@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.8] - 2026-11-06
+
+### Added
+
+- Encounters list: search by name or monster, filter by difficulty, and sort by last edited, name or total XP
+
+### Changed
+
+- The Encounters list shows each encounter as a card: a collage of monster hexagons placed at random on a hex grid (one per monster, the strongest in the middle, the same each visit), Draft or Ready, the monsters, difficulty, XP and party
+
 ## [0.4.7] - 2026-11-06
 
 ### Added

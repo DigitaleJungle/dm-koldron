@@ -255,6 +255,25 @@ select option::checkmark {
   color: var(--color-success);
 }
 
+/* Each encounter difficulty band's colour as --band, used as text or fill (Prepare's meter, the encounter list). */
+.band-trivial,
+.band-none {
+  --band: var(--color-text-muted);
+}
+
+.band-easy {
+  --band: var(--color-success);
+}
+
+.band-medium {
+  --band: var(--color-inspiration-strong);
+}
+
+.band-hard,
+.band-deadly {
+  --band: var(--color-danger);
+}
+
 /* A toggle in a row of filters (Catalog, search screen). Koldron chips are crisp, not pills. */
 .chip {
   padding: 0 var(--space-2);

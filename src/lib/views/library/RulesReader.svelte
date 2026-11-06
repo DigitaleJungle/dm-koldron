@@ -1,10 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { rulesChapter, rulesContents, type Chapter, type ContentsChapter } from "$lib/api/rules";
   import { errorMessage } from "$lib/api/storage";
-  import { keepScroll, reachedByBack } from "$lib/stores/history.svelte";
+  import { gotoReplacing, keepScroll, reachedByBack } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import RulesContents from "./RulesContents.svelte";
@@ -65,11 +64,32 @@
     return () => (stale = true);
   });
 
+  // Scrolling to a section is animated here (ease-out), since the WebView's own smooth scrolling may not animate.
+  // Turning the wheel stops it; with animations off it jumps.
+  const SCROLL_MS = 450;
+  let scrollFrame = 0;
+  const stopScroll = () => cancelAnimationFrame(scrollFrame);
+
+  function scrollPaneTo(to: number) {
+    stopScroll();
+    if (!pane) return;
+    const [from, start] = [pane.scrollTop, performance.now()];
+    if (reduceMotion()) return void (pane.scrollTop = to);
+    const step = (now: number) => {
+      if (!pane) return; // the reader closed mid-animation
+      const progress = Math.min(1, (now - start) / SCROLL_MS);
+      pane.scrollTop = from + (to - from) * (1 - (1 - progress) ** 3);
+      if (progress < 1) scrollFrame = requestAnimationFrame(step);
+    };
+    scrollFrame = requestAnimationFrame(step);
+  }
+
   async function scrollToSection(id: string | null) {
     await tick();
     const target = id ? document.getElementById(`section-${id}`) : null;
-    if (target) target.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
-    else pane?.scrollTo({ top: 0 });
+    if (!target || !pane) return void pane?.scrollTo({ top: 0 });
+    const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+    scrollPaneTo(target.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - margin);
   }
 
   // Coming back with Back, the pane returns to where it was (keepScroll) instead.
@@ -77,12 +97,13 @@
     if (chapter && !reachedByBack()) scrollToSection(section);
   });
 
-  // Each chapter or section opened is a step that Back returns from.
+  // Opening a chapter or section takes the current place in the history: Back (and the mouse's back button) leave the
+  // Library instead of stepping through what was read.
   function open(c: ContentsChapter, sectionIndex?: string) {
     const query = new URLSearchParams({ pack: c.pack, chapter: c.index });
     if (sectionIndex) query.set("section", sectionIndex);
     if (`?${query}` === page.url.search) scrollToSection(sectionIndex ?? null); // same address: just scroll again
-    else goto(`?${query}`, { keepFocus: true, noScroll: true });
+    else gotoReplacing(`?${query}`, { keepFocus: true, noScroll: true });
   }
 </script>
 
@@ -102,7 +123,7 @@
         <RulesContents {contents} {current} {section} onopen={open} />
       </aside>
     {/if}
-    <main bind:this={pane} use:keepScroll={{ id: "rules", url: page.url.href, ready: !!chapter }}>
+    <main bind:this={pane} use:keepScroll={{ id: "rules", url: page.url.href, ready: !!chapter }} onwheel={stopScroll}>
       {#if chapterError}
         <p class="message error" role="alert">{t.loadError(chapterError)}</p>
       {:else if !chapter}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
-  import { previousUrl } from "$lib/stores/history.svelte";
+  import { gotoReplacing, previousUrl } from "$lib/stores/history.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import type { SectionId } from "$lib/components/SettingsDialog.svelte";
@@ -29,6 +29,10 @@
     const from = previousUrl();
     return backTo !== "/" && from?.pathname === "/library" && from.searchParams.get("tab") === "catalog" && !from.searchParams.has("entry");
   });
+  function switchTab(event: MouseEvent & { currentTarget: HTMLAnchorElement }) {
+    event.preventDefault();
+    gotoReplacing(event.currentTarget.href);
+  }
   let settingsOpen = $state(false);
   let settingsSection = $state<SectionId>();
   let reloadKey = $state(0);
@@ -85,8 +89,9 @@
       </button>
     {/if}
     <nav class="tabs" aria-label={t.tabs}>
-      <a href="/library" aria-current={tab === "rules" ? "page" : undefined}>{t.rulesTab}</a>
-      <a href="/library?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined}>{strings.catalog.title}</a>
+      <!-- Switching tabs takes the current place in the history, so Back never steps between them. -->
+      <a href="/library" aria-current={tab === "rules" ? "page" : undefined} onclick={switchTab}>{t.rulesTab}</a>
+      <a href="/library?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined} onclick={switchTab}>{strings.catalog.title}</a>
     </nav>
     <div class="search"><SearchBar /></div>
   </header>

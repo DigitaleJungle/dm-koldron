@@ -65,9 +65,15 @@
 
   // Search, filters, sort and paging refine the list in place (no Back step), keeping focus in the search box.
   const go = (changes: Record<string, string | string[] | null>) => gotoReplacing(href(changes), { keepFocus: true, noScroll: true });
+  // Another page starts at its top (the table, and the whole pane in a narrow window).
+  let pane: HTMLElement | undefined = $state();
+  let tableWrap: HTMLElement | undefined = $state();
   function toPage(event: MouseEvent, to: number) {
     event.preventDefault();
-    go({ page: String(to) });
+    go({ page: String(to) }).then(() => {
+      pane?.scrollTo({ top: 0 });
+      tableWrap?.scrollTo({ top: 0 });
+    });
   }
 
   function toggleOption(filterId: string, option: string) {
@@ -95,7 +101,7 @@
   {@const [pack, ...rest] = entry.split("/")}
   <CatalogEntry category={category.id === "all" ? entryCategory(params.get("kind") ?? "") : category} {pack} index={rest.join("/")} {reloadKey} />
 {:else}
-  <div class="catalog" use:keepScroll={{ id: "catalog", url: page.url.href, ready: !!rows }}>
+  <div class="catalog" bind:this={pane} use:keepScroll={{ id: "catalog", url: page.url.href, ready: !!rows }}>
     <nav class="categories" aria-label={t.categoriesLabel}>
       {#each CATEGORIES as cat (cat.id)}
         <a href="?tab=catalog&cat={cat.id}" onclick={(e) => openCategory(e, cat.id)} aria-current={cat.id === category.id ? "page" : undefined}>{cat.label}</a>
@@ -138,7 +144,8 @@
     {:else if selected.length === 0}
       <p class="message">{t.noMatches}</p>
     {:else}
-      <div class="table-wrap">
+      <!-- The table scrolls here; in a narrow window the whole pane above does. Both come back to where they were. -->
+      <div class="table-wrap" bind:this={tableWrap} use:keepScroll={{ id: "catalog-table", url: page.url.href, ready: !!rows }}>
         <table>
           <thead>
             <tr>
@@ -156,8 +163,10 @@
             <!-- The type is in the key: an index is only unique within its type (All has the shield spell and the shield). -->
             {#each shown as row (`${row.kind}/${row.pack}/${row.index}`)}
               <!-- The name is the link (keyboard); the whole row is clickable for the mouse. -->
-              <tr onclick={() => goto(entryHref(row))}>
-                <td class="name"><a href={entryHref(row)} onclick={(e) => e.stopPropagation()}>{row.name}</a></td>
+              <!-- A click on the link itself is the link's: stopping it there would also stop the app's own
+                   navigation, and the whole page would load again (losing the list's scroll position). -->
+              <tr onclick={(e) => !(e.target as Element).closest("a") && goto(entryHref(row))}>
+                <td class="name"><a href={entryHref(row)}>{row.name}</a></td>
                 {#each category.columns as col (col.id)}
                   <td>{col.value(row)}</td>
                 {/each}

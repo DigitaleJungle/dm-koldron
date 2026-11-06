@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.4] - 2026-11-06
+
+### Changed
+
+- Library: switching between Rules and Catalog, and opening a chapter or section in Rules, no longer add history steps, so the mouse's back button leaves the Library instead of stepping through what was read.
+- Rules: jumping to a section scrolls there with an animation (off when animations are off).
+- Catalog: another page opens at its top.
+
+### Fixed
+
+- Catalog: clicking an entry's name no longer reloads the whole app, and going back to the list returns to where it was scrolled.
+
 ## [0.4.3] - 2026-11-06
 
 ### Changed

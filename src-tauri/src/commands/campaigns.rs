@@ -74,10 +74,33 @@ fn read(dir: &Path) -> Result<Campaign, StorageError> {
 }
 
 fn picture(dir: &Path) -> Option<Picture> {
-    let path = dir.join(PICTURE_FILE);
-    let modified = fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+    picture_at(&dir.join(PICTURE_FILE))
+}
+
+/// The picture file at `path`, if there is one.
+pub fn picture_at(path: &Path) -> Option<Picture> {
+    let modified = fs::metadata(path).and_then(|m| m.modified()).ok()?;
     let version = modified.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
     Some(Picture { path: path.to_string_lossy().into_owned(), version })
+}
+
+/// Decodes the picture file at `source` (the format from its content, not its extension), shrinks it so its longest
+/// side is at most `max_side` pixels and writes it to `to` as JPEG.
+pub fn store_picture(source: &Path, max_side: u32, to: &Path) -> Result<(), StorageError> {
+    if fs::metadata(source)?.len() > MAX_PICTURE_LEN {
+        return Err(StorageError::Invalid(format!("The picture must be at most {} MB.", MAX_PICTURE_LEN / 1024 / 1024)));
+    }
+    // Read errors stay I/O errors.
+    let mut image = image::ImageReader::open(source)?
+        .with_guessed_format()?
+        .decode()
+        .map_err(|_| StorageError::Invalid("Use a PNG, JPG, WebP or GIF picture.".into()))?;
+    if image.width().max(image.height()) > max_side {
+        image = image.thumbnail(max_side, max_side);
+    }
+    let mut bytes = vec![];
+    image.to_rgb8().write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Jpeg).map_err(|e| StorageError::Io(e.to_string()))?;
+    write_atomic_bytes(to, &bytes)
 }
 
 /// Campaigns in one folder, most recently opened first, plus the names of folders that couldn't be read.
@@ -193,20 +216,7 @@ pub fn save_picture(dirs: &Dirs, id: &str, source: &Path) -> Result<Campaign, St
     check_id(id)?;
     let dir = dirs.active.join(id);
     read(&dir)?;
-    if fs::metadata(source)?.len() > MAX_PICTURE_LEN {
-        return Err(StorageError::Invalid(format!("The picture must be at most {} MB.", MAX_PICTURE_LEN / 1024 / 1024)));
-    }
-    // Detect the format from the content, not the extension; read errors stay I/O errors.
-    let mut image = image::ImageReader::open(source)?
-        .with_guessed_format()?
-        .decode()
-        .map_err(|_| StorageError::Invalid("Use a PNG, JPG, WebP or GIF picture.".into()))?;
-    if image.width().max(image.height()) > PICTURE_MAX_SIDE {
-        image = image.thumbnail(PICTURE_MAX_SIDE, PICTURE_MAX_SIDE);
-    }
-    let mut bytes = vec![];
-    image.to_rgb8().write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Jpeg).map_err(|e| StorageError::Io(e.to_string()))?;
-    write_atomic_bytes(&dir.join(PICTURE_FILE), &bytes)?;
+    store_picture(source, PICTURE_MAX_SIDE, &dir.join(PICTURE_FILE))?;
     read(&dir)
 }
 

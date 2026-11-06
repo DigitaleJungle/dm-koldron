@@ -30,9 +30,12 @@ export function renameCampaign(id: string, name: string): Promise<Campaign> {
   return invoke("rename_campaign", { id, name });
 }
 
+/** Asks for a picture file (the formats Rust reads); null when the dialog is cancelled. */
+export const choosePictureFile = () => open({ filters: [{ name: strings.campaignSettings.pictureFilter, extensions: ["png", "jpg", "jpeg", "webp", "gif"] }] });
+
 /** Asks for a picture file; null when the dialog is cancelled. Rust then shrinks and stores it. */
 export async function chooseCampaignPicture(id: string): Promise<Campaign | null> {
-  const path = await open({ filters: [{ name: strings.campaignSettings.pictureFilter, extensions: ["png", "jpg", "jpeg", "webp", "gif"] }] });
+  const path = await choosePictureFile();
   return path ? invoke("set_campaign_picture", { id, path }) : null;
 }
 

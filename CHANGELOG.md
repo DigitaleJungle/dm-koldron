@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.10] - 2026-11-06
+
+### Added
+
+- Encounters → Prepare: Map and Notes buttons under the meter open in the stat block's place. Notes is rich text (bold, italic, a heading, lists).
+- Encounter map: add a picture (stored shrunk in the campaign folder, with a progress bar), click it to add numbered pins with a title and rich text in a popup beside the pin, drag pins to move them, and zoom with the scroll wheel (drag to pan).
+- Rich text notes: type @ to tag a Catalog entry or one of the campaign's characters; in a Ready encounter a tag opens it.
+
+### Changed
+
+- Encounters → Prepare: the party is chosen with a Characters button under the meter, with the Map and Notes buttons at the bottom of that column; the meter grows to fill it.
+- Encounters → Prepare: monster tiles show their CR in the top-left corner instead of type and CR under the name, and are shorter; tighter spacing fits more tiles in a row.
+- Encounters → Prepare: buttons, text fields, popups and panels share one style.
+
+### Fixed
+
+- Encounters → Prepare: the Type filter's text no longer runs under the dropdown's arrow.
+- Encounters → Prepare: switching between a stat block and a note no longer makes the layout jump.
+
 ## [0.4.9] - 2026-11-06
 
 ### Changed

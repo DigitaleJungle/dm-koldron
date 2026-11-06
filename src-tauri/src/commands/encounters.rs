@@ -1,7 +1,7 @@
 //! Encounters: one file per encounter in its campaign's folder, `encounters/<id>.json`. Only active campaigns are
-//! changed (an archived one is read-only). The XP budgets for the difficulty come from the switched-on packs.
+//! changed (an archived one is read-only). Its map picture sits beside it as `encounters/<id>.map.jpg`. The XP budgets for the difficulty come from the switched-on packs.
 
-use crate::commands::campaigns::{active_dir, dirs, now_ms};
+use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
 use crate::commands::packs::{disabled, enabled, loaded};
 use crate::packs::Pack;
 use crate::storage::{blocking, lock_update, to_json, write_atomic, StorageError};
@@ -9,12 +9,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const FOLDER: &str = "encounters";
 const MAX_NAME_LEN: usize = 100;
 const MAX_QUANTITY: u32 = 999;
+const MAX_NOTE_LEN: usize = 20_000;
+const MAX_PINS: usize = 100;
+/// The map is stored shrunk so its longest side is at most this many pixels.
+const MAP_MAX_SIDE: u32 = 2048;
 
 /// One roster row: a pack's monster and how many. The name and source are kept so the row still reads when its pack
 /// is switched off or gone.
@@ -26,6 +30,25 @@ pub struct RosterEntry {
     pub name: String,
     pub source: String,
     pub quantity: u32,
+}
+
+/// The DM's notes: a text (shown as "Notes"; stored as its first name, `description`) and the pins on the map.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Notes {
+    pub description: String,
+    pub pins: Vec<Pin>,
+}
+
+/// A pin on the map: where (0 to 1 across and down the picture), its title and its text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Pin {
+    pub x: f64,
+    pub y: f64,
+    /// Pins saved before there were titles read with none.
+    #[serde(default)]
+    pub title: String,
+    pub text: String,
 }
 
 /// Draft while it's being prepared; Ready locks it in Prepare and lets it be run.
@@ -50,6 +73,12 @@ pub struct Encounter {
     /// Files saved before there was a status read as Draft.
     #[serde(default)]
     pub status: Status,
+    /// Files saved before there were notes read with none.
+    #[serde(default)]
+    pub notes: Notes,
+    /// The map picture, found beside the file when it's read; never saved in it or taken from the window.
+    #[serde(default, skip_deserializing)]
+    pub map: Option<Picture>,
     /// Milliseconds since the Unix epoch; set by `save`.
     #[serde(default)]
     pub saved_at: u64,
@@ -95,6 +124,20 @@ fn check(encounter: &mut Encounter) -> Result<(), StorageError> {
     if encounter.monsters.iter().any(|m| m.pack.is_empty() || m.index.is_empty()) {
         problems.push("Each monster needs its pack and index.".into());
     }
+    let notes = &encounter.notes;
+    let mut texts = std::iter::once(&notes.description).chain(notes.pins.iter().map(|p| &p.text));
+    if texts.any(|t| t.chars().count() > MAX_NOTE_LEN) {
+        problems.push(format!("A note must be at most {MAX_NOTE_LEN} characters."));
+    }
+    if notes.pins.iter().any(|p| p.title.chars().count() > MAX_NAME_LEN) {
+        problems.push(format!("A pin's title must be at most {MAX_NAME_LEN} characters."));
+    }
+    if notes.pins.len() > MAX_PINS {
+        problems.push(format!("A map can have at most {MAX_PINS} pins."));
+    }
+    if notes.pins.iter().any(|p| !(0.0..=1.0).contains(&p.x) || !(0.0..=1.0).contains(&p.y)) {
+        problems.push("A pin must be on the map.".into());
+    }
     if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
 }
 
@@ -105,7 +148,12 @@ fn read(folder: &Path, id: &str) -> Result<Encounter, StorageError> {
     })?;
     let mut encounter: Encounter = serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?;
     encounter.id = id.into(); // the file name is the id
+    encounter.map = picture_at(&map_path(folder, id));
     Ok(encounter)
+}
+
+fn map_path(folder: &Path, id: &str) -> PathBuf {
+    folder.join(format!("{id}.map.jpg"))
 }
 
 pub fn list(campaign_dir: &Path) -> Result<EncounterList, StorageError> {
@@ -153,8 +201,25 @@ pub fn save(campaign_dir: &Path, mut encounter: Encounter, now: u64) -> Result<E
         read(&folder, &encounter.id)?; // replacing only what exists, and never a file that can't be read
     }
     encounter.saved_at = now;
-    write_atomic(&folder.join(format!("{}.json", encounter.id)), &to_json(&encounter)?)?;
+    write_atomic(&folder.join(format!("{}.json", encounter.id)), &to_json(&Encounter { map: None, ..encounter.clone() })?)?;
+    encounter.map = picture_at(&map_path(&folder, &encounter.id));
     Ok(encounter)
+}
+
+/// Sets a saved encounter's map from a picture file (shrunk, stored as JPEG), or removes it (`None`).
+pub fn set_map(campaign_dir: &Path, id: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
+    check_id(id)?;
+    let folder = campaign_dir.join(FOLDER);
+    read(&folder, id)?;
+    let path = map_path(&folder, id);
+    match source {
+        Some(source) => store_picture(source, MAP_MAX_SIDE, &path)?,
+        None => match fs::remove_file(&path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        },
+    }
+    Ok(picture_at(&path))
 }
 
 /// The budget table of the first switched-on pack that has one (a ruleset's pack); empty when none has.
@@ -181,6 +246,12 @@ pub async fn save_encounter(app: AppHandle, campaign: String, encounter: Encount
     blocking(move || save(&active_dir(&dirs(&app)?, &campaign)?, encounter, now_ms())).await
 }
 
+/// `path`: the picture the DM chose, or none to remove the map.
+#[tauri::command]
+pub async fn set_encounter_map(app: AppHandle, campaign: String, id: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
+    blocking(move || set_map(&active_dir(&dirs(&app)?, &campaign)?, &id, path.as_deref().map(Path::new))).await
+}
+
 #[tauri::command]
 pub async fn encounter_budgets(app: AppHandle) -> Result<Vec<Budget>, StorageError> {
     blocking(move || Ok(budgets(&enabled(&loaded(&app)?.0, &disabled(&app)?)))).await
@@ -203,7 +274,35 @@ mod tests {
     }
 
     fn encounter(name: &str, monsters: Vec<RosterEntry>) -> Encounter {
-        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], status: Status::Draft, saved_at: 0 }
+        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], status: Status::Draft, notes: Notes::default(), map: None, saved_at: 0 }
+    }
+
+    #[test]
+    fn keeps_notes_checks_pins_and_stores_the_map_beside_the_file() {
+        let dir = temp_dir("notes");
+        let pin = |x: f64| Pin { x, y: 0.5, title: "Trapdoor".into(), text: "Leads to the crypt".into() };
+        let notes = Notes { description: "Flee at half HP".into(), pins: vec![pin(0.25)] };
+        let saved = save(&dir, Encounter { notes: notes.clone(), ..encounter("Bridge", vec![]) }, 1).unwrap();
+        assert_eq!(get(&dir, &saved.id).unwrap().notes, notes);
+        let off = Notes { pins: vec![pin(1.5)], ..Notes::default() };
+        assert!(matches!(save(&dir, Encounter { notes: off, ..saved.clone() }, 2), Err(StorageError::Invalid(_))));
+        let long = Notes { pins: vec![Pin { title: "x".repeat(MAX_NAME_LEN + 1), ..pin(0.5) }], ..Notes::default() };
+        assert!(matches!(save(&dir, Encounter { notes: long, ..saved.clone() }, 2), Err(StorageError::Invalid(_))));
+        let old: Pin = serde_json::from_str(r#"{"x":0.1,"y":0.2,"text":"Old"}"#).unwrap();
+        assert_eq!(old.title, "");
+
+        let png = dir.join("map.png");
+        image::RgbImage::new(4000, 1000).save(&png).unwrap();
+        let map = set_map(&dir, &saved.id, Some(&png)).unwrap().unwrap();
+        let stored = image::open(&map.path).unwrap();
+        assert_eq!((stored.width(), stored.height()), (MAP_MAX_SIDE, 512));
+        let resaved = save(&dir, saved.clone(), 3).unwrap();
+        assert_eq!(resaved.map.map(|m| m.path), Some(map.path.clone()));
+        let file = dir.join(FOLDER).join(format!("{}.json", saved.id));
+        assert!(!fs::read_to_string(&file).unwrap().contains("map.jpg"));
+        assert!(matches!(set_map(&dir, &saved.id, Some(&file)), Err(StorageError::Invalid(_))));
+        assert_eq!(set_map(&dir, &saved.id, None).unwrap(), None);
+        assert!(matches!(set_map(&dir, "nope", None), Err(StorageError::NotFound(_))));
     }
 
     #[test]

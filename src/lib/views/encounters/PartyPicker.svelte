@@ -41,17 +41,18 @@
 <div class="picker">
   <button
     bind:this={button}
-    class="trigger"
+    class="btn trigger"
     popovertarget="{id}-list"
     aria-label={`${t.title}, ${label}`}
     disabled={disabled || !characters?.length}
   >
+    <i class="ti ti-users" aria-hidden="true"></i>
     <span>{label}</span>
-    <i class="ti ti-chevron-down" aria-hidden="true"></i>
+    <i class="ti ti-chevron-down chevron" aria-hidden="true"></i>
   </button>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
-  <div bind:this={list} id="{id}-list" popover="auto" class="list" role="group" aria-label={t.title} ontoggle={(e) => e.newState === "open" && place()}>
+  <div bind:this={list} id="{id}-list" popover="auto" class="list popover" role="group" aria-label={t.title} ontoggle={(e) => e.newState === "open" && place()}>
     <ul>
       {#each characters ?? [] as c (c.id)}
         {@const level = characterLevel(c.classes)}
@@ -74,20 +75,10 @@
     gap: var(--space-1);
   }
 
+  /* A .btn, like the note buttons under it. */
   .trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
+    justify-content: flex-start;
     width: 100%;
-    min-height: var(--control-height);
-    padding: 0 var(--space-2) 0 var(--space-3);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    text-align: left;
-    cursor: pointer;
   }
 
   .trigger span {
@@ -96,23 +87,17 @@
     white-space: nowrap;
   }
 
-  .trigger:disabled {
-    color: var(--color-text-muted);
-    cursor: default;
+  .chevron {
+    margin-left: auto;
   }
 
+  /* A .popover, placed by place(). */
   .list {
     position: fixed;
     inset: auto;
     margin: 0;
-    padding: var(--space-1);
     max-height: min(60vh, calc(100vh - 2 * var(--space-4)));
     overflow-y: auto;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    box-shadow: var(--shadow-drawer);
   }
 
   ul {

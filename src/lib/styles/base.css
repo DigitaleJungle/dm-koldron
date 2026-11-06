@@ -67,6 +67,16 @@ a {
   color: var(--color-link);
 }
 
+/* A tag in a rich text note (typed with @): a Catalog entry or a character. */
+a[data-kind] {
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+}
+
+a[data-kind][href]:hover {
+  text-decoration: underline;
+}
+
 :focus-visible {
   outline: var(--focus-ring) solid var(--color-focus);
   outline-offset: 2px;
@@ -168,6 +178,37 @@ a {
 
 .icon-btn .ti {
   font-size: var(--icon-size);
+}
+
+/* A pressed toggle (a note's button, a formatting tool): the same look as a pressed chip. */
+.btn[aria-pressed="true"],
+.icon-btn[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+/* A one-line text field, the same size and edge as a dropdown. */
+.text-field {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.text-field::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Something floating over the page (a dropdown's list, a popup): like a dropdown's open list. */
+.popover {
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-drawer);
 }
 
 /* The full control height (Settings gear, dialog close, show/hide contents) */

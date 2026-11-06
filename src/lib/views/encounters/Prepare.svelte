@@ -10,7 +10,7 @@
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { entryImage } from "$lib/api/images";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type RosterEntry } from "$lib/api/encounters";
+  import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
@@ -20,6 +20,7 @@
   import { crText, title } from "$lib/views/library/catalog";
   import MonsterBlock from "$lib/views/library/entries/MonsterBlock.svelte";
   import DifficultyMeter from "./DifficultyMeter.svelte";
+  import NotesPanel, { TOPICS, TOPIC_ICONS, type Topic } from "./NotesPanel.svelte";
   import PartyPicker from "./PartyPicker.svelte";
   import { difficulty, monsterXp } from "./difficulty";
   import { addToRoster, characterLevel, entryKey, rowsByKey } from "./roster";
@@ -44,10 +45,11 @@
   let name = $state("");
   let roster = $state<RosterEntry[]>([]);
   let selected = $state(new Set<string>());
+  let notes = $state<Notes>({ description: "", pins: [] });
   /** What was last saved (or loaded), to tell whether there are changes. Null until everything has loaded. */
   let baseline = $state<string | null>(null);
 
-  const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort() });
+  const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort(), notes });
 
   // svelte-ignore state_referenced_locally
   const opening = id ? getEncounter(campaign, id) : Promise.resolve(null);
@@ -57,6 +59,7 @@
       encounter = e;
       name = e?.name ?? t.newTitle;
       roster = e?.monsters ?? [];
+      if (e) notes = e.notes;
     },
     (e) => (loadError = t.openError(errorMessage(e))),
   );
@@ -103,6 +106,7 @@
         monsters: roster,
         party: [...selected],
         status,
+        notes,
         savedAt: 0,
       });
       encounter = saved;
@@ -294,7 +298,22 @@
     );
     return () => (stale = true);
   });
-  const toggleDetails = (row: RosterEntry) => (detailsKey = detailsKey === entryKey(row) ? null : entryKey(row));
+  // The details card shows either a stat block or one of the notes (the buttons under the meter), never both.
+  let topic = $state<Topic | null>(null);
+  function toggleDetails(row: RosterEntry) {
+    detailsKey = detailsKey === entryKey(row) ? null : entryKey(row);
+    topic = null;
+  }
+  function toggleTopic(next: Topic) {
+    topic = topic === next ? null : next;
+    detailsKey = null;
+  }
+  // The card stays when its content changes, so it starts again at the top.
+  let detailsCard = $state<HTMLElement>();
+  $effect(() => {
+    void [detailsOpenKey, topic];
+    if (detailsCard) detailsCard.scrollTop = 0;
+  });
   // Minimized: only the pictures, in one row, so an open stat block gets the rest of the column. The switch is a view
   // transition: both panels grow or shrink into their new size. (Tiles get no view-transition-name of their own: named
   // tiles are drawn above the page, unclipped, so scrolled-away ones would fly across the screen.)
@@ -385,7 +404,7 @@
           <p class="muted">{t.browser.noMonsters}</p>
         {:else}
           <label for="monster-search" class="sr-only">{t.browser.search}</label>
-          <input id="monster-search" class="search" type="search" bind:value={search} placeholder={t.browser.search} autocomplete="off" />
+          <input id="monster-search" class="text-field" type="search" bind:value={search} placeholder={t.browser.search} autocomplete="off" />
           <div class="filters">
             <div class="cr-range">
               <span class="cr-text">{t.browser.crRange(crText(CR_STEPS[crMin]), crText(CR_STEPS[crMax]))}</span>
@@ -497,10 +516,12 @@
                   onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(row)}
                 >
                   {#if !locked}
-                    <button class="tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
+                    <button class="icon-btn tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
                       <i class="ti ti-x" aria-hidden="true"></i>
                     </button>
                   {/if}
+                  <!-- Just the number on screen; "CR" for screen readers. -->
+                  {#if known}<span class="tile-cr mono"><span class="sr-only">{t.browser.cr} </span>{crText(crOf(known))}</span>{/if}
                   <div class="tile-portrait">
                     {#if picture}
                       <img class="hex" src={picture} alt="" />
@@ -525,14 +546,8 @@
                     <h3>
                       <button class="tile-name" aria-expanded={detailsKey === entryKey(row)} aria-controls="monster-details" onclick={() => toggleDetails(row)}>{row.name}</button>
                     </h3>
-                    <p class="tile-meta">
-                      {#if known}
-                        {#if typeOf(known)}<span>{typeOf(known)}</span><span aria-hidden="true">·</span>{/if}
-                        <span class="mono strong">{t.roster.cr(crText(crOf(known)))}</span>
-                      {:else}
-                        <span>{row.source}</span>
-                      {/if}
-                    </p>
+                    <!-- Its pack is off: the source says where it came from. -->
+                    {#if !known}<p class="tile-meta">{row.source}</p>{/if}
                     <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
                     {#if xp === null}
                       <p class="tile-meta warn">{known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`}</p>
@@ -542,34 +557,65 @@
               {/each}
             </ul>
           </section>
-          {#if detailsRow}
-            <section id="monster-details" class="panel details prose" transition:fade={fadeMotion()} aria-label={t.details.label(detailsRow.name)}>
-              <button class="icon-btn details-close" aria-label={t.details.close} onclick={() => (detailsKey = null)}>
-                <i class="ti ti-x" aria-hidden="true"></i>
-              </button>
-              <h3 class="details-name">{detailsRow.name}</h3>
-              {#if detailsError}
-                <p class="error">{detailsError}</p>
-              {:else if !detailsEntry}
-                <p class="muted">{t.browser.previewLoading}</p>
-              {:else}
-                <MonsterBlock loaded={detailsEntry} />
+          <!-- One card for a stat block or a note: it fades in and out as it opens and closes, but switching between
+               them swaps what's in it, so two cards never share the column while one fades out. -->
+          {#if detailsRow || topic}
+            <section
+              id={detailsRow ? "monster-details" : "encounter-notes"}
+              bind:this={detailsCard}
+              class="panel details"
+              class:prose={!!detailsRow}
+              transition:fade={fadeMotion()}
+              aria-label={detailsRow ? t.details.label(detailsRow.name) : t.notes.topics[topic!]}
+            >
+              {#if detailsRow}
+                <button class="icon-btn details-close" aria-label={t.details.close} onclick={() => (detailsKey = null)}>
+                  <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+                <h3 class="details-name">{detailsRow.name}</h3>
+                {#if detailsError}
+                  <p class="error">{detailsError}</p>
+                {:else if !detailsEntry}
+                  <p class="muted">{t.browser.previewLoading}</p>
+                {:else}
+                  <MonsterBlock loaded={detailsEntry} />
+                {/if}
+              {:else if topic}
+                <!-- A note has no ✕: its button under the meter (again), another one, or a monster closes it. The map
+                     needs no title: it's plain to see. -->
+                {#if topic !== "map"}<h3 class="details-name">{t.notes.topics[topic]}</h3>{/if}
+                <NotesPanel
+                  {topic}
+                  bind:notes
+                  map={encounter?.map ?? null}
+                  {locked}
+                  {campaign}
+                  encounterId={encounter?.id ?? null}
+                  onmap={(map) => encounter && (encounter = { ...encounter, map })}
+                />
               {/if}
             </section>
           {/if}
         </div>
 
         <aside class="side">
-          <DifficultyMeter {result} partySize={party.length} monsterCount={roster.length} hasBudgets={budgets.length > 0} {budgetError}>
+          <DifficultyMeter {result} partySize={party.length} monsterCount={roster.length} hasBudgets={budgets.length > 0} {budgetError} />
+          <div class="buttons">
             <PartyPicker {characters} {selected} error={partyError} ontoggle={toggleCharacter} disabled={locked} />
-          </DifficultyMeter>
+            {#each TOPICS as each (each)}
+              <button class="btn topic" aria-pressed={topic === each} aria-controls="encounter-notes" onclick={() => toggleTopic(each)}>
+                <i class="ti {TOPIC_ICONS[each]}" aria-hidden="true"></i>
+                {t.notes.topics[each]}
+              </button>
+            {/each}
+          </div>
         </aside>
       </div>
     </div>
   </div>
 
   {#if preview}
-    <div bind:this={card} class="preview prose" transition:fade={fadeMotion()} role="dialog" aria-label={t.browser.preview(preview.row.name)} style:top="{preview.top}px" style:left="{preview.left}px">
+    <div bind:this={card} class="preview prose popover" transition:fade={fadeMotion()} role="dialog" aria-label={t.browser.preview(preview.row.name)} style:top="{preview.top}px" style:left="{preview.left}px">
       {#if previewImage}
         <img class="portrait" src={previewImage} alt="" />
       {/if}
@@ -611,7 +657,7 @@
     flex-direction: column;
     gap: var(--space-4);
     height: 100%;
-    padding: var(--space-4) var(--space-5) var(--space-5);
+    padding: var(--space-4) var(--space-4) var(--space-5);
   }
 
   .top {
@@ -658,7 +704,7 @@
     min-height: 0;
     display: grid;
     grid-template-columns: var(--encounter-browser-width) minmax(0, 1fr);
-    gap: var(--space-5);
+    gap: var(--space-3);
   }
 
   /* Nothing goes below the fold: each column is the window's height, and what's too long scrolls inside it. */
@@ -666,19 +712,37 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: minmax(0, 1fr); /* a fixed height, so the details card's 50% has something to be half of */
-    gap: var(--space-5);
+    gap: var(--space-3);
     min-height: 0;
   }
 
+  /* The meter takes the height, the party's and the notes' buttons stay at the bottom. */
   .side {
+    display: flex;
+    flex-direction: column;
+    width: var(--meter-width);
     min-height: 0;
     overflow-y: auto;
+  }
+
+  /* Under the meter: the party's button, then the notes', one full-width button each (the open one is pressed), all
+     the same space apart. */
+  .buttons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-2); /* the same as between the buttons */
+  }
+
+
+  .topic {
+    justify-content: flex-start;
   }
 
   .editor {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: var(--space-3);
     min-width: 0;
     min-height: 0;
   }
@@ -693,7 +757,7 @@
   /* With a stat block open, the tiles keep room for two rows (more scroll) and the stat block takes the rest. */
   .editor:has(.details) .panel.monsters {
     flex: none;
-    max-height: calc(2 * var(--roster-tile-height) + var(--space-4) + 2 * var(--space-6) + 2 * var(--border-width));
+    max-height: calc(2 * var(--roster-tile-height) + var(--space-3) + 2 * var(--space-4) + 2 * var(--border-width));
   }
 
   /* While minimizing, each panel's old and new picture stay pinned to its top and are cut off at its edges, so nothing
@@ -835,9 +899,8 @@
 
   /* The monsters in the encounter: portrait tiles (docs/C · Portrait tiles). */
   .panel.monsters {
-    gap: var(--space-6);
-    padding: var(--space-6);
-    border-radius: var(--radius-lg);
+    gap: var(--space-4);
+    padding: var(--space-4);
   }
 
   .empty-pot {
@@ -851,7 +914,7 @@
   .roster {
     display: grid;
     grid-template-columns: repeat(auto-fill, var(--roster-card-width));
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
 
   .roster:empty {
@@ -870,31 +933,29 @@
     background: var(--color-surface);
   }
 
+  /* An icon button, a little larger to hit; red on hover, since it removes. */
   .tile-remove {
     position: absolute;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--roster-touch-size);
-    height: var(--roster-touch-size);
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
     top: var(--space-1);
     right: var(--space-1);
-    border-radius: var(--radius-md);
-    color: var(--color-text-muted);
+    width: var(--roster-touch-size);
+    height: var(--roster-touch-size);
   }
 
   .tile-remove:hover {
-    background: var(--color-surface-sunken);
     color: var(--color-danger);
   }
 
-  .tile-remove:focus-visible {
-    outline: var(--focus-ring) solid var(--color-focus);
-    outline-offset: 2px;
+  /* The CR in the top-left corner, across from the ✕. */
+  .tile-cr {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-3);
+    color: var(--color-text);
+  }
+
+  .minimized .tile-cr {
+    display: none;
   }
 
   /* A hexagon portrait with the count on a small hexagon at its lower right. */
@@ -1043,19 +1104,6 @@
 
   .mono {
     font: var(--text-dice);
-  }
-
-  .strong {
-    color: var(--color-text);
-  }
-
-  .search,
-  .filters select {
-    min-height: var(--control-height);
-    padding: 0 var(--space-3);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
   }
 
   .filters {
@@ -1226,7 +1274,7 @@
     color: var(--color-accent-text);
   }
 
-  /* The stat block beside the browser; it only shows, so the pointer goes through it. */
+  /* The stat block beside the browser (a .popover); it only shows, so the pointer goes through it. */
   .preview {
     position: fixed;
     z-index: var(--z-menu);
@@ -1234,10 +1282,6 @@
     max-height: calc(100vh - 2 * var(--space-4));
     overflow: hidden;
     padding: var(--space-3) var(--space-4);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-drawer);
     font-size: var(--text-sm);
     pointer-events: none;
   }
@@ -1343,6 +1387,7 @@
 
     .side {
       position: static;
+      width: auto;
     }
 
     .preview {

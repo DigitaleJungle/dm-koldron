@@ -52,6 +52,7 @@ pub fn run() {
             commands::encounters::list_encounters,
             commands::encounters::get_encounter,
             commands::encounters::save_encounter,
+            commands::encounters::set_encounter_map,
             commands::encounters::encounter_budgets,
             commands::images::list_pack_images,
             commands::images::entry_image,

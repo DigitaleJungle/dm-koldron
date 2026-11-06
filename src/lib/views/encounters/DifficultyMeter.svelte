@@ -1,7 +1,6 @@
 <script lang="ts">
   // A vertical meter: the party's band edges as marks, the encounter's XP as the fill, the band named above it.
   // Missing data gives no rating ("–") and says what's missing where the XP total goes.
-  import type { Snippet } from "svelte";
   import { strings } from "$lib/strings";
   import { BANDS, bandEdges, type Difficulty } from "./difficulty";
 
@@ -11,15 +10,12 @@
     monsterCount,
     hasBudgets,
     budgetError = null,
-    children,
   }: {
     result: Difficulty;
     partySize: number;
     monsterCount: number;
     hasBudgets: boolean;
     budgetError?: string | null;
-    /** Shown at the top of the panel, above the meter (the party picker). */
-    children?: Snippet;
   } = $props();
 
   const t = strings.encounters.meter;
@@ -49,7 +45,6 @@
 </script>
 
 <section class="meter" aria-label={t.title}>
-  {@render children?.()}
   <!-- Always two lines: the band (or "–") and the XP total (or why there's no rating). -->
   <div class="reading" role="status">
     <span class="band band-{result.band ?? 'none'}">{result.band ? t.bands[result.band] : t.noRating}</span>
@@ -75,12 +70,13 @@
 </section>
 
 <style>
-  /* A set width, so long notes wrap instead of widening the column it sits in. */
+  /* As wide as its column (which has a set width, so long notes wrap instead of widening it), and the height the
+     column leaves; the scale stretches with it. */
   .meter {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    width: var(--meter-width);
     padding: var(--space-3) var(--space-4);
     background: var(--color-surface);
     border: var(--border-width) solid var(--color-border);
@@ -110,8 +106,10 @@
   .scale {
     display: flex;
     justify-content: flex-start;
-    height: var(--meter-height);
-    padding: var(--space-2) 0;
+    flex: 1;
+    min-height: var(--meter-height);
+    /* Room on the left for the marker (its gap and width, below), so its point lines up with the band name above. */
+    padding: var(--space-2) 0 var(--space-2) calc(var(--space-1) + var(--space-2));
   }
 
   .track {

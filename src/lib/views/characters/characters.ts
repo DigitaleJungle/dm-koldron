@@ -6,14 +6,29 @@ export const classLine = (c: Pick<Character, "classes">) => c.classes.map((k) =>
 
 export const totalLevel = (c: Pick<Character, "classes">) => c.classes.reduce((sum, k) => sum + (Number(k.level) || 0), 0);
 
-export type CharacterSort = "name" | "level";
+export type CharacterSort = "name" | "level" | "class";
+/** All characters, only those in the party, or only those who aren't. */
+export type PartyFilter = "all" | "in" | "out";
 
-/** Every search word in the name or the player; by name, or by level (highest first, ties by name). */
-export function selectCharacters(list: Character[], search: string, sort: CharacterSort): Character[] {
+/**
+ * Every search word in the name, the class line or the player, and in or out of the party as asked; by name, by
+ * level (highest first) or by class line, ties by name.
+ */
+export function selectCharacters(list: Character[], search: string, sort: CharacterSort, party: PartyFilter = "all"): Character[] {
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = (c: Character) => words.every((w) => c.name.toLowerCase().includes(w) || c.player.toLowerCase().includes(w));
+  const matches = (c: Character) => words.every((w) => [c.name, classLine(c), c.player].some((text) => text.toLowerCase().includes(w)));
+  const inFilter = (c: Character) => party === "all" || c.onHome === (party === "in");
   const byName = (a: Character, b: Character) => a.name.localeCompare(b.name);
-  return list.filter(matches).sort((a, b) => (sort === "level" ? totalLevel(b) - totalLevel(a) : 0) || byName(a, b));
+  const first = (a: Character, b: Character) =>
+    sort === "level" ? totalLevel(b) - totalLevel(a) : sort === "class" ? classLine(a).localeCompare(classLine(b)) : 0;
+  return list.filter((c) => matches(c) && inFilter(c)).sort((a, b) => first(a, b) || byName(a, b));
+}
+
+/** The party's average level, to one decimal ("5", "4.5"); null without a party. */
+export function averageLevel(party: Character[]): string | null {
+  if (party.length === 0) return null;
+  const average = party.reduce((sum, c) => sum + totalLevel(c), 0) / party.length;
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(average);
 }
 
 /** A new character's form: one class row, nothing else filled in. */

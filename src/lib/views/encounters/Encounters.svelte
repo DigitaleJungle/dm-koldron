@@ -6,15 +6,15 @@
   import { page } from "$app/state";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, listEncounters, type Budget, type Encounter, type EncounterList } from "$lib/api/encounters";
+  import { encounterBudgets, listEncounters, type Budget, type Encounter, type EncounterList, type RosterEntry } from "$lib/api/encounters";
   import { entryImage } from "$lib/api/images";
   import { errorMessage } from "$lib/api/storage";
+  import HexCollage from "$lib/components/HexCollage.svelte";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { BANDS, difficulty, monsterXp, type Band } from "./difficulty";
-  import { HEX_HEIGHT, combSize, hexPoints, hexcomb } from "./hexcomb";
   import { characterLevel, entryKey, rowsByKey } from "./roster";
 
   const t = strings.encounters;
@@ -67,13 +67,11 @@
     }
   });
 
-  type Card = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; tiles: ReturnType<typeof tilesOf>; size: { width: number; height: number } };
+  type Card = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; rows: RosterEntry[] };
 
-  // The strongest monster in the middle, the rest outward in placing order.
-  function tilesOf(e: Encounter, xps: (number | null)[]) {
-    const rows = e.monsters.map((m, i) => ({ ...m, xp: xps[i] ?? 0 })).sort((a, b) => b.xp - a.xp);
-    return hexcomb(rows.length, e.id).map((cell, i) => ({ ...cell, row: rows[i] }));
-  }
+  /** The monsters for the collage, strongest first: that one goes in the middle, the rest outward. */
+  const strongestFirst = (e: Encounter, xps: (number | null)[]) =>
+    e.monsters.map((m, i) => ({ m, xp: xps[i] ?? 0 })).sort((a, b) => b.xp - a.xp).map(({ m }) => m);
 
   function partyText(ids: string[]) {
     if (ids.length === 0) return t.list.noParty;
@@ -87,15 +85,13 @@
       const xps = e.monsters.map((m) => monsterXp(byKey.get(entryKey(m))?.fields.xp));
       const levels = e.party.map((id) => characterLevel(characterById.get(id)?.classes));
       const result = difficulty(levels, e.monsters.map((m, i) => ({ quantity: m.quantity, xp: xps[i] })), budgets);
-      const tiles = tilesOf(e, xps);
       return {
         ...e,
         count: e.monsters.reduce((n, m) => n + m.quantity, 0),
         band: result.band,
         xp: result.total,
         partyLine: partyText(e.party),
-        tiles,
-        size: combSize(tiles),
+        rows: strongestFirst(e, xps),
       };
     }),
   );
@@ -177,31 +173,11 @@
           <li>
             <article class="card">
               <div class="art">
-                <!-- One unit is one hexagon's width; --hex-width sets its size on screen, shrinking to fit the card. -->
-                <svg
-                  viewBox="-0.1 -0.1 {c.size.width + 0.2} {c.size.height + 0.2}"
-                  style:width="calc({c.size.width + 0.2} * var(--encounter-hex-width))"
-                  style:height="calc({c.size.height + 0.2} * var(--encounter-hex-width))"
-                  aria-hidden="true"
-                >
-                  {#if c.tiles.length === 0}
-                    <polygon class="blank" points={hexPoints(0, 0)} />
-                  {/if}
-                  {#each c.tiles as tile (entryKey(tile.row))}
-                    {@const picture = pictures[entryKey(tile.row)]}
-                    {#if picture}
-                      <image href={picture} x={tile.x} y={tile.y} width="1" height={HEX_HEIGHT} preserveAspectRatio="xMidYMid slice" clip-path="url(#encounter-hex)" />
-                    {:else}
-                      <polygon class="letter-bg" points={hexPoints(tile.x, tile.y)} />
-                      <text class="letter" x={tile.x + 0.5} y={tile.y + HEX_HEIGHT / 2}>{tile.row.name.charAt(0)}</text>
-                    {/if}
-                    {#if tile.row.quantity > 1}
-                      <!-- The ×count on a small hexagon at the lower right, as on the Prepare tiles. -->
-                      <polygon class="badge" points={hexPoints(tile.x + 0.6, tile.y + HEX_HEIGHT * 0.64, 0.44)} />
-                      <text class="badge-text" x={tile.x + 0.82} y={tile.y + HEX_HEIGHT * 0.86}>×{tile.row.quantity}</text>
-                    {/if}
-                  {/each}
-                </svg>
+                <HexCollage
+                  tiles={c.rows.map((r) => ({ key: entryKey(r), picture: pictures[entryKey(r)] ?? null, letter: r.name.charAt(0), count: r.quantity }))}
+                  seed={c.id}
+                  hexWidth="var(--encounter-hex-width)"
+                />
               </div>
               <div class="body">
                 <div class="title">
@@ -235,12 +211,6 @@
   {/if}
 </div>
 
-<!-- The hexagon every picture is cut to, in the picture's own box. -->
-<svg class="defs" aria-hidden="true">
-  <clipPath id="encounter-hex" clipPathUnits="objectBoundingBox">
-    <polygon points="0.25,0 0.75,0 1,0.5 0.75,1 0.25,1 0,0.5" />
-  </clipPath>
-</svg>
 
 <style>
   .encounters {
@@ -377,48 +347,6 @@
     justify-content: center;
     border-bottom: var(--border-width) solid var(--color-border);
     background: var(--color-bg);
-  }
-
-  .art svg {
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  .blank {
-    fill: var(--color-surface-sunken);
-  }
-
-  .letter-bg {
-    fill: var(--color-border);
-  }
-
-  .letter,
-  .badge-text {
-    text-anchor: middle;
-    dominant-baseline: central;
-  }
-
-  .letter {
-    fill: var(--color-text-muted);
-    font-family: var(--font-display);
-    font-size: 0.4px;
-    font-weight: var(--weight-display);
-  }
-
-  .badge {
-    fill: var(--potion-glow);
-  }
-
-  .badge-text {
-    fill: var(--charcoal);
-    font-family: var(--font-mono);
-    font-size: 0.19px;
-  }
-
-  .defs {
-    position: absolute;
-    width: 0;
-    height: 0;
   }
 
   .body {

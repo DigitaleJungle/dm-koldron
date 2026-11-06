@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Character } from "$lib/api/characters";
-import { blankCharacter, clamp01, classLine, selectCharacters, totalLevel } from "./characters";
+import { averageLevel, blankCharacter, clamp01, classLine, selectCharacters, totalLevel } from "./characters";
 
 const make = (name: string, player: string, classes: [string, number][]): Character => ({
   ...blankCharacter(),
@@ -28,5 +28,20 @@ describe("characters", () => {
     expect(selectCharacters(all, "lot", "name").map((c) => c.name)).toEqual(["Mira Ashvale"]);
     expect(selectCharacters(all, "mira lotte", "name").map((c) => c.name)).toEqual(["Mira Ashvale"]);
     expect(selectCharacters(all, "nobody", "name")).toEqual([]);
+  });
+
+  it("search by class, sort by class and filter by party", () => {
+    const inParty = { ...tavi, onHome: true };
+    const all = [inParty, mira, brannoc];
+    expect(selectCharacters(all, "wizard", "name").map((c) => c.name)).toEqual(["Mira Ashvale", "Tavi"]);
+    expect(selectCharacters(all, "", "class").map((c) => c.name)).toEqual(["Brannoc", "Mira Ashvale", "Tavi"]);
+    expect(selectCharacters(all, "", "name", "in").map((c) => c.name)).toEqual(["Tavi"]);
+    expect(selectCharacters(all, "", "name", "out").map((c) => c.name)).toEqual(["Brannoc", "Mira Ashvale"]);
+  });
+
+  it("average the party's level", () => {
+    expect(averageLevel([])).toBeNull();
+    expect(averageLevel([mira, brannoc])).toBe(new Intl.NumberFormat().format(5));
+    expect(averageLevel([mira, tavi])).toBe(new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(4.5));
   });
 });

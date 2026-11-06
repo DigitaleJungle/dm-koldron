@@ -1,22 +1,25 @@
 <script lang="ts">
-  // The campaign's characters as cards: search by name or player (?q=), sort by name or level (?sort=level), each
-  // with a menu (Edit, Add to / Remove from party, Delete). ?edit=<id> opens that character's form (from search).
+  // The campaign's characters (docs/Characters (light), without its page title, count line and dashed add card): the
+  // party on a dark band, then search by name, class or player (?q=), a party filter (?party=in|out), sort by name,
+  // level or class (?sort=level|class), and the cards. A card's name opens its form; in its bottom-right corner a party
+  // button (users when in the party, turning into users-minus on hover; users-plus on card hover otherwise); its menu
+  // (top right) has Edit, Add to / Remove from party and Delete. ?edit=<id> opens that character's form (from search).
   import { tick } from "svelte";
-  import { fade } from "svelte/transition";
   import { afterNavigate } from "$app/navigation";
   import { page } from "$app/state";
   import { catalogRows } from "$lib/api/catalog";
   import { pictureSrc } from "$lib/api/campaigns";
   import { deleteCharacter, listCharacters, saveCharacter, type Character, type CharacterList } from "$lib/api/characters";
   import { errorMessage } from "$lib/api/storage";
+  import HexCollage from "$lib/components/HexCollage.svelte";
   import Menu, { type MenuItem } from "$lib/components/Menu.svelte";
+  import PartyIcon from "$lib/components/PartyIcon.svelte";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import CharacterForm from "./CharacterForm.svelte";
-  import { blankCharacter, classLine, selectCharacters, totalLevel, type CharacterSort } from "./characters";
+  import { averageLevel, blankCharacter, classLine, selectCharacters, totalLevel, type CharacterSort, type PartyFilter } from "./characters";
 
   const t = strings.characters;
   const campaign = $derived(campaigns.current!.id);
@@ -48,10 +51,14 @@
   afterNavigate(({ type }) => {
     if (type === "popstate") search = page.url.searchParams.get("q") ?? "";
   });
-  const sort = $derived<CharacterSort>(page.url.searchParams.get("sort") === "level" ? "level" : "name");
-  const shown = $derived(list ? selectCharacters(list.characters, search, sort) : []);
+  const SORTS: CharacterSort[] = ["name", "level", "class"];
+  const FILTERS: PartyFilter[] = ["all", "in", "out"];
+  const sort = $derived<CharacterSort>(SORTS.find((s) => s === page.url.searchParams.get("sort")) ?? "name");
+  const filter = $derived<PartyFilter>(FILTERS.find((f) => f === page.url.searchParams.get("party")) ?? "all");
+  const shown = $derived(list ? selectCharacters(list.characters, search, sort, filter) : []);
+  const party = $derived((list?.characters ?? []).filter((c) => c.onHome).sort((a, b) => a.name.localeCompare(b.name)));
 
-  // Search and sort refine the list in place (no Back step).
+  // Search, filter and sort refine the list in place (no Back step).
   function refine(changes: Record<string, string | null>) {
     const params = new URLSearchParams(page.url.searchParams);
     for (const [name, value] of Object.entries(changes)) value ? params.set(name, value) : params.delete(name);
@@ -80,9 +87,7 @@
   let busy = $state(false);
   /** The character whose party button the pointer (or keyboard focus) is on: it then shows "remove". */
   let pointing = $state<string | null>(null);
-  const partyIcon = (c: Character) => (!c.onHome ? "ti-users-plus" : pointing === c.id ? "ti-users-minus" : "ti-users");
-  /** Each half of the icon swap (the new one in, then the old one out); none with reduced motion. */
-  const swapMs = () => (reduceMotion() ? 0 : 120);
+  const partyIcon = (c: Character) => (!c.onHome ? "plus" : pointing === c.id ? "minus" : "users");
 
   async function focusMenu(id: string) {
     await tick();
@@ -133,14 +138,45 @@
 <svelte:head><title>{t.title}</title></svelte:head>
 
 <div class="characters" use:keepScroll={{ id: "characters", url: page.url.href, ready: !!list }}>
+  {#if party.length > 0}
+    <section class="party" aria-label={t.party}>
+      <!-- The party's pictures as hexagons, placed like an encounter's monsters (the same each visit). -->
+      <div class="party-art">
+        <HexCollage
+          tiles={party.map((c) => ({ key: c.id, picture: c.picture ? pictureSrc(c.picture) : null, letter: c.name.charAt(0) }))}
+          seed={campaign}
+          hexWidth="var(--party-hex-width)"
+          maxRows={2}
+        />
+      </div>
+      <p class="party-names">{party.map((c) => c.name).join(", ")}</p>
+      <dl class="party-stats">
+        <div>
+          <dt class="band-label">{t.members}</dt>
+          <dd class="dice">{new Intl.NumberFormat().format(party.length)}</dd>
+        </div>
+        <div>
+          <dt class="band-label">{t.averageLevel}</dt>
+          <dd class="dice">{averageLevel(party)}</dd>
+        </div>
+      </dl>
+    </section>
+  {/if}
+
   <div class="tools">
     <label for="character-search" class="sr-only">{t.search}</label>
-    <input id="character-search" type="search" placeholder={t.search} autocomplete="off" bind:value={search} oninput={() => refine({ q: search || null })} />
+    <input id="character-search" class="text-field" type="search" placeholder={t.search} autocomplete="off" bind:value={search} oninput={() => refine({ q: search || null })} />
+    <div class="chips" role="group" aria-label={t.filter}>
+      {#each FILTERS as each (each)}
+        <button class="chip" aria-pressed={filter === each} onclick={() => refine({ party: each === "all" ? null : each })}>{t.filters[each]}</button>
+      {/each}
+    </div>
     <label class="sort">
       <span>{t.sort}</span>
-      <select value={sort} onchange={(e) => refine({ sort: e.currentTarget.value === "level" ? "level" : null })}>
+      <select value={sort} onchange={(e) => refine({ sort: e.currentTarget.value === "name" ? null : e.currentTarget.value })}>
         <option value="name">{t.byName}</option>
         <option value="level">{t.byLevel}</option>
+        <option value="class">{t.byClass}</option>
       </select>
     </label>
     <button class="btn btn-primary add" onclick={() => (editing = blankCharacter())}>
@@ -175,22 +211,30 @@
               </div>
             {:else}
               <article class="card">
-                {#if character.picture}
-                  <img class="avatar" src={pictureSrc(character.picture)} alt="" />
-                {:else}
-                  <span class="avatar" aria-hidden="true"><i class="ti ti-user"></i></span>
-                {/if}
-                <div class="info">
-                  <h2><button class="name" onclick={() => (editing = character)}>{character.name}</button></h2>
-                  <p class="muted">{t.level(totalLevel(character))}</p>
-                  <p>{classLine(character)}</p>
+                <div class="head">
+                  <!-- A square picture with the total level on a dark hexagon at its lower right. -->
+                  <div class="portrait">
+                    {#if character.picture}
+                      <img class="picture" src={pictureSrc(character.picture)} alt="" />
+                    {:else}
+                      <span class="picture no-picture" aria-hidden="true"><i class="ti ti-user"></i></span>
+                    {/if}
+                    <span class="hex level" aria-hidden="true">{totalLevel(character)}</span>
+                  </div>
+                  <div class="info">
+                    <!-- The name's button covers the whole card: anywhere on it opens the form. -->
+                    <h2><button class="name" onclick={() => (editing = character)}>{character.name}</button></h2>
+                    <p>{classLine(character)}</p>
+                    <p class="label">{t.levelLabel} <span class="dice">{totalLevel(character)}</span></p>
+                  </div>
                 </div>
-                <Menu id="character-menu-{character.id}" label={t.actionsFor(character.name)} items={itemsFor(character)} triggerClass="icon-btn">
-                  {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
-                </Menu>
-                <!-- Bottom-right: in the party, a users icon that turns into "remove" on hover; otherwise "add", on card hover. -->
+                <div class="menu">
+                  <Menu id="character-menu-{character.id}" label={t.actionsFor(character.name)} items={itemsFor(character)} triggerClass="icon-btn">
+                    {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
+                  </Menu>
+                </div>
                 <button
-                  class="icon-btn party"
+                  class="icon-btn party-toggle"
                   class:in={character.onHome}
                   aria-label={character.onHome ? t.removeFromHome : t.addToHome}
                   aria-disabled={busy}
@@ -200,11 +244,7 @@
                   onfocus={(e) => e.currentTarget.matches(":focus-visible") && (pointing = character.id)}
                   onblur={() => (pointing = null)}
                 >
-                  <!-- Keyed on the icon. The new one fades in first, then the old one fades out: never both half-faded at
-                       once, so the users figure they share stays solid and only the + or − sign fades. -->
-                  {#key partyIcon(character)}
-                    <i class="ti {partyIcon(character)}" aria-hidden="true" in:fade={{ duration: swapMs() }} out:fade={{ delay: swapMs(), duration: swapMs() }}></i>
-                  {/key}
+                  <PartyIcon shape={partyIcon(character)} />
                 </button>
               </article>
             {/if}
@@ -222,9 +262,61 @@
 
 <style>
   .characters {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
     height: 100%;
     overflow-y: auto;
     padding: var(--space-5) var(--space-5) var(--corner-clearance);
+  }
+
+  /* The party, on a dark band in both themes (fixed brand colours). */
+  .party {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    border-radius: var(--radius-md);
+    background: var(--iron);
+    color: var(--bone);
+  }
+
+  /* Exactly two hexagons high (two rows, the gap between them and the collage's margin: 1.982 hexagon widths), so the
+     band never changes height: the collage grows sideways (maxRows), and shrinks only if it gets wider than the band. */
+  .party-art {
+    display: flex;
+    align-items: center;
+    height: calc(1.982 * var(--party-hex-width));
+  }
+
+  .party-names {
+    margin: 0;
+    font: var(--text-h2);
+  }
+
+  .band-label {
+    font: var(--text-label);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--bone) 75%, transparent);
+  }
+
+  .party-stats {
+    display: flex;
+    gap: var(--space-6);
+    margin: 0 0 0 auto;
+  }
+
+  .party-stats div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .party-stats dd {
+    margin: 0;
+    font-size: var(--text-md);
   }
 
   .tools {
@@ -232,20 +324,21 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
-    margin-bottom: var(--space-4);
   }
 
   .tools input {
     flex: 0 1 var(--search-width);
-    min-height: var(--control-height);
-    padding: 0 var(--space-3);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
   }
 
-  .tools input::placeholder {
-    color: var(--color-text-muted);
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .chips .chip {
+    min-height: var(--control-height);
+    padding: 0 var(--space-3);
   }
 
   .sort {
@@ -261,7 +354,7 @@
   }
 
   .message {
-    margin: 0 0 var(--space-3);
+    margin: 0;
     color: var(--color-text-muted);
   }
 
@@ -274,90 +367,99 @@
     gap: var(--space-4);
   }
 
+  .cards li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
   .card {
     position: relative;
+    flex: 1;
     display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-3);
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
   }
 
-  .avatar {
+  .card:hover {
+    border-color: var(--color-border-strong);
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .portrait {
+    position: relative;
     flex: none;
-    width: var(--avatar-size);
-    height: var(--avatar-size);
+    width: var(--character-portrait-size);
+    height: var(--character-portrait-size);
+  }
+
+  /* Pictures are square (they're saved square), with the card's corners. */
+  .picture {
     display: grid;
     place-items: center;
+    width: 100%;
+    height: 100%;
     border-radius: var(--radius-md);
-    background: var(--color-surface-sunken);
-    color: var(--color-text-muted);
-    font-size: calc(var(--avatar-size) / 2);
     object-fit: cover;
+  }
+
+  .hex {
+    display: grid;
+    place-items: center;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  }
+
+  .no-picture {
+    background: var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--icon-size-lg);
+  }
+
+  /* The total level on a dark hexagon at the portrait's lower right, like the ×count on an encounter's monster. */
+  .hex.level {
+    position: absolute;
+    right: calc(-1 * var(--space-2));
+    bottom: calc(-1 * var(--space-1));
+    width: var(--character-level-width);
+    height: var(--character-level-height);
+    background: var(--iron);
+    color: var(--bone);
+    font: var(--text-dice);
   }
 
   .info {
     flex: 1;
     min-width: 0;
-    font-size: var(--text-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding-right: var(--control-height-sm); /* clear of the menu in the corner */
   }
 
   .info p {
-    margin: var(--space-1) 0 0;
+    margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  .label .dice {
+    letter-spacing: 0;
   }
 
   h2 {
     margin: 0;
-    font-size: var(--text-md);
-  }
-
-  /* The menu shows on hover, while focus is in the card (so the keyboard still finds it), and while it's open. */
-  .card :global(.menu-root > .icon-btn),
-  .party:not(.in) {
-    opacity: 0;
-  }
-
-  .card:hover :global(.menu-root > .icon-btn),
-  .card:focus-within :global(.menu-root > .icon-btn),
-  .card:hover .party,
-  .card:focus-within .party,
-  .card :global(.menu-root > .icon-btn[aria-expanded="true"]) {
-    opacity: 1;
-  }
-
-  /* Bottom-right corner of the card. */
-  .party {
-    position: absolute;
-    right: var(--space-2);
-    bottom: var(--space-2);
-    display: inline-grid;
-    place-items: center;
-  }
-
-  .party.in {
-    color: var(--color-accent);
-  }
-
-  /* While one icon fades into the next, both sit in the same spot. */
-  .party .ti {
-    grid-area: 1 / 1;
-  }
-
-  /* The menu and the party button ease in and out on card hover; Settings → Animations can turn it off.
-     (The icon swap fades through Svelte's fade, which follows the same setting.) */
-  .card :global(.menu-root > .icon-btn),
-  .party {
-    transition:
-      opacity 150ms ease,
-      color 150ms ease;
-  }
-
-  :global([data-motion="reduce"]) .card :global(.menu-root > .icon-btn),
-  :global([data-motion="reduce"]) .party {
-    transition: none;
+    overflow: hidden;
+    font: var(--text-h2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .name {
@@ -366,18 +468,67 @@
     background: none;
     color: var(--color-text);
     font: inherit;
-    font-weight: var(--weight-semibold);
     text-align: left;
-    overflow-wrap: anywhere;
     cursor: pointer;
   }
 
-  .name:hover {
-    color: var(--color-link);
+  /* Covers the card, under the menu and the party button. */
+  .name::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-md);
   }
 
-  .muted {
-    color: var(--color-text-muted);
+  .name:focus-visible {
+    outline: none;
+  }
+
+  .name:focus-visible::after {
+    outline: var(--focus-ring) solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  .card:hover .name {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+
+  /* The menu in the top-right corner, the party button in the bottom-right one; both above the card's cover. */
+  /* One above the party button (on this card and the next), so the open menu is drawn over it. */
+  .menu {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    z-index: 2;
+  }
+
+  .party-toggle {
+    position: absolute;
+    right: var(--space-2);
+    bottom: var(--space-2);
+    z-index: 1;
+  }
+
+  .party-toggle.in {
+    color: var(--color-accent);
+  }
+
+  /* Outside the party, the button shows on card hover, and while keyboard focus is in the card (so the keyboard finds
+     it). Not on mere focus: a clicked button keeps focus, so it would stay on one card and vanish on the next click. */
+  .party-toggle:not(.in) {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .card:hover .party-toggle,
+  .card:has(:focus-visible) .party-toggle {
+    opacity: 1;
+  }
+
+  :global([data-motion="reduce"]) .party-toggle {
+    transition: none;
   }
 
   .confirm {

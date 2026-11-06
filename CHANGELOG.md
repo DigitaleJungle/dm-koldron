@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.11] - 2026-11-07
+
+### Changed
+
+- Characters: a new layout. The party sits on a dark band (their pictures as a hexagon collage, always two hexagons high, their names, Members and Avg. level); cards have a large square picture with the level on a hexagon, the menu at the top right and the party button at the bottom right.
+- Characters: search also matches the class; filter by All, In party or Not in party; sort by class too.
+- Characters: the party button's icon now changes by drawing its lines (users, users-minus, users-plus) instead of fading between icons.
+
 ## [0.4.10] - 2026-11-06
 
 ### Added

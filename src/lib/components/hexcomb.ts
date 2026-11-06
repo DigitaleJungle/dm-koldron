@@ -23,15 +23,26 @@ function random(seed: string): () => number {
 
 /**
  * `count` cells: the first in the middle, each next one touching those before it. A free spot next to more placed
- * hexagons is likelier, which keeps the comb round rather than a long chain. Positions start at 0, 0.
+ * hexagons is likelier, which keeps the comb round rather than a long chain. Positions start at 0, 0. With `maxRows`,
+ * a spot that would make the comb taller than that many hexagons (at least 2) isn't picked, so it grows sideways
+ * instead (there's always such a spot: the rightmost hexagon has a free neighbour half a row up and one half a row
+ * down; with 1 there would be none, since every neighbour is at least half a row up or down).
  */
-export function hexcomb(count: number, seed: string): Cell[] {
+export function hexcomb(count: number, seed: string, maxRows = Infinity): Cell[] {
+  maxRows = Math.max(2, maxRows);
   const next = random(seed);
   const placed: [number, number][] = count > 0 ? [[0, 0]] : [];
   const taken = new Set(["0,0"]);
+  // A cell's height on the grid, in hexagons (a column sits half a hexagon lower than the one before it).
+  const row = ([q, r]: [number, number]) => r + q / 2;
   while (placed.length < count) {
-    // Every free neighbour once per placed hexagon it touches.
-    const spots = placed.flatMap(([q, r]) => NEIGHBOURS.map(([dq, dr]) => [q + dq, r + dr] as [number, number])).filter(([q, r]) => !taken.has(`${q},${r}`));
+    const rows = placed.map(row);
+    const [top, bottom] = [Math.min(...rows), Math.max(...rows)];
+    const fits = (spot: [number, number]) => Math.max(bottom, row(spot)) - Math.min(top, row(spot)) <= maxRows - 1;
+    // Every free neighbour that fits once per placed hexagon it touches.
+    const spots = placed
+      .flatMap(([q, r]) => NEIGHBOURS.map(([dq, dr]) => [q + dq, r + dr] as [number, number]))
+      .filter((spot) => !taken.has(`${spot[0]},${spot[1]}`) && fits(spot));
     const spot = spots[Math.floor(next() * spots.length)];
     placed.push(spot);
     taken.add(`${spot[0]},${spot[1]}`);

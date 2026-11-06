@@ -148,10 +148,14 @@
   --library-stacked-height: 240px;
   --reading-width: 860px;
   --preview-width: 440px;
-  --avatar-size: 72px;
   --avatar-pick-size: 160px;
   --wizard-content-width: 1040px;
-  --character-card-width: 300px;
+  --character-card-width: 300px; /* room for the name beside the picture */
+  /* A character card's square picture and the level hexagon at its lower right; one hexagon in the party band. */
+  --character-portrait-size: 120px;
+  --character-level-width: 40px;
+  --character-level-height: 35px;
+  --party-hex-width: 88px;
   --choice-card-width: 260px;
   --choice-hero-art-width: 280px;
   --choice-card-tall-width: 180px;

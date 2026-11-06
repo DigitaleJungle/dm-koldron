@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.7] - 2026-11-06
+
+### Added
+
+- Encounters → Prepare: clicking a monster opens its full stat block in a card under the monsters; nothing on the screen goes below the fold, and with a stat block open two rows of monsters still fit.
+- Encounters → Prepare: minimize the monsters to one row of pictures (six fit across, each with its count and a ✕), so the stat block gets the rest of the column.
+
+### Changed
+
+- Encounters → Prepare: monsters are compact portrait tiles: a hexagon picture with its ×count, small + and − beside it, the name, type and CR, and an ✕ to remove.
+- Encounters → Prepare: Save is an icon button and Start encounter is now Run.
+- Panels grow and shrink when minimizing, and stat blocks and popups fade in and out (off when animations are off).
+- Thin scrollbars in the theme's colours throughout the app.
+
 ## [0.4.6] - 2026-11-06
 
 ### Changed

@@ -3,7 +3,8 @@
   // Leaving with unsaved changes asks Save / Don't save / Cancel.
   import { beforeNavigate, goto } from "$app/navigation";
   import { flip } from "svelte/animate";
-  import { scale } from "svelte/transition";
+  import { fade, scale } from "svelte/transition";
+  import { flushSync, untrack } from "svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
@@ -21,7 +22,7 @@
   import DifficultyMeter from "./DifficultyMeter.svelte";
   import PartyPicker from "./PartyPicker.svelte";
   import { difficulty, monsterXp } from "./difficulty";
-  import { addToRoster, characterLevel, entryKey, parseQuantity, rowsByKey } from "./roster";
+  import { addToRoster, characterLevel, entryKey, rowsByKey } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -70,7 +71,7 @@
     selected = new Set(party);
     baseline = snapshot();
   });
-  catalogRows("monsters", ["challenge_rating", "type", "xp"]).then(
+  catalogRows("monsters", ["challenge_rating", "type", "xp", "image"]).then(
     (rows) => (monsters = rows),
     (e) => (monsterError = t.browser.loadError(errorMessage(e))),
   );
@@ -263,6 +264,58 @@
 
   // ---- Roster and difficulty ----------------------------------------------------------------------
   const byKey = $derived(rowsByKey(monsters ?? []));
+
+  // Clicking a tile opens its full stat block in a card under the tiles; again (or ✕) closes it.
+  let detailsKey = $state<string | null>(null);
+  const detailsRow = $derived(roster.find((r) => entryKey(r) === detailsKey) ?? null); // gone when removed
+  // Only which monster is open matters to the stat block: + and − replace its roster entry but mustn't reload it.
+  const detailsOpenKey = $derived(detailsRow ? entryKey(detailsRow) : null);
+  let detailsEntry = $state<CatalogEntry | null>(null);
+  let detailsError = $state<string | null>(null);
+  $effect(() => {
+    const key = detailsOpenKey;
+    const row = untrack(() => detailsRow);
+    [detailsEntry, detailsError] = [null, null];
+    if (!key || !row) return;
+    if (!loadedEntries.has(key)) loadedEntries.set(key, catalogEntry("monsters", row.pack, row.index));
+    let stale = false;
+    loadedEntries.get(key)!.then(
+      (e) => !stale && (detailsEntry = e),
+      (e) => {
+        loadedEntries.delete(key); // try again next time
+        if (!stale) detailsError = errorMessage(e);
+      },
+    );
+    return () => (stale = true);
+  });
+  const toggleDetails = (row: RosterEntry) => (detailsKey = detailsKey === entryKey(row) ? null : entryKey(row));
+  // Minimized: only the pictures, in one row, so an open stat block gets the rest of the column. The switch is a view
+  // transition: both panels grow or shrink into their new size. (Tiles get no view-transition-name of their own: named
+  // tiles are drawn above the page, unclipped, so scrolled-away ones would fly across the screen.)
+  let minimized = $state(false);
+  function toggleMinimized() {
+    const apply = () => flushSync(() => (minimized = !minimized));
+    if (reduceMotion() || !document.startViewTransition) apply();
+    else document.startViewTransition(apply);
+  }
+  // Appearing and disappearing parts (stat block, popup, notes) fade.
+  const fadeMotion = () => ({ duration: reduceMotion() ? 0 : 150 });
+
+  // A small picture on each roster card, when its pack's images are on (Settings → Rules); asked once per monster.
+  let pictures = $state<Record<string, string | null>>({});
+  const askedPictures = new Set<string>();
+  $effect(() => {
+    for (const row of roster) {
+      const key = entryKey(row);
+      const image = byKey.get(key)?.fields.image;
+      if (askedPictures.has(key) || typeof image !== "string") continue;
+      askedPictures.add(key);
+      entryImage(row.pack, image).then(
+        (src) => (pictures[key] = src),
+        (e) => notify(errorMessage(e)),
+      );
+    }
+  });
   const rosterXp = $derived(roster.map((r) => monsterXp(byKey.get(entryKey(r))?.fields.xp)));
   const result = $derived(difficulty(levels, roster.map((r, i) => ({ quantity: r.quantity, xp: rosterXp[i] })), budgets));
 
@@ -272,11 +325,6 @@
     roster = roster.map((r) => (r === row ? { ...r, quantity } : r));
   }
 
-  function typedQuantity(row: RosterEntry, input: HTMLInputElement) {
-    const n = parseQuantity(input.value);
-    if (n === null) input.value = String(row.quantity);
-    else setQuantity(row, n);
-  }
 </script>
 
 <svelte:head><title>{name.trim() || t.newTitle}</title></svelte:head>
@@ -297,7 +345,9 @@
         <input bind:value={name} maxlength="100" autocomplete="off" placeholder={t.newTitle} />
       </label>
       {#if saveError}<span class="error small" role="alert">{saveError}</span>{/if}
-      <button class="btn" disabled={saving || !changed} onclick={save}>{saving ? t.saving : t.save}</button>
+      <button class="icon-btn icon-btn-lg" aria-label={saving ? t.saving : t.save} disabled={saving || !changed} onclick={save}>
+        <i class="ti ti-device-floppy" aria-hidden="true"></i>
+      </button>
       <!-- Run is TODO 10. -->
       <button class="btn btn-primary" disabled>
         {t.start}
@@ -403,29 +453,83 @@
 
       <div class="rest">
         <div class="editor">
-          <section class="panel" aria-label={t.roster.title}>
+          <section class="panel monsters" class:minimized aria-label={t.roster.title}>
             {#if roster.length === 0}
-              <p class="muted">{t.roster.empty}</p>
+              <p class="empty-pot" in:fade={fadeMotion()}>{t.roster.empty}</p>
+            {:else}
+              <button class="icon-btn minimize" transition:fade={fadeMotion()} aria-label={minimized ? t.roster.expand : t.roster.minimize} aria-expanded={!minimized} onclick={toggleMinimized}>
+                <i class="ti {minimized ? 'ti-arrows-maximize' : 'ti-arrows-minimize'}" aria-hidden="true"></i>
+              </button>
             {/if}
-            <!-- Always there, so the first card added and the last one removed animate too. -->
+            <!-- Always there, so the first tile added and the last one removed animate too. -->
             <ul class="roster">
-                {#each roster as row, i (entryKey(row))}
-                  {@const known = byKey.get(entryKey(row))}
-                  <li transition:scale={cardMotion()} animate:flip={{ duration: cardMotion().duration }}>
-                    <span class="name">{row.name}</span>
-                    <span class="muted small">{known ? [typeOf(known), t.roster.cr(crText(crOf(known)))].filter(Boolean).join(" · ") : row.source}</span>
-                    <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
-                    {#if rosterXp[i] === null}
-                      <span class="warn small">{known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`}</span>
+              {#each roster as row, i (entryKey(row))}
+                {@const known = byKey.get(entryKey(row))}
+                {@const picture = pictures[entryKey(row)]}
+                {@const xp = rosterXp[i]}
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions: the name is the keyboard's button; the whole tile is clickable for the mouse -->
+                <li
+                  class="tile"
+                  class:open={detailsKey === entryKey(row)}
+                  transition:scale={cardMotion()}
+                  animate:flip={{ duration: cardMotion().duration }}
+                  onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(row)}
+                >
+                  <button class="tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                  </button>
+                  <div class="tile-portrait">
+                    {#if picture}
+                      <img class="hex" src={picture} alt="" />
+                    {:else}
+                      <span class="hex no-picture" aria-hidden="true">{row.name.charAt(0)}</span>
                     {/if}
-                    <input type="number" min="1" max="999" step="1" value={row.quantity} aria-label={t.roster.quantity(row.name)} onchange={(e) => typedQuantity(row, e.currentTarget)} />
-                    <button class="remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
-                      <i class="ti ti-x" aria-hidden="true"></i>
-                    </button>
-                  </li>
-                {/each}
+                    <div class="count-row">
+                      <button class="hex-step less" aria-label={t.roster.less(row.name)} disabled={row.quantity <= 1} onclick={() => setQuantity(row, row.quantity - 1)}>
+                        <i class="ti ti-minus" aria-hidden="true"></i>
+                      </button>
+                      <output class="badge" aria-live="polite" aria-label={t.roster.quantity(row.name)}>×{row.quantity}</output>
+                      <button class="hex-step more" aria-label={t.roster.more(row.name)} disabled={row.quantity >= 999} onclick={() => setQuantity(row, row.quantity + 1)}>
+                        <i class="ti ti-plus" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="tile-who">
+                    <h3>
+                      <button class="tile-name" aria-expanded={detailsKey === entryKey(row)} aria-controls="monster-details" onclick={() => toggleDetails(row)}>{row.name}</button>
+                    </h3>
+                    <p class="tile-meta">
+                      {#if known}
+                        {#if typeOf(known)}<span>{typeOf(known)}</span><span aria-hidden="true">·</span>{/if}
+                        <span class="mono strong">{t.roster.cr(crText(crOf(known)))}</span>
+                      {:else}
+                        <span>{row.source}</span>
+                      {/if}
+                    </p>
+                    <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
+                    {#if xp === null}
+                      <p class="tile-meta warn">{known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`}</p>
+                    {/if}
+                  </div>
+                </li>
+              {/each}
             </ul>
           </section>
+          {#if detailsRow}
+            <section id="monster-details" class="panel details prose" transition:fade={fadeMotion()} aria-label={t.details.label(detailsRow.name)}>
+              <button class="icon-btn details-close" aria-label={t.details.close} onclick={() => (detailsKey = null)}>
+                <i class="ti ti-x" aria-hidden="true"></i>
+              </button>
+              <h3 class="details-name">{detailsRow.name}</h3>
+              {#if detailsError}
+                <p class="error">{detailsError}</p>
+              {:else if !detailsEntry}
+                <p class="muted">{t.browser.previewLoading}</p>
+              {:else}
+                <MonsterBlock loaded={detailsEntry} />
+              {/if}
+            </section>
+          {/if}
         </div>
 
         <aside class="side">
@@ -438,7 +542,7 @@
   </div>
 
   {#if preview}
-    <div bind:this={card} class="preview prose" role="dialog" aria-label={t.browser.preview(preview.row.name)} style:top="{preview.top}px" style:left="{preview.left}px">
+    <div bind:this={card} class="preview prose" transition:fade={fadeMotion()} role="dialog" aria-label={t.browser.preview(preview.row.name)} style:top="{preview.top}px" style:left="{preview.left}px">
       {#if previewImage}
         <img class="portrait" src={previewImage} alt="" />
       {/if}
@@ -519,18 +623,18 @@
     gap: var(--space-5);
   }
 
+  /* Nothing goes below the fold: each column is the window's height, and what's too long scrolls inside it. */
   .rest {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr); /* a fixed height, so the details card's 50% has something to be half of */
     gap: var(--space-5);
-    align-items: start;
-    overflow-y: auto;
-    padding-bottom: var(--corner-clearance);
+    min-height: 0;
   }
 
   .side {
-    position: sticky;
-    top: 0;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .editor {
@@ -538,6 +642,136 @@
     flex-direction: column;
     gap: var(--space-5);
     min-width: 0;
+    min-height: 0;
+  }
+
+  .panel.monsters {
+    position: relative;
+    flex: 0 1 auto;
+    overflow-y: auto;
+    view-transition-name: monsters-panel;
+  }
+
+  /* With a stat block open, the tiles keep room for two rows (more scroll) and the stat block takes the rest. */
+  .editor:has(.details) .panel.monsters {
+    flex: none;
+    max-height: calc(2 * var(--roster-tile-height) + var(--space-4) + 2 * var(--space-6) + 2 * var(--border-width));
+  }
+
+  /* While minimizing, each panel's old and new picture stay pinned to its top and are cut off at its edges, so nothing
+     shows outside the panel as it grows or shrinks. */
+  :global(::view-transition-group(monsters-panel)),
+  :global(::view-transition-group(details-panel)) {
+    overflow: clip;
+  }
+
+  :global(::view-transition-old(monsters-panel)),
+  :global(::view-transition-new(monsters-panel)),
+  :global(::view-transition-old(details-panel)),
+  :global(::view-transition-new(details-panel)) {
+    height: 100%;
+    object-fit: none;
+    object-position: top;
+  }
+
+  .minimize {
+    position: absolute;
+    top: var(--space-1);
+    right: var(--space-1);
+    z-index: 1;
+  }
+
+  /* Minimized: one row of pictures (scrolling sideways when it's long); name, stats, + / − and ✕ are hidden but the
+     name stays a button for the keyboard. */
+  .panel.monsters.minimized {
+    flex: none;
+    padding: var(--space-3);
+    padding-right: calc(var(--space-3) + var(--space-7)); /* the row stops before the minimize button */
+  }
+
+  .minimized .roster {
+    display: flex;
+    gap: var(--space-2);
+    overflow-x: auto;
+  }
+
+  /* Six pictures fit across, whatever the width; a seventh scrolls. */
+  .minimized .tile {
+    flex: 0 0 calc((100% - 5 * var(--space-2)) / 6);
+    min-width: 0;
+    min-height: 0;
+    padding: var(--space-1) var(--space-4) var(--space-2) var(--space-1);
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .minimized .tile-portrait {
+    width: 100%;
+    max-width: var(--roster-portrait-width);
+    height: auto;
+    aspect-ratio: 22 / 19; /* the portrait's 88 × 76 */
+  }
+
+  /* The same proportions on the picture itself, since a percentage height doesn't resolve here. */
+  .minimized .hex {
+    height: auto;
+    aspect-ratio: 22 / 19;
+  }
+
+  .minimized .tile.open {
+    border-color: var(--color-accent);
+  }
+
+  .minimized .tile:focus-within {
+    outline: var(--focus-ring) solid var(--color-focus);
+  }
+
+  .minimized .hex-step {
+    display: none;
+  }
+
+  .minimized .tile-remove {
+    top: 0;
+    right: 0;
+    width: var(--roster-mini-remove-size);
+    height: var(--roster-mini-remove-size);
+    border-radius: 50%;
+    background: var(--color-surface);
+  }
+
+  .minimized .tile-remove .ti {
+    font-size: var(--roster-step-icon);
+  }
+
+  .minimized .tile-who {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .panel.details {
+    position: relative;
+    view-transition-name: details-panel;
+    flex: 1 1 0;
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    overflow-y: auto;
+  }
+
+  .details-name {
+    margin: 0;
+    padding-right: var(--space-7);
+    font: var(--text-h2);
+  }
+
+  .details-close {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
   }
 
   .panel {
@@ -561,73 +795,220 @@
     padding: 0;
   }
 
-  .name {
-    font-weight: var(--weight-semibold);
+  /* The monsters in the encounter: portrait tiles (docs/C · Portrait tiles). */
+  .panel.monsters {
+    gap: var(--space-6);
+    padding: var(--space-6);
+    border-radius: var(--radius-lg);
   }
 
-  /* Room for the remove dot that sticks out of each card's corner. */
+  .empty-pot {
+    padding: var(--space-10) var(--space-4);
+    border: var(--border-width) dashed var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
   .roster {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--roster-card-width), 1fr));
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-2) 0 0;
+    grid-template-columns: repeat(auto-fill, var(--roster-card-width));
+    gap: var(--space-4);
   }
 
   .roster:empty {
     display: none;
   }
 
-  .roster li {
+  .tile {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
-    background: var(--color-surface-sunken);
-  }
-
-  .roster .name {
-    padding-right: var(--space-3);
-    overflow-wrap: anywhere;
-  }
-
-  .roster input {
-    width: var(--level-input-width);
-    min-height: var(--control-height-sm);
-    margin-top: var(--space-1);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
     background: var(--color-surface);
-    text-align: center;
   }
 
-  /* Remove: a red dot with a cross on the card's top-right corner, like removing a character's picture. */
-  .remove {
+  .tile-remove {
     position: absolute;
-    top: calc(-1 * var(--space-2));
-    right: calc(-1 * var(--space-2));
-    display: grid;
-    place-items: center;
-    width: var(--control-height-sm);
-    height: var(--control-height-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--roster-touch-size);
+    height: var(--roster-touch-size);
     padding: 0;
     border: none;
-    border-radius: 50%;
-    background: var(--color-danger-fill);
-    color: var(--color-accent-text);
-    box-shadow: var(--shadow-card);
+    background: transparent;
+    cursor: pointer;
+    top: var(--space-1);
+    right: var(--space-1);
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+  }
+
+  .tile-remove:hover {
+    background: var(--color-surface-sunken);
+    color: var(--color-danger);
+  }
+
+  .tile-remove:focus-visible {
+    outline: var(--focus-ring) solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* A hexagon portrait with the count on a small hexagon at its lower right. */
+  .tile-portrait {
+    position: relative;
+    width: var(--roster-portrait-width);
+    height: var(--roster-portrait-height);
+  }
+
+  .hex {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  }
+
+  .no-picture {
+    display: grid;
+    place-items: center;
+    background: var(--color-border);
+    color: var(--color-text-muted);
+    font: var(--text-h1);
+  }
+
+  /* The ×count on a hexagon at the portrait's lower right (the design's place), with a small + hexagon at its top
+     right and a small − at its bottom right. */
+  .count-row {
+    position: absolute;
+    right: calc(-1 * var(--space-3));
+    bottom: calc(-1 * var(--space-1) - 2px);
+    width: var(--roster-badge-width);
+    height: var(--roster-badge-height);
+  }
+
+  .badge,
+  .hex-step {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    font: var(--text-dice);
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  }
+
+  .badge {
+    width: 100%;
+    height: 100%;
+    background: var(--potion-glow);
+    color: var(--charcoal);
+  }
+
+  .hex-step {
+    position: absolute;
+    left: calc(100% - var(--space-1));
+    width: var(--roster-step-width);
+    height: var(--roster-step-height);
+    background: var(--color-border);
+    color: var(--color-text);
     cursor: pointer;
   }
 
-  .remove:hover {
-    filter: brightness(1.1);
+  .hex-step .ti {
+    font-size: var(--roster-step-icon);
   }
 
-  .remove:focus-visible {
+  /* One just above the middle, one just below it. */
+  .hex-step.more {
+    bottom: calc(50% + 1px);
+  }
+
+  .hex-step.less {
+    top: calc(50% + 1px);
+  }
+
+  .hex-step:hover:not(:disabled) {
+    background: var(--potion-glow);
+    color: var(--charcoal);
+  }
+
+  .hex-step:disabled {
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+  }
+
+  /* Inside, since the hexagon cuts off anything outside it. */
+  .hex-step:focus-visible {
+    outline: var(--focus-ring) solid var(--color-focus);
+    outline-offset: calc(-1 * var(--focus-ring) - 2px);
+  }
+
+  .tile-who {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    width: 100%;
+    text-align: center;
+  }
+
+  .tile {
+    min-height: var(--roster-tile-height);
+    cursor: pointer;
+  }
+
+  .tile.open {
+    border-color: var(--color-accent);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-accent);
+  }
+
+  .tile-who h3 {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    font: var(--text-body);
+    font-weight: var(--weight-bold);
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .tile-name {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .tile-name:focus-visible {
     outline: var(--focus-ring) solid var(--color-focus);
     outline-offset: 2px;
+  }
+
+  .tile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 var(--space-2);
+    font: var(--text-body-sm);
+    color: var(--color-text-muted);
+  }
+
+  .mono {
+    font: var(--text-dice);
+  }
+
+  .strong {
+    color: var(--color-text);
   }
 
   .search,
@@ -900,10 +1281,21 @@
     .columns,
     .rest {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
     }
 
     .rest {
       overflow: visible;
+    }
+
+    .side,
+    .panel.monsters,
+    .details {
+      overflow: visible;
+    }
+
+    .details {
+      min-height: 0;
     }
 
     .monsters-scroll {

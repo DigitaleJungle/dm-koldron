@@ -159,7 +159,19 @@
   --picklist-height: 320px;
   --encounter-monsters-height: 400px;
   --encounter-browser-width: 500px;
-  --roster-card-width: 180px;
+  --roster-card-width: 160px;
+  /* Fits a two-line name; every tile is this high, so two rows of them have a known height. */
+  --roster-tile-height: 184px;
+  /* Encounter portrait tiles: a hexagon portrait, its ×count hexagon with small + and − hexagons, and the remove button. */
+  --roster-portrait-width: 88px;
+  --roster-portrait-height: 76px;
+  --roster-badge-width: 36px;
+  --roster-badge-height: 31px;
+  --roster-step-width: 20px;
+  --roster-step-height: 17px;
+  --roster-step-icon: 12px;
+  --roster-mini-remove-size: 20px;
+  --roster-touch-size: 32px;
   --monster-portrait-size: 120px;
   --entry-picture-size: 400px;
   --meter-width: 168px;

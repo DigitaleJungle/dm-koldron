@@ -213,7 +213,7 @@ export const strings = {
     saving: "Saving…",
     saved: (name: string) => `Saved ${name}.`,
     saveError: (reason: string) => `Couldn't save. ${reason}`,
-    start: "Start encounter",
+    start: "Run",
     browser: {
       title: "Monsters",
       search: "Search monsters",
@@ -235,6 +235,10 @@ export const strings = {
       preview: (name: string) => `${name} stat block`,
       previewLoading: "Loading…",
     },
+    details: {
+      label: (name: string) => `${name} details`,
+      close: "Close details",
+    },
     party: {
       title: "Party",
       loading: "Loading characters…",
@@ -245,11 +249,15 @@ export const strings = {
       noLevel: "No level",
     },
     roster: {
-      title: "Roster",
-      empty: "Add monsters from the list.",
+      title: "Monsters",
+      minimize: "Minimize monsters",
+      expand: "Show monsters in full",
+      empty: "Nothing in the pot yet — add a monster from the list.",
       cr: (cr: string) => `CR ${cr}`,
       unknownXp: "Unknown XP",
       quantity: (name: string) => `How many ${name}`,
+      less: (name: string) => `One fewer ${name}`,
+      more: (name: string) => `One more ${name}`,
       remove: (name: string) => `Remove ${name}`,
       packOff: "Its pack is switched off",
     },

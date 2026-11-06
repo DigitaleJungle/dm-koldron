@@ -28,12 +28,6 @@ export function rowsByKey(rows: CatalogRow[]): Map<string, CatalogRow> {
   return map;
 }
 
-/** A typed quantity, or null when it isn't a whole number from 1 to 999. */
-export function parseQuantity(text: string): number | null {
-  const n = Number(text.trim());
-  return text.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= 999 ? n : null;
-}
-
 /** Total character level (the sum of class levels), or null when it's missing or invalid. */
 export function characterLevel(classes: ClassLevel[] | undefined): number | null {
   const total = (classes ?? []).reduce((sum, c) => sum + c.level, 0);

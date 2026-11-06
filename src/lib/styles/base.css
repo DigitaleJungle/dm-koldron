@@ -36,6 +36,19 @@ p {
   margin: 0;
 }
 
+/* Thin scrollbars in the theme's muted colour, on every scrolling pane (scrollbar-width isn't inherited). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-text-muted) 55%, transparent) transparent;
+}
+
+/* View transitions (the encounter tiles growing or shrinking when minimized) take as long as the app's other motion. */
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: var(--duration-drawer);
+}
+
 /* Headlines are Fraunces; smaller headings stay in the reading face. */
 h1,
 h2 {

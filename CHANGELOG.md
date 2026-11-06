@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.3] - 2026-11-06
+
+### Changed
+
+- Library: Back from a Catalog entry returns to its list (same category, search, filters, sort and page; the same scroll position when the entry was opened from that list). From anywhere else in the Library, Back goes to the Start screen.
+
 ## [0.4.2] - 2026-11-06
 
 ### Added

@@ -4,10 +4,11 @@
 
   // Back to the screen the user came from, as it was (filters, scroll); `fallback` when there's none (the app was
   // opened right here). Still a link, so it works from the keyboard and shows where it goes without history.
-  let { fallback = "/" }: { fallback?: string } = $props();
+  // `always`: go to `fallback` every time, never back through history.
+  let { fallback = "/", always = false }: { fallback?: string; always?: boolean } = $props();
 
   function back(event: MouseEvent) {
-    if (!canGoBack()) return;
+    if (always || !canGoBack()) return;
     event.preventDefault();
     history.back();
   }

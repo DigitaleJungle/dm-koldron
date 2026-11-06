@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
+  import { previousUrl } from "$lib/stores/history.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import type { SectionId } from "$lib/components/SettingsDialog.svelte";
@@ -14,6 +15,20 @@
 
   // ?tab=catalog, else the Rules tab.
   const tab = $derived(page.url.searchParams.get("tab") === "catalog" ? "catalog" : "rules");
+  // Back from a Catalog entry goes to its list (same category, filters, sort and page); from anywhere else in the
+  // Library, to the Start screen. Opened from that list, it goes back through history instead, so the list's scroll
+  // position comes back too.
+  const backTo = $derived.by(() => {
+    const params = new URLSearchParams(page.url.searchParams);
+    if (tab !== "catalog" || !params.has("entry")) return "/";
+    params.delete("entry");
+    params.delete("kind");
+    return `/library?${params}`;
+  });
+  const openedFromList = $derived.by(() => {
+    const from = previousUrl();
+    return backTo !== "/" && from?.pathname === "/library" && from.searchParams.get("tab") === "catalog" && !from.searchParams.has("entry");
+  });
   let settingsOpen = $state(false);
   let settingsSection = $state<SectionId>();
   let reloadKey = $state(0);
@@ -57,7 +72,7 @@
 
 <div class="library">
   <header class="top">
-    <BackButton />
+    <BackButton always={!openedFromList} fallback={backTo} />
     {#if tab === "rules" && rulesHasContents}
       <button
         class="icon-btn icon-btn-lg"

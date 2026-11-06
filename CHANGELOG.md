@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2] - 2026-11-06
+
+### Added
+
+- Settings → Rules: Enable images for the SRD pack. Download all images now (with the estimated size, a progress bar and Cancel) or each one the first time it's shown; they're kept for offline use. Turning it off asks to keep or delete them, and "All N images downloaded" shows when every image is kept.
+- Images on Library pages of monsters, magic items and equipment, and in the encounter builder's monster preview.
+
+### Changed
+
+- Encounters → Prepare: the roster is a grid of compact cards (name, type and CR, a quantity field, a red ✕ to remove), animated when monsters are added or removed.
+- Encounters → Prepare: hovering a monster previews only its main stats (everything above the traits).
+
 ## [0.4.1] - 2026-11-06
 
 ### Changed

@@ -10,6 +10,8 @@ use std::path::{Component, Path};
 
 pub const SCHEMA: u32 = 1;
 const MANIFEST: &str = "pack.json";
+/// Optional: the images the pack's entries name that can be downloaded (Settings → Rules → Enable images).
+const IMAGES: &str = "images.json";
 
 /// Entry types a pack may declare. All but `encounter-budgets` are lists of entries with an `index` and a `name`.
 pub const TYPES: [&str; 28] = [
@@ -42,11 +44,20 @@ pub struct DataFile {
     pub path: String,
 }
 
+/// `images.json`: where the images are, and each downloadable image's path (an entry's `image`) with its size in bytes.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Images {
+    pub host: String,
+    pub images: BTreeMap<String, u64>,
+}
+
 #[derive(Debug)]
 pub struct Pack {
     pub manifest: Manifest,
     /// The entries per type, from all of the pack's files of that type.
     pub entries: BTreeMap<String, Vec<Map<String, Value>>>,
+    pub images: Option<Images>,
 }
 
 impl Pack {
@@ -113,11 +124,34 @@ pub fn load_pack(folder: &Path) -> Result<Option<Pack>, LoadError> {
     if errors.is_empty() {
         errors = check_entries(&entries);
     }
+    let images = match read_images(folder) {
+        Ok(images) => images,
+        Err(e) => {
+            errors.push(e);
+            None
+        }
+    };
     if errors.is_empty() {
-        Ok(Some(Pack { manifest, entries }))
+        Ok(Some(Pack { manifest, entries, images }))
     } else {
         Err((Some(manifest.name), errors))
     }
+}
+
+fn read_images(folder: &Path) -> Result<Option<Images>, String> {
+    let text = match fs::read_to_string(folder.join(IMAGES)) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{IMAGES}: {e}")),
+    };
+    let images: Images = serde_json::from_str(&text).map_err(|e| format!("{IMAGES}: {e}"))?;
+    if !images.host.starts_with("https://") || images.host[8..].contains(['/', '?', '#', '@']) {
+        return Err(format!("{IMAGES}: \"host\" must be https:// and a host name only."));
+    }
+    if let Some(bad) = images.images.keys().find(|p| !p.starts_with('/')) {
+        return Err(format!("{IMAGES}: \"{bad}\" must start with /."));
+    }
+    Ok(Some(images))
 }
 
 fn check_manifest(m: &Manifest) -> Vec<String> {
@@ -280,6 +314,25 @@ mod tests {
         assert_eq!(srd.entries["spells"].len(), 339);
         assert_eq!(srd.entries["rule-sections"].len(), 192);
         assert_eq!(srd.entries["encounter-budgets"].len(), 20);
+        let images = srd.images.as_ref().expect("the SRD lists its images");
+        assert_eq!(images.host, "https://www.dnd5eapi.co");
+        assert!(images.images.len() > 300);
+    }
+
+    #[test]
+    fn an_images_list_must_name_an_https_host_and_absolute_paths() {
+        let dir = temp_dir("images");
+        let data = serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]);
+        let files = serde_json::json!([{ "type": "conditions", "path": "c.json" }]);
+        for (folder, images, ok) in [
+            ("good", serde_json::json!({ "host": "https://img.example", "images": { "/a.png": 1 } }), true),
+            ("http", serde_json::json!({ "host": "http://img.example", "images": {} }), false),
+            ("path-in-host", serde_json::json!({ "host": "https://img.example/x", "images": {} }), false),
+            ("relative", serde_json::json!({ "host": "https://img.example", "images": { "a.png": 1 } }), false),
+        ] {
+            write_pack(&dir, folder, manifest(folder, files.clone()), &[("c.json", data.clone()), (IMAGES, images)]);
+            assert_eq!(load_pack(&dir.join(folder)).is_ok(), ok, "{folder}");
+        }
     }
 
     #[test]

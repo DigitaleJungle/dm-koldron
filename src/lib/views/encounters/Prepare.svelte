@@ -2,8 +2,12 @@
   // Encounters → Prepare: the monster browser (left), the party and roster (middle), the difficulty meter (right).
   // Leaving with unsaved changes asks Save / Don't save / Cancel.
   import { beforeNavigate, goto } from "$app/navigation";
+  import { flip } from "svelte/animate";
+  import { scale } from "svelte/transition";
+  import { reduceMotion } from "$lib/stores/theme.svelte";
   import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
+  import { entryImage } from "$lib/api/images";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
@@ -23,7 +27,6 @@
   let { id }: { id: string | null } = $props();
 
   const t = strings.encounters;
-  const fmt = new Intl.NumberFormat();
   const campaign = campaigns.current!.id;
   const base = `/campaign/${campaign}/encounters`;
 
@@ -218,6 +221,9 @@
   let previewEntry = $state<CatalogEntry | null>(null);
   let previewError = $state<string | null>(null);
   const loadedEntries = new Map<string, Promise<CatalogEntry>>();
+  // The monster's picture when its pack's images are on (Settings → Rules); null offline or when off. Asked on every
+  // hover (instant once kept), so turning images off or deleting them shows at once.
+  let previewImage = $state<string | null>(null);
   let browserPanel: HTMLElement | undefined = $state();
 
   function showPreview(row: CatalogRow, target: HTMLElement) {
@@ -226,9 +232,18 @@
     preview = { row, top: at.top, left: panel.right + 8 };
     const key = entryKey(row);
     if (!loadedEntries.has(key)) loadedEntries.set(key, catalogEntry("monsters", row.pack, row.index));
-    [previewEntry, previewError] = [null, null];
+    [previewEntry, previewError, previewImage] = [null, null, null];
     loadedEntries.get(key)!.then(
-      (e) => preview?.row === row && (previewEntry = e),
+      (e) => {
+        if (preview?.row !== row) return;
+        previewEntry = e;
+        if (typeof e.entry.image !== "string") return;
+        // A picture that can't be kept is reported, but the stat block still shows.
+        entryImage(row.pack, e.entry.image).then(
+          (src) => preview?.row === row && (previewImage = src),
+          (err) => notify(errorMessage(err)),
+        );
+      },
       (e) => {
         loadedEntries.delete(key); // try again next time
         if (preview?.row === row) previewError = errorMessage(e);
@@ -242,6 +257,7 @@
   let card: HTMLElement | undefined = $state();
   $effect(() => {
     if (!card || !preview || !previewEntry) return;
+    void previewImage; // the picture makes the card taller
     card.style.top = `${Math.max(8, Math.min(preview.top, innerHeight - card.offsetHeight - 8))}px`;
   });
 
@@ -249,6 +265,8 @@
   const byKey = $derived(rowsByKey(monsters ?? []));
   const rosterXp = $derived(roster.map((r) => monsterXp(byKey.get(entryKey(r))?.fields.xp)));
   const result = $derived(difficulty(levels, roster.map((r, i) => ({ quantity: r.quantity, xp: rosterXp[i] })), budgets));
+
+  const cardMotion = () => ({ start: 0.85, duration: reduceMotion() ? 0 : 200 });
 
   function setQuantity(row: RosterEntry, quantity: number) {
     roster = roster.map((r) => (r === row ? { ...r, quantity } : r));
@@ -388,36 +406,25 @@
           <section class="panel" aria-label={t.roster.title}>
             {#if roster.length === 0}
               <p class="muted">{t.roster.empty}</p>
-            {:else}
-              <ul class="roster">
+            {/if}
+            <!-- Always there, so the first card added and the last one removed animate too. -->
+            <ul class="roster">
                 {#each roster as row, i (entryKey(row))}
                   {@const known = byKey.get(entryKey(row))}
-                  {@const xp = rosterXp[i]}
-                  <li>
-                    <div class="who">
-                      <span class="name">{row.name}</span>
-                      <span class="muted small">{row.source}{#if known} · {t.roster.cr(crText(crOf(known)))}{/if}</span>
-                      <span class="small {xp === null ? 'warn' : 'muted'}">
-                        {xp === null ? (known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`) : t.roster.xpEach(fmt.format(xp))}
-                      </span>
-                    </div>
-                    <div class="qty">
-                      <button class="icon-btn" aria-label={t.roster.less(row.name)} disabled={row.quantity <= 1} onclick={() => setQuantity(row, row.quantity - 1)}>
-                        <i class="ti ti-minus" aria-hidden="true"></i>
-                      </button>
-                      <input type="number" min="1" max="999" step="1" value={row.quantity} aria-label={t.roster.quantity(row.name)} onchange={(e) => typedQuantity(row, e.currentTarget)} />
-                      <button class="icon-btn" aria-label={t.roster.more(row.name)} disabled={row.quantity >= 999} onclick={() => setQuantity(row, row.quantity + 1)}>
-                        <i class="ti ti-plus" aria-hidden="true"></i>
-                      </button>
-                    </div>
-                    <span class="row-xp">{xp === null ? "—" : t.roster.rowXp(fmt.format(xp * row.quantity))}</span>
-                    <button class="icon-btn" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
+                  <li transition:scale={cardMotion()} animate:flip={{ duration: cardMotion().duration }}>
+                    <span class="name">{row.name}</span>
+                    <span class="muted small">{known ? [typeOf(known), t.roster.cr(crText(crOf(known)))].filter(Boolean).join(" · ") : row.source}</span>
+                    <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
+                    {#if rosterXp[i] === null}
+                      <span class="warn small">{known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`}</span>
+                    {/if}
+                    <input type="number" min="1" max="999" step="1" value={row.quantity} aria-label={t.roster.quantity(row.name)} onchange={(e) => typedQuantity(row, e.currentTarget)} />
+                    <button class="remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
                       <i class="ti ti-x" aria-hidden="true"></i>
                     </button>
                   </li>
                 {/each}
-              </ul>
-            {/if}
+            </ul>
           </section>
         </div>
 
@@ -432,13 +439,16 @@
 
   {#if preview}
     <div bind:this={card} class="preview prose" role="dialog" aria-label={t.browser.preview(preview.row.name)} style:top="{preview.top}px" style:left="{preview.left}px">
+      {#if previewImage}
+        <img class="portrait" src={previewImage} alt="" />
+      {/if}
       <h3>{preview.row.name}</h3>
       {#if previewError}
         <p class="error">{previewError}</p>
       {:else if !previewEntry}
         <p class="muted">{t.browser.previewLoading}</p>
       {:else}
-        <MonsterBlock loaded={previewEntry} />
+        <MonsterBlock loaded={previewEntry} brief />
       {/if}
     </div>
   {/if}
@@ -555,45 +565,69 @@
     font-weight: var(--weight-semibold);
   }
 
-  .roster li {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+  /* Room for the remove dot that sticks out of each card's corner. */
+  .roster {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--roster-card-width), 1fr));
     gap: var(--space-3);
-    padding: var(--space-2) 0;
-    border-top: var(--border-width) solid var(--color-border);
+    padding: var(--space-2) var(--space-2) 0 0;
   }
 
-  .roster li:first-child {
-    border-top: none;
+  .roster:empty {
+    display: none;
   }
 
-  .who {
-    flex: 1 1 12rem;
-    min-width: 0;
+  .roster li {
+    position: relative;
     display: flex;
     flex-direction: column;
-  }
-
-  .qty {
-    display: flex;
-    align-items: center;
     gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-sunken);
   }
 
-  .qty input {
+  .roster .name {
+    padding-right: var(--space-3);
+    overflow-wrap: anywhere;
+  }
+
+  .roster input {
     width: var(--level-input-width);
     min-height: var(--control-height-sm);
+    margin-top: var(--space-1);
     border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     text-align: center;
   }
 
-  .row-xp {
-    min-width: 6rem;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+  /* Remove: a red dot with a cross on the card's top-right corner, like removing a character's picture. */
+  .remove {
+    position: absolute;
+    top: calc(-1 * var(--space-2));
+    right: calc(-1 * var(--space-2));
+    display: grid;
+    place-items: center;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--color-danger-fill);
+    color: var(--color-accent-text);
+    box-shadow: var(--shadow-card);
+    cursor: pointer;
+  }
+
+  .remove:hover {
+    filter: brightness(1.1);
+  }
+
+  .remove:focus-visible {
+    outline: var(--focus-ring) solid var(--color-focus);
+    outline-offset: 2px;
   }
 
   .search,
@@ -787,6 +821,15 @@
     box-shadow: var(--shadow-drawer);
     font-size: var(--text-sm);
     pointer-events: none;
+  }
+
+  /* Fixed size, so the card's height is known before the picture has loaded. */
+  .portrait {
+    float: right;
+    width: var(--monster-portrait-size);
+    height: var(--monster-portrait-size);
+    margin: 0 0 var(--space-2) var(--space-3);
+    object-fit: contain;
   }
 
   .preview h3 {

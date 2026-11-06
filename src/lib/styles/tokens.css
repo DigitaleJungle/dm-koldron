@@ -113,6 +113,9 @@
   --picklist-height: 320px;
   --encounter-monsters-height: 400px;
   --encounter-browser-width: 500px;
+  --roster-card-width: 180px;
+  --monster-portrait-size: 120px;
+  --entry-picture-size: 200px;
   --meter-width: 168px;
   --meter-height: 448px;
   --dialog-width: 440px;

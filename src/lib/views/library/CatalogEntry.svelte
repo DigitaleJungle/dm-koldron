@@ -1,5 +1,7 @@
 <script lang="ts">
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
+  import { entryImage } from "$lib/api/images";
+  import { notify } from "$lib/stores/notifications.svelte";
   import { page } from "$app/state";
   import { errorMessage } from "$lib/api/storage";
   import { keepScroll } from "$lib/stores/history.svelte";
@@ -35,6 +37,19 @@
     return () => (stale = true);
   });
 
+  // Its picture, when its pack's images are on (Settings → Rules); none offline before it was downloaded.
+  let picture = $state<string | null>(null);
+  $effect(() => {
+    picture = null;
+    const image = loaded?.entry.image;
+    if (!loaded || typeof image !== "string") return;
+    let stale = false;
+    entryImage(loaded.pack, image)
+      .then((src) => !stale && (picture = src))
+      .catch((e) => notify(errorMessage(e))); // reported, but the entry still shows
+    return () => (stale = true);
+  });
+
   const facts = $derived(loaded ? entryFacts(category, loaded) : []);
 
   // A rule section opens in the Rules tab; another entry on its own page. The pack shows when it's another one.
@@ -50,6 +65,9 @@
     <p class="message" role="status">{t.loading}</p>
   {:else}
     <article class="prose">
+      {#if picture}
+        <img class="picture" src={picture} alt="" />
+      {/if}
       <h1>{loaded.entry.name}</h1>
       <p class="source">{loaded.source}</p>
       {#if loaded.also.length}
@@ -97,6 +115,15 @@
 
   .prose {
     width: 100%;
+  }
+
+  /* Fixed size, so the text doesn't move when it has loaded. */
+  .picture {
+    float: right;
+    width: var(--entry-picture-size);
+    height: var(--entry-picture-size);
+    margin: 0 0 var(--space-3) var(--space-4);
+    object-fit: contain;
   }
 
   .also {

@@ -4,7 +4,8 @@
   import RefLink from "../RefLink.svelte";
   import { ABILITIES, ACTION_LISTS, challenge, damages, hitPoints, modifier, monsterHeader, proficiencies, senses, signed, speed } from "./format";
 
-  let { loaded }: { loaded: CatalogEntry } = $props();
+  /** `brief`: only the main stats, everything above the traits (the encounter browser's hover card). */
+  let { loaded, brief = false }: { loaded: CatalogEntry; brief?: boolean } = $props();
   const t = strings.entry;
   const m = $derived(loaded.entry);
   // Lines with nothing to say are left out. Condition immunities are references after the damage immunities.
@@ -55,7 +56,7 @@
   {/each}
 </dl>
 
-{#each ACTION_LISTS as list (list.id)}
+{#each brief ? [] : ACTION_LISTS as list (list.id)}
   {#if m[list.id]?.length}
     <h2>{list.label}</h2>
     {#each m[list.id] as action, i (i)}

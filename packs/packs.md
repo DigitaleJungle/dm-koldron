@@ -46,6 +46,16 @@ Extra checks:
 
 Markdown is CommonMark with tables. The reader shows the chapter and section names itself, so a `desc` that starts with a heading repeating the name has that heading left out. Raw HTML is shown as text, and links and images are left out (their text stays).
 
+## images.json (optional)
+
+The images the pack's entries name (an entry's `image`, e.g. `/api/images/monsters/aboleth.png`) that can be downloaded when the user turns on **Enable images** for the pack in Settings → Rules. Images are never shipped in a pack.
+
+```json
+{ "host": "https://www.dnd5eapi.co", "images": { "/api/images/monsters/aboleth.png": 757000 } }
+```
+
+`host` is `https://` and a host name only. Each key starts with `/` and is fetched from `host`; its value is the download size in bytes, for the estimate the app shows. The app only downloads paths listed here. For the SRD pack, `cargo run --example image_manifest` (in `src-tauri/`) writes this file from the data, leaving out images the server doesn't have.
+
 ## Validation
 
 A pack is checked completely before any of it is used. A pack with any error isn't loaded at all; Settings → Rules lists it with its errors, and the other packs still load.

@@ -38,6 +38,8 @@ pub struct AppSettings {
     pub animations: Animations,
     /// Pack ids switched off in Settings → Rules; packs are on unless listed.
     pub disabled_packs: Vec<String>,
+    /// Pack ids with Enable images ticked in Settings → Rules; images are off unless listed.
+    pub image_packs: Vec<String>,
 }
 
 /// Merges the given fields into the saved settings and saves them; the rest stay as they are.

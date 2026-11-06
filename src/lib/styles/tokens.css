@@ -1,46 +1,75 @@
-/* Design tokens. Components use these; never hard-code colours, spacing or font sizes.
-   Colours switch on <html data-theme="light|dark">, set from Settings → Theme (System follows the OS). */
+/* Design tokens, following the Koldron design system. Components use these; never hard-code colours, spacing or font sizes.
+   Colours switch on <html data-theme="light|dark">, set from Settings → Theme (System follows the OS).
+   Light = Koldron "Bone" (prep by day), dark = Koldron "Cauldron" (running a session in a dim room).
+
+   Two layers:
+   1. Koldron brand tokens (--surface, --ink, --potion, …), the same names and values as the design system's tokens.css.
+   2. The app's own semantic tokens (--color-bg, --color-accent, …), aliased onto layer 1 so existing components keep working.
+   Where the system has no direct equivalent, a token is derived from brand colours with color-mix() and marked "derived". */
 :root {
   color-scheme: light;
 
-  /* Light theme */
-  --color-bg: #f5f6f8;
-  --color-surface: #ffffff;
-  --color-surface-sunken: #eef0f3;
-  --color-border: #e1e4e9;
-  --color-border-strong: #c9ced6;
-  --color-text: #15181e;
-  --color-text-muted: #59606d; /* ≥ 5.5:1 on bg and surface */
-  --color-text-placeholder: #8a909b; /* deliberately quiet: ~3:1, for hint text only */
-  --color-accent: #2557d6; /* button fill, white text 6:1 */
-  --color-accent-hover: #1d47b3;
-  --color-accent-text: #ffffff;
-  --color-accent-soft: #e8eefc;
-  --color-search-highlight: #ffe36b;
-  --color-search-highlight-text: #15181e;
-  --color-link: #2557d6;
-  --color-focus: #2557d6;
-  --color-danger: #b42318; /* ≥ 6:1 on surface */
-  --color-danger-soft: #fdecea;
-  /* Stripes of the hatching on what's hidden from players (base.css .hatched); body text stays ≥ 10:1 on it. */
-  --color-hatch: #f7d3ce;
-  --color-success: #1a7f37; /* ≥ 5:1 on surface */
-  --color-success-fill: #1a7f37; /* button fill, white text ≥ 5:1 */
-  --color-success-fill-hover: #156b2e;
-  --color-danger-fill: #b42318; /* button fill, white text ≥ 6:1 */
-  /* Heroic Inspiration (gold) and Concentration (violet) highlights on the character sheet. */
-  --color-inspiration: #f2c230;
-  --color-inspiration-strong: #9a6b00;
-  --color-inspiration-text: #15181e;
-  --color-inspiration-glow: rgb(242 194 48 / 0.55);
-  --color-concentration: #6d3fd1;
-  --color-concentration-text: #ffffff;
-  --color-concentration-glow: rgb(109 63 209 / 0.4);
-  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
-  /* The up-down chevron of every dropdown, in --color-text-muted (a data URI can't read a variable). */
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4' stroke='%2359606d' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* ── 1. Koldron brand tokens: Bone (light) ── */
+  --surface: #ece6d8;
+  --surface-raised: #f6f2e9;
+  --ink: #18191b;
+  --ink-muted: #55565a;
+  --line: #cdc5b3; /* decorative hairlines only, never the only border of a control */
+  --potion: #2f611a;
+  --potion-glow: #8fd16a; /* a fill, never text on bone */
+  --ember: #a84a1a;
+  --iron: #2e3034;
+  --danger: #7a1020;
+  /* The fixed brand colours, the same in both themes (for text on pictures, overlays). */
+  --bone: #ece6d8;
+  --charcoal: #18191b;
+  /* Text on a filled brand colour: surface-raised in light, surface in dark. */
+  --on-fill: var(--surface-raised);
 
-  /* Spacing (4px scale) */
+  /* ── 2. App semantic colours ── */
+  --color-bg: var(--surface);
+  --color-surface: var(--surface-raised);
+  --color-surface-sunken: color-mix(in srgb, var(--ink) 6%, var(--surface)); /* derived: hover and table-header shading */
+  --color-border: var(--line);
+  --color-border-strong: var(--ink-muted); /* control borders need ≥ 3:1 */
+  --color-text: var(--ink);
+  --color-text-muted: var(--ink-muted);
+  --color-text-placeholder: var(--ink-muted);
+  --color-accent: var(--potion);
+  --color-accent-hover: color-mix(in srgb, var(--potion) 82%, var(--ink)); /* derived: darker in light, lighter in dark */
+  --color-accent-text: var(--on-fill);
+  --color-accent-soft: color-mix(in srgb, var(--potion) 16%, var(--surface-raised)); /* derived: selected/pressed fill, ink text on it */
+  --color-search-highlight: var(--potion-glow);
+  --color-search-highlight-text: var(--charcoal);
+  --color-link: var(--potion);
+  --color-focus: var(--potion);
+  --color-danger: var(--danger);
+  --color-danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface-raised)); /* derived */
+  /* Stripes of the hatching on what's hidden from players (base.css .hatched); body text stays ≥ 10:1 on it. */
+  --color-hatch: color-mix(in srgb, var(--danger) 16%, var(--surface-raised)); /* derived */
+  --color-success: var(--potion); /* Koldron: potion is success and "ready to run" */
+  --color-success-fill: var(--potion);
+  --color-success-fill-hover: var(--color-accent-hover);
+  --color-success-fill-text: var(--on-fill);
+  --color-danger-fill: var(--danger);
+  --color-danger-fill-text: var(--on-fill); /* in dark, danger is light pink, so white text no longer works */
+  /* Heroic Inspiration and Concentration on the character sheet, mapped onto the brand accents:
+     Inspiration = ember (highlight), Concentration = potion (the active state). */
+  --color-inspiration: var(--ember);
+  --color-inspiration-strong: var(--ember);
+  --color-inspiration-text: var(--on-fill);
+  --color-concentration: var(--potion);
+  --color-concentration-text: var(--on-fill);
+  /* Koldron: "No glows, no gradients." These are transparent so existing box-shadows draw nothing; show the state with a border. */
+  --color-inspiration-glow: transparent;
+  --color-concentration-glow: transparent;
+  /* Koldron: "Borders over shadows." */
+  --shadow-card: none;
+  --shadow-drawer: none;
+  /* The up-down chevron of every dropdown, in --ink-muted (a data URI can't read a variable). */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4' stroke='%2355565a' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+  /* Spacing (4px base). Koldron names 1, 2, 4, 6 and 10; 3, 5, 7 and 8 are in-between steps kept for existing layouts. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -49,30 +78,44 @@
   --space-6: 24px;
   --space-7: 32px;
   --space-8: 48px;
+  --space-10: 40px;
 
-  /* Type */
-  --font-sans: system-ui, "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
-  --text-xs: 0.75rem;
-  --text-sm: 0.8125rem;
-  --text-md: 0.9375rem;
-  --text-lg: 1.0625rem;
-  --text-xl: 1.375rem;
-  --text-2xl: 2rem;
+  /* Type. Self-host the three fonts (e.g. @fontsource) so the app works offline at the table. */
+  --font-display: Fraunces, Georgia, serif; /* headlines only, never body text or controls */
+  --font-sans: "Atkinson Hyperlegible", system-ui, "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace; /* dice, stats, HP, initiative */
+  --text-xs: 0.75rem; /* 12px: Koldron label */
+  --text-sm: 0.875rem; /* 14px: Koldron body-sm */
+  --text-md: 1rem; /* 16px: Koldron body (the minimum in session views) */
+  --text-lg: 1.125rem; /* 18px: between body and h2; not a named Koldron style, so keep it to the odd small title */
+  --text-xl: 1.5rem; /* 24px: Koldron h2 */
+  --text-2xl: 2.25rem; /* 36px: Koldron h1 */
+  --text-3xl: 3.5rem; /* 56px: Koldron display */
+  /* Atkinson Hyperlegible comes in 400 and 700 only, so medium and semibold fall on those. */
   --weight-regular: 400;
-  --weight-medium: 500;
-  --weight-semibold: 600;
+  --weight-medium: 400;
+  --weight-semibold: 700;
   --weight-bold: 700;
+  --weight-display: 600; /* Fraunces headlines */
   --leading-tight: 1.2;
   --leading-normal: 1.5;
-  --tracking-label: 0.06em;
+  --tracking-label: 0.08em;
   --tracking-tight: -0.01em;
+  --tracking-display: -0.02em;
+  /* Koldron's type styles as font shorthands. */
+  --text-display: 600 56px/60px var(--font-display);
+  --text-h1: 600 36px/42px var(--font-display);
+  --text-h2: 600 24px/30px var(--font-display);
+  --text-body: 400 16px/24px var(--font-sans);
+  --text-body-sm: 400 14px/20px var(--font-sans);
+  --text-label: 700 12px/16px var(--font-sans); /* uppercase; buttons, tabs, stat headers */
+  --text-dice: 500 14px/20px var(--font-mono);
 
   /* Shape and layout */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-pill: 999px;
+  --radius-sm: 2px; /* inputs, tags, chips: crisp, like a cut wooden edge */
+  --radius-md: 6px; /* buttons, cards, panels */
+  --radius-lg: 12px; /* modals, large panels */
+  --radius-pill: 999px; /* not for main UI in Koldron; kept for existing round avatars and badges */
   --border-width: 1px;
   --focus-ring: 2px;
   --control-height-sm: 28px;
@@ -83,7 +126,10 @@
   --sidebar-collapsed-width: 64px;
   --logo-size: 28px;
   --content-max-width: 1280px;
+  /* Tabler at 1.5px stroke: 16 in dense lists, 20 in buttons and inputs, 24 in navigation. */
+  --icon-size-sm: 16px;
   --icon-size: 20px;
+  --icon-size-lg: 24px;
   --drawer-width: min(280px, 85vw);
   --settings-width: 960px;
   --settings-height: 720px;
@@ -134,7 +180,7 @@
   /* The Spells tab's Notes hold only the components and Ritual. */
   --spell-notes-width: 96px;
   --sheet-bar-height: 10px;
-  --sheet-glow-blur: 18px;
+  --sheet-glow-blur: 0px; /* no glows in Koldron */
   --stat-value-size: 1.875rem;
   --ability-card-height: 64px;
   --coin-box-width: 64px;
@@ -152,45 +198,25 @@
   --party-avatar-width: 120px;
   --search-dropdown-max-height: 400px;
   --duration-drawer: 200ms;
-  --color-backdrop: rgb(10 12 16 / 0.45);
-  /* Text over a picture (the party avatars on Home): dark in both themes, white text well above 4.5:1. */
-  --color-overlay: rgb(10 12 16 / 0.78);
-  --color-overlay-text: #ffffff;
-  --shadow-drawer: 0 8px 32px rgb(10 12 16 / 0.25);
+  --color-backdrop: color-mix(in srgb, var(--charcoal) 55%, transparent);
+  /* Text over a picture (the party avatars on Home): charcoal in both themes, bone text well above 4.5:1. */
+  --color-overlay: color-mix(in srgb, var(--charcoal) 80%, transparent);
+  --color-overlay-text: var(--bone);
 }
 
+/* Koldron "Cauldron" theme: the default while running a live session. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-bg: #0e1014;
-  --color-surface: #171a20;
-  --color-surface-sunken: #1f232b;
-  --color-border: #2a2f39;
-  --color-border-strong: #3a404c;
-  --color-text: #e7e9ed;
-  --color-text-muted: #a3aab7; /* ≥ 7:1 on surface */
-  --color-text-placeholder: #6f7683; /* ~3:1 */
-  --color-accent: #2f63e0; /* white text 5:1 */
-  --color-accent-hover: #4174ea;
-  --color-accent-text: #ffffff;
-  --color-accent-soft: #1c2740;
-  --color-search-highlight: #f2cf48;
-  --color-search-highlight-text: #15181e;
-  --color-link: #8db2ff;
-  --color-focus: #8db2ff;
-  --color-danger: #ff9b8f;
-  --color-danger-soft: #3a1d1b;
-  --color-hatch: #4a2421;
-  --color-success: #4ac26b;
-  --color-success-fill: #1f7a3a;
-  --color-success-fill-hover: #18682f;
-  --color-danger-fill: #c23a2c;
-  --color-inspiration: #e0b22a;
-  --color-inspiration-strong: #f0c94c;
-  --color-inspiration-text: #1a1400;
-  --color-inspiration-glow: rgb(240 201 76 / 0.45);
-  --color-concentration: #8b63ec;
-  --color-concentration-text: #ffffff;
-  --color-concentration-glow: rgb(139 99 236 / 0.45);
-  --shadow-card: none;
-  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4' stroke='%23a3aab7' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --surface: #18191b;
+  --surface-raised: #222326;
+  --ink: #ece6d8;
+  --ink-muted: #a9a59b;
+  --line: #3a3c41;
+  --potion: #8fd16a;
+  --potion-glow: #8fd16a;
+  --ember: #e2733a;
+  --iron: #2e3034;
+  --danger: #f4a3a8;
+  --on-fill: var(--surface);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4' stroke='%23a9a59b' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }

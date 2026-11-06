@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.6] - 2026-11-06
+
+### Changed
+
+- New look following the Koldron design system: Bone (light) and Cauldron (dark) colours with a potion-green accent, uppercase label-style buttons, table headers and section labels, crisp chips, and borders instead of shadows and glows. Headlines, reading text and numbers are set for Fraunces, Atkinson Hyperlegible and JetBrains Mono; until those fonts are bundled, the system fonts show.
+
 ## [0.4.5] - 2026-11-06
 
 ### Added

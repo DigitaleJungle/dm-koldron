@@ -19,7 +19,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tabler icons (the webfont stylesheets are imported in the root layout): <i class="ti ti-x" aria-hidden="true"></i>. */
+/* Tabler icons (the webfont stylesheets are imported in the root layout): <i class="ti ti-x" aria-hidden="true"></i>.
+   Koldron uses a 1.5px stroke: import the webfont's 1.5-stroke stylesheet. Outline by default, filled only for the active state. */
 .ti {
   flex-shrink: 0;
   font-size: var(--icon-size);
@@ -33,6 +34,13 @@ h5,
 h6,
 p {
   margin: 0;
+}
+
+/* Headlines are Fraunces; smaller headings stay in the reading face. */
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: var(--weight-display);
 }
 
 button,
@@ -63,15 +71,21 @@ a {
   border: 0;
 }
 
-/* Small uppercase section label */
+/* Small uppercase section label (Koldron "label") */
 .label {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font: var(--text-label);
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
 
+/* Numbers a DM scans: dice notation, stats, HP, initiative (Koldron "dice") */
+.dice {
+  font: var(--text-dice);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons use the Koldron label style: bold, small, uppercase. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -82,22 +96,28 @@ a {
   border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  font: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   cursor: pointer;
 }
 
+.btn:hover:not(:disabled) {
+  background: var(--color-surface-sunken);
+}
+
+/* One potion-coloured action per screen. */
 .btn-primary {
   min-height: var(--control-height-lg);
   padding: 0 var(--space-6);
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-accent-text);
-  font-size: var(--text-md);
 }
 
 .btn-primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 /* Destructive actions */
@@ -120,7 +140,7 @@ a {
   height: var(--control-height-sm);
   padding: 0;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -141,7 +161,6 @@ a {
 .icon-btn-lg {
   width: var(--control-height);
   height: var(--control-height);
-  border-radius: var(--radius-md);
 }
 
 /* Disabled controls keep readable text (no opacity) so contrast stays AA */
@@ -165,9 +184,7 @@ select {
   border-radius: var(--radius-md);
   background: var(--color-surface) var(--select-chevron) no-repeat right var(--space-3) center / var(--icon-size);
   color: var(--color-text);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
+  font: var(--text-body-sm);
   text-overflow: ellipsis;
   cursor: pointer;
 }
@@ -178,11 +195,12 @@ select:hover:not(:disabled) {
 
 select:disabled {
   cursor: not-allowed;
+  border-color: var(--color-border);
   background-color: var(--color-surface-sunken);
   color: var(--color-text-muted);
 }
 
-/* The open list, styled like the Menu component (the campaign switcher's dropdown). */
+/* The open list, styled like the Menu component (the campaign switcher's dropdown): a hairline, no shadow. */
 ::picker(select) {
   appearance: base-select;
   margin-block: var(--space-1);
@@ -202,8 +220,7 @@ select option {
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-regular);
+  font: var(--text-body-sm);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -218,21 +235,21 @@ select option:disabled {
   cursor: default;
 }
 
-/* The picked option gets the green check on the right, like the current campaign. */
+/* The picked option gets the potion check on the right, like the current campaign. */
 select option::checkmark {
   order: 1;
   margin-left: auto;
   color: var(--color-success);
 }
 
-/* A toggle in a row of filters (Catalog, search screen). */
+/* A toggle in a row of filters (Catalog, search screen). Koldron chips are crisp, not pills. */
 .chip {
   padding: 0 var(--space-2);
   min-height: var(--control-height-sm);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-pill);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
   background: var(--color-surface);
-  font-size: var(--text-sm);
+  font: var(--text-body-sm);
   cursor: pointer;
 }
 
@@ -243,5 +260,5 @@ select option::checkmark {
 .chip[aria-pressed="true"] {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
-  color: var(--color-link);
+  color: var(--color-text);
 }

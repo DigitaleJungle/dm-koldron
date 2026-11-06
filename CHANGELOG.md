@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.5] - 2026-11-06
+
+### Added
+
+- The window opens at the size and place it had when it was last closed (maximized if it was), unless that place is no longer on a connected screen.
+
+### Changed
+
+- Library: images on Catalog pages show larger (up to 400 px, at most 40% of the page).
+
 ## [0.4.4] - 2026-11-06
 
 ### Changed

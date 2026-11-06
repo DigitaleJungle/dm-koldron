@@ -117,11 +117,11 @@
     width: 100%;
   }
 
-  /* Fixed size, so the text doesn't move when it has loaded. */
+  /* A fixed square, so the text doesn't move when it has loaded; at most 40% of the page in a narrow window. */
   .picture {
     float: right;
-    width: var(--entry-picture-size);
-    height: var(--entry-picture-size);
+    width: min(var(--entry-picture-size), 40%);
+    aspect-ratio: 1;
     margin: 0 0 var(--space-3) var(--space-4);
     object-fit: contain;
   }

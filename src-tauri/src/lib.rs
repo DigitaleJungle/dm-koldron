@@ -2,8 +2,10 @@ mod bundles;
 mod commands;
 mod packs;
 mod storage;
+mod window_state;
 
 use tauri::webview::PageLoadEvent;
+use tauri::{Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
@@ -14,13 +16,21 @@ pub fn run() {
                 return Err("Debug builds must run with the dev config: npm run app".into());
             }
             commands::search::warm(app.handle().clone());
+            if let Some(main) = app.get_webview_window("main") {
+                window_state::restore(&main.as_ref().window());
+            }
             Ok(())
         })
-        // The window starts hidden; show it once the page is ready.
+        // The window starts hidden; show it once the page is ready, already at its saved size and place.
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Finished {
                 let _ = webview.window().show(); // nothing sensible to do if the OS refuses
             }
+        })
+        .on_window_event(|window, event| match event {
+            WindowEvent::Resized(_) | WindowEvent::Moved(_) => window_state::track(window),
+            WindowEvent::CloseRequested { .. } => window_state::save(window),
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::about::license_texts,

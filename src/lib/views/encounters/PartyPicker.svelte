@@ -10,12 +10,15 @@
     selected,
     error,
     ontoggle,
+    disabled = false,
   }: {
     /** Null while loading. */
     characters: Character[] | null;
     selected: Set<string>;
     error: string | null;
     ontoggle: (id: string, on: boolean) => void;
+    /** A Ready encounter's party can't change. */
+    disabled?: boolean;
   } = $props();
 
   const t = strings.encounters.party;
@@ -41,7 +44,7 @@
     class="trigger"
     popovertarget="{id}-list"
     aria-label={`${t.title}, ${label}`}
-    disabled={!characters?.length}
+    disabled={disabled || !characters?.length}
   >
     <span>{label}</span>
     <i class="ti ti-chevron-down" aria-hidden="true"></i>

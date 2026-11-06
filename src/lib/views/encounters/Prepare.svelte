@@ -86,17 +86,23 @@
   const changed = $derived(baseline !== null && snapshot() !== baseline);
   let leaving = false;
 
-  async function save(): Promise<boolean> {
+  // Ready locks the encounter: nothing in it can change until the pencil puts it back to Draft.
+  const locked = $derived(encounter?.status === "ready");
+
+  /** Saves the changes, with `status` (Ready and back to Draft save at once). */
+  async function save(status = encounter?.status ?? "draft"): Promise<boolean> {
     if (saving) return false;
     saving = true;
     saveError = null;
     const sent = snapshot();
+    const switching = status !== (encounter?.status ?? "draft");
     try {
       const saved = await saveEncounter(campaign, {
         id: encounter?.id ?? "",
         name: name.trim() || t.newTitle,
         monsters: roster,
         party: [...selected],
+        status,
         savedAt: 0,
       });
       encounter = saved;
@@ -104,7 +110,7 @@
         name = saved.name; // a blank name was saved as "New encounter"
         baseline = snapshot();
       } else baseline = sent; // typed on while it saved: those changes are still unsaved
-      notify(t.saved(saved.name));
+      notify(switching ? (saved.status === "ready" ? t.nowReady : t.nowDraft)(saved.name) : t.saved(saved.name));
       // A new encounter gets its own address; nothing is unsaved, so leaving this one doesn't ask.
       if (!id) {
         leaving = true;
@@ -340,19 +346,33 @@
   <div class="prepare">
     <header class="top">
       <BackButton fallback={base} />
-      <label class="name-field">
-        <span class="sr-only">{t.name}</span>
-        <input bind:value={name} maxlength="100" autocomplete="off" placeholder={t.newTitle} />
-      </label>
+      {#if locked}
+        <h1 class="name-field name-text">{name}</h1>
+      {:else}
+        <label class="name-field">
+          <span class="sr-only">{t.name}</span>
+          <input bind:value={name} maxlength="100" autocomplete="off" placeholder={t.newTitle} />
+        </label>
+      {/if}
       {#if saveError}<span class="error small" role="alert">{saveError}</span>{/if}
-      <button class="icon-btn icon-btn-lg" aria-label={saving ? t.saving : t.save} disabled={saving || !changed} onclick={save}>
-        <i class="ti ti-device-floppy" aria-hidden="true"></i>
-      </button>
-      <!-- Run is TODO 10. -->
-      <button class="btn btn-primary" disabled>
-        {t.start}
-        <i class="ti ti-player-play" aria-hidden="true"></i>
-      </button>
+      {#if locked}
+        <button class="icon-btn icon-btn-lg" aria-label={t.toDraft} disabled={saving} onclick={() => save("draft")}>
+          <i class="ti ti-pencil" aria-hidden="true"></i>
+        </button>
+        <!-- Run is TODO 10. -->
+        <button class="btn btn-primary" disabled>
+          {t.start}
+          <i class="ti ti-player-play" aria-hidden="true"></i>
+        </button>
+      {:else}
+        <button class="icon-btn icon-btn-lg" aria-label={saving ? t.saving : t.save} disabled={saving || !changed} onclick={() => save()}>
+          <i class="ti ti-device-floppy" aria-hidden="true"></i>
+        </button>
+        <button class="btn btn-primary" disabled={saving} onclick={() => save("ready")}>
+          {t.ready}
+          <i class="ti ti-check" aria-hidden="true"></i>
+        </button>
+      {/if}
     </header>
 
     <div class="columns">
@@ -422,6 +442,7 @@
                       <td>
                         <button
                           class="icon-btn add"
+                          disabled={locked}
                           aria-label={t.browser.addLabel(m.name, m.source)}
                           onfocus={(e) => showPreview(m, e.currentTarget)}
                           onblur={hidePreview}
@@ -475,9 +496,11 @@
                   animate:flip={{ duration: cardMotion().duration }}
                   onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(row)}
                 >
-                  <button class="tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
-                    <i class="ti ti-x" aria-hidden="true"></i>
-                  </button>
+                  {#if !locked}
+                    <button class="tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
+                      <i class="ti ti-x" aria-hidden="true"></i>
+                    </button>
+                  {/if}
                   <div class="tile-portrait">
                     {#if picture}
                       <img class="hex" src={picture} alt="" />
@@ -485,13 +508,17 @@
                       <span class="hex no-picture" aria-hidden="true">{row.name.charAt(0)}</span>
                     {/if}
                     <div class="count-row">
-                      <button class="hex-step less" aria-label={t.roster.less(row.name)} disabled={row.quantity <= 1} onclick={() => setQuantity(row, row.quantity - 1)}>
-                        <i class="ti ti-minus" aria-hidden="true"></i>
-                      </button>
+                      {#if !locked}
+                        <button class="hex-step less" aria-label={t.roster.less(row.name)} disabled={row.quantity <= 1} onclick={() => setQuantity(row, row.quantity - 1)}>
+                          <i class="ti ti-minus" aria-hidden="true"></i>
+                        </button>
+                      {/if}
                       <output class="badge" aria-live="polite" aria-label={t.roster.quantity(row.name)}>×{row.quantity}</output>
-                      <button class="hex-step more" aria-label={t.roster.more(row.name)} disabled={row.quantity >= 999} onclick={() => setQuantity(row, row.quantity + 1)}>
-                        <i class="ti ti-plus" aria-hidden="true"></i>
-                      </button>
+                      {#if !locked}
+                        <button class="hex-step more" aria-label={t.roster.more(row.name)} disabled={row.quantity >= 999} onclick={() => setQuantity(row, row.quantity + 1)}>
+                          <i class="ti ti-plus" aria-hidden="true"></i>
+                        </button>
+                      {/if}
                     </div>
                   </div>
                   <div class="tile-who">
@@ -534,7 +561,7 @@
 
         <aside class="side">
           <DifficultyMeter {result} partySize={party.length} monsterCount={roster.length} hasBudgets={budgets.length > 0} {budgetError}>
-            <PartyPicker {characters} {selected} error={partyError} ontoggle={toggleCharacter} />
+            <PartyPicker {characters} {selected} error={partyError} ontoggle={toggleCharacter} disabled={locked} />
           </DifficultyMeter>
         </aside>
       </div>
@@ -598,15 +625,26 @@
     min-width: 0;
   }
 
-  .name-field input {
+  .name-field input,
+  .name-text {
     width: 100%;
     min-height: var(--control-height);
     padding: 0 var(--space-2);
     border: var(--border-width) solid transparent;
     border-radius: var(--radius-md);
     background: none;
+    font-family: var(--font-sans);
     font-size: var(--text-xl);
     font-weight: var(--weight-bold);
+  }
+
+  /* A Ready encounter's name: text in the input's place, so nothing moves when it locks. */
+  .name-text {
+    margin: 0;
+    line-height: calc(var(--control-height) - 2 * var(--border-width));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .name-field input:hover,

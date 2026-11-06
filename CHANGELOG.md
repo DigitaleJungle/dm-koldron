@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.9] - 2026-11-06
+
+### Changed
+
+- Encounters → Prepare: Run is now a status switch. An encounter starts as Draft; Ready saves and locks it (name, party and monsters can't change), and a pencil puts it back to Draft. Older encounters open as Draft
+- Encounters list: a Ready encounter shows a Run button instead of a tag, and each difficulty has its own icon (feather, shield, sword, flame, skull)
+
 ## [0.4.8] - 2026-11-06
 
 ### Added

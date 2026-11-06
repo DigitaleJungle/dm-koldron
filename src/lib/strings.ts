@@ -217,7 +217,6 @@ export const strings = {
       byXp: "Total XP",
       noMatches: "No matches.",
       draft: "Draft",
-      ready: "Ready",
       noMonsters: "No monsters yet",
       // "4 × lvl 5", or "4 × lvl 3–5" for mixed levels; levels unknown → just the count.
       party: (n: number, low: number | null, high: number | null) =>
@@ -232,6 +231,10 @@ export const strings = {
     saved: (name: string) => `Saved ${name}.`,
     saveError: (reason: string) => `Couldn't save. ${reason}`,
     start: "Run",
+    ready: "Ready",
+    toDraft: "Back to draft",
+    nowReady: (name: string) => `${name} is ready to run.`,
+    nowDraft: (name: string) => `${name} is back in draft.`,
     browser: {
       title: "Monsters",
       search: "Search monsters",

@@ -3,8 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 /** One roster row: a pack's monster and how many; name and source keep it readable when its pack is off. */
 export type RosterEntry = { pack: string; index: string; name: string; source: string; quantity: number };
 
+/** Draft while being prepared; Ready is locked in Prepare and can be run. */
+export type EncounterStatus = "draft" | "ready";
+
 /** Mirrors `Encounter` in src-tauri/src/commands/encounters.rs. `party`: character ids. `savedAt`: ms. */
-export type Encounter = { id: string; name: string; monsters: RosterEntry[]; party: string[]; savedAt: number };
+export type Encounter = { id: string; name: string; monsters: RosterEntry[]; party: string[]; status: EncounterStatus; savedAt: number };
 
 /** Most recently saved first; `unreadable`: files that couldn't be read, left untouched. */
 export type EncounterList = { encounters: Encounter[]; unreadable: string[] };

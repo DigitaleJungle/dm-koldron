@@ -18,6 +18,7 @@
   import { characterLevel, entryKey, rowsByKey } from "./roster";
 
   const t = strings.encounters;
+  const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
   const fmt = new Intl.NumberFormat();
   const campaign = $derived(campaigns.current!.id);
   const base = $derived(`/campaign/${campaign}/encounters`);
@@ -174,7 +175,7 @@
       <ul class="cards">
         {#each shown as c (c.id)}
           <li>
-            <a class="card" href="{base}/{c.id}">
+            <article class="card">
               <div class="art">
                 <!-- One unit is one hexagon's width; --hex-width sets its size on screen, shrinking to fit the card. -->
                 <svg
@@ -204,20 +205,29 @@
               </div>
               <div class="body">
                 <div class="title">
-                  <h2 class="name">{c.name}</h2>
-                  <span class="status" class:ready={c.count > 0}>{c.count > 0 ? t.list.ready : t.list.draft}</span>
+                  <!-- The name's link covers the whole card; Run sits above it. -->
+                  <h2 class="name"><a class="open" href="{base}/{c.id}">{c.name}</a></h2>
+                  {#if c.status === "ready"}
+                    <!-- Run is TODO 10. -->
+                    <button class="btn btn-primary run" disabled>
+                      {t.start}
+                      <i class="ti ti-player-play" aria-hidden="true"></i>
+                    </button>
+                  {:else}
+                    <span class="status">{t.list.draft}</span>
+                  {/if}
                 </div>
                 <p class="muted">{c.count > 0 ? monsterLine(c) : t.list.noMonsters}</p>
                 <div class="stats">
                   <span class="band band-{c.band ?? 'none'}">
-                    <i class="ti ti-hexagon" aria-hidden="true"></i>
+                    {#if c.band}<i class="ti {BAND_ICONS[c.band]}" aria-hidden="true"></i>{/if}
                     {c.band ? t.meter.bands[c.band] : t.meter.noRating}
                   </span>
                   <span>{t.meter.xp(fmt.format(c.xp))}</span>
                   <span class="party muted">{c.partyLine}</span>
                 </div>
               </div>
-            </a>
+            </article>
           </li>
         {/each}
       </ul>
@@ -310,6 +320,7 @@
   }
 
   .card {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -325,9 +336,36 @@
     border-color: var(--color-border-strong);
   }
 
-  .card:hover .name {
+  .card:hover .open {
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+
+  /* The keyboard's focus ring goes round the whole card, which the link covers. */
+  .card:has(.open:focus-visible) {
+    outline: var(--focus-ring) solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  .open {
+    color: inherit;
+    text-decoration: none;
+    outline: none;
+  }
+
+  .open::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .run {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3);
+    text-decoration: none;
   }
 
   .art {
@@ -413,11 +451,6 @@
     font: var(--text-label);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-  }
-
-  .status.ready {
-    border-color: var(--color-success);
-    color: var(--color-success);
   }
 
   .muted {

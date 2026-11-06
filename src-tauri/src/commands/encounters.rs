@@ -28,6 +28,15 @@ pub struct RosterEntry {
     pub quantity: u32,
 }
 
+/// Draft while it's being prepared; Ready locks it in Prepare and lets it be run.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    #[default]
+    Draft,
+    Ready,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Encounter {
@@ -38,6 +47,9 @@ pub struct Encounter {
     pub monsters: Vec<RosterEntry>,
     /// The ids of the characters in the party.
     pub party: Vec<String>,
+    /// Files saved before there was a status read as Draft.
+    #[serde(default)]
+    pub status: Status,
     /// Milliseconds since the Unix epoch; set by `save`.
     #[serde(default)]
     pub saved_at: u64,
@@ -191,7 +203,16 @@ mod tests {
     }
 
     fn encounter(name: &str, monsters: Vec<RosterEntry>) -> Encounter {
-        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], saved_at: 0 }
+        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], status: Status::Draft, saved_at: 0 }
+    }
+
+    #[test]
+    fn keeps_the_status_and_reads_older_files_as_draft() {
+        let dir = temp_dir("status");
+        let ready = save(&dir, Encounter { status: Status::Ready, ..encounter("Bridge", vec![goblins(1)]) }, 1).unwrap();
+        assert_eq!(get(&dir, &ready.id).unwrap().status, Status::Ready);
+        fs::write(dir.join(FOLDER).join("old.json"), r#"{"name":"Old","monsters":[],"party":[]}"#).unwrap();
+        assert_eq!(get(&dir, "old").unwrap().status, Status::Draft);
     }
 
     #[test]

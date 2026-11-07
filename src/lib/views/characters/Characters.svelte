@@ -1,6 +1,6 @@
 <script lang="ts">
   // The campaign's characters (docs/Characters (light), without its page title, count line and dashed add card): the
-  // party on a dark band, then search by name, class or player (?q=), a party filter (?party=in|out), sort by name,
+  // party on a line-coloured band with its editable name, then search by name, class or player (?q=), a party filter (?party=in|out), sort by name,
   // level or class (?sort=level|class), and the cards. A card's name opens its form; in its bottom-right corner a party
   // button (users when in the party, turning into users-minus on hover; users-plus on card hover otherwise); its menu
   // (top right) has Edit, Add to / Remove from party and Delete. ?edit=<id> opens that character's form (from search).
@@ -14,7 +14,7 @@
   import HexCollage from "$lib/components/HexCollage.svelte";
   import Menu, { type MenuItem } from "$lib/components/Menu.svelte";
   import PartyIcon from "$lib/components/PartyIcon.svelte";
-  import { campaigns } from "$lib/stores/campaigns.svelte";
+  import { campaigns, setPartyName } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
@@ -57,6 +57,26 @@
   const filter = $derived<PartyFilter>(FILTERS.find((f) => f === page.url.searchParams.get("party")) ?? "all");
   const shown = $derived(list ? selectCharacters(list.characters, search, sort, filter) : []);
   const party = $derived((list?.characters ?? []).filter((c) => c.onHome).sort((a, b) => a.name.localeCompare(b.name)));
+
+  // The party's name saves on Enter or leaving the field; Escape puts the saved one back. Empty goes back to the default.
+  const partyName = $derived(campaigns.current?.partyName ?? t.defaultPartyName(campaigns.current?.name ?? ""));
+  let partyError = $state<string | null>(null);
+
+  async function renameParty(input: HTMLInputElement) {
+    partyError = null;
+    try {
+      await setPartyName(campaign, input.value);
+    } catch (e) {
+      partyError = t.partyNameError(errorMessage(e));
+    }
+    input.value = partyName; // also when the shown name didn't change (e.g. cleared while already the default)
+  }
+
+  function revertParty(e: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+    if (e.key !== "Escape") return;
+    e.currentTarget.value = partyName;
+    e.currentTarget.blur();
+  }
 
   // Search, filter and sort refine the list in place (no Back step).
   function refine(changes: Record<string, string | null>) {
@@ -149,7 +169,14 @@
           maxRows={2}
         />
       </div>
-      <p class="party-names">{party.map((c) => c.name).join(", ")}</p>
+      <div class="party-middle">
+        <label class="party-name">
+          <span class="sr-only">{t.partyName}</span>
+          <input value={partyName} maxlength="100" autocomplete="off" onchange={(e) => renameParty(e.currentTarget)} onkeydown={revertParty} />
+        </label>
+        {#if partyError}<p class="error" role="alert">{partyError}</p>{/if}
+        <p class="party-names">{party.map((c) => c.name).join(", ")}</p>
+      </div>
       <dl class="party-stats">
         <div>
           <dt class="band-label">{t.members}</dt>
@@ -270,7 +297,7 @@
     padding: var(--space-5) var(--space-5) var(--corner-clearance);
   }
 
-  /* The party, on a dark band in both themes (fixed brand colours). */
+  /* The party, on a band in the line colour (light beige in light, dark grey in dark). */
   .party {
     display: flex;
     flex-wrap: wrap;
@@ -278,8 +305,8 @@
     gap: var(--space-6);
     padding: var(--space-6);
     border-radius: var(--radius-md);
-    background: var(--iron);
-    color: var(--bone);
+    background: var(--line);
+    color: var(--color-text);
   }
 
   /* Exactly two hexagons high (two rows, the gap between them and the collage's margin: 1.982 hexagon widths), so the
@@ -290,16 +317,50 @@
     height: calc(1.982 * var(--party-hex-width));
   }
 
+  /* Between the pictures and the stats: the party's name at the top, the members' names at the bottom, both centred. */
+  .party-middle {
+    flex: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  /* Text until hovered or focused, like an encounter's name in Prepare. */
+  .party-name input {
+    width: 100%;
+    min-height: var(--control-height);
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: inherit;
+    font: var(--text-h2);
+    text-align: center;
+  }
+
+  .party-name input:hover,
+  .party-name input:focus {
+    border-color: var(--color-border-strong);
+    background: var(--color-surface);
+  }
+
+  .party-middle .error {
+    margin: 0;
+  }
+
   .party-names {
     margin: 0;
-    font: var(--text-h2);
+    font: var(--text-body-sm);
   }
 
   .band-label {
     font: var(--text-label);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--bone) 75%, transparent);
+    color: color-mix(in srgb, var(--color-text) 80%, transparent); /* --color-text-muted is just under 4.5:1 on --line */
   }
 
   .party-stats {

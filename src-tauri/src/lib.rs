@@ -38,6 +38,7 @@ pub fn run() {
             commands::campaigns::create_campaign,
             commands::campaigns::open_campaign,
             commands::campaigns::rename_campaign,
+            commands::campaigns::set_party_name,
             commands::campaigns::archive_campaign,
             commands::campaigns::restore_campaign,
             commands::campaigns::delete_campaign,

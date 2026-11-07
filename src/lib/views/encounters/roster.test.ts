@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
-import { addToRoster, characterLevel, rowsByKey } from "./roster";
+import { addToRoster, characterLevel, MAX_QUANTITY, rowsByKey } from "./roster";
 
 const goblin = (pack: string, others: CatalogRow["others"] = []): CatalogRow => ({
   kind: "monsters",
@@ -18,6 +18,11 @@ describe("roster", () => {
     roster = addToRoster(roster, goblin("srd"));
     roster = addToRoster(roster, goblin("homebrew"));
     expect(roster.map((r) => [r.pack, r.source, r.quantity])).toEqual([["srd", "SRD", 2], ["homebrew", "HOMEBREW", 1]]);
+  });
+
+  it("never adds past the most of one monster", () => {
+    const full = [{ ...addToRoster([], goblin("srd"))[0], quantity: MAX_QUANTITY }];
+    expect(addToRoster(full, goblin("srd"))[0].quantity).toBe(MAX_QUANTITY);
   });
 
   it("finds a saved row through a bundled duplicate, and nothing for a pack that's off", () => {

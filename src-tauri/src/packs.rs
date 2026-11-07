@@ -151,6 +151,10 @@ fn read_images(folder: &Path) -> Result<Option<Images>, String> {
     if let Some(bad) = images.images.keys().find(|p| !p.starts_with('/')) {
         return Err(format!("{IMAGES}: \"{bad}\" must start with /."));
     }
+    // The window may only show kept images named *.png (the asset scope in tauri.conf.json).
+    if let Some(bad) = images.images.keys().find(|p| !p.ends_with(".png")) {
+        return Err(format!("{IMAGES}: \"{bad}\" must be a .png image."));
+    }
     Ok(Some(images))
 }
 
@@ -329,6 +333,7 @@ mod tests {
             ("http", serde_json::json!({ "host": "http://img.example", "images": {} }), false),
             ("path-in-host", serde_json::json!({ "host": "https://img.example/x", "images": {} }), false),
             ("relative", serde_json::json!({ "host": "https://img.example", "images": { "a.png": 1 } }), false),
+            ("not-png", serde_json::json!({ "host": "https://img.example", "images": { "/a.jpg": 1 } }), false),
         ] {
             write_pack(&dir, folder, manifest(folder, files.clone()), &[("c.json", data.clone()), (IMAGES, images)]);
             assert_eq!(load_pack(&dir.join(folder)).is_ok(), ok, "{folder}");

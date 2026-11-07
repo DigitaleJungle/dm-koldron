@@ -26,6 +26,15 @@ impl From<io::Error> for StorageError {
 // Concurrent saves to the same file share its temp file, so write one at a time.
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
+/// Ids become folder and file names, so only allow characters that can't escape their folder. `what`: "campaign"…
+pub fn check_id(id: &str, what: &str) -> Result<(), StorageError> {
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        Ok(())
+    } else {
+        Err(StorageError::Invalid(format!("\"{id}\" is not a valid {what} id.")))
+    }
+}
+
 /// The app's data folder, where everything it saves lives.
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
     app.path().app_data_dir().map_err(|e| StorageError::Io(e.to_string()))

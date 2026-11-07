@@ -6,7 +6,7 @@ import { strings } from "$lib/strings";
 export type Picture = { path: string; version: number };
 
 /** Mirrors `Campaign` in src-tauri/src/commands/campaigns.rs. Times are ms since the Unix epoch. */
-export type Campaign = { id: string; name: string; createdAt: number; lastOpenedAt: number; picture?: Picture };
+export type Campaign = { id: string; name: string; createdAt: number; lastOpenedAt: number; partyName?: string; picture?: Picture };
 export type CampaignList = { campaigns: Campaign[]; archived: Campaign[]; unreadable: string[] };
 
 /** A URL the window can show the picture from (the version makes a replaced picture load fresh). */
@@ -28,6 +28,11 @@ export function openCampaign(id: string): Promise<Campaign> {
 
 export function renameCampaign(id: string, name: string): Promise<Campaign> {
   return invoke("rename_campaign", { id, name });
+}
+
+/** An empty name goes back to the default ("<campaign>'s party"). */
+export function setPartyName(id: string, name: string): Promise<Campaign> {
+  return invoke("set_party_name", { id, name });
 }
 
 /** Asks for a picture file (the formats Rust reads); null when the dialog is cancelled. */

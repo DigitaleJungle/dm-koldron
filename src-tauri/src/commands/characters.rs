@@ -1,12 +1,12 @@
 //! Characters: one file per character in its campaign's folder, `characters/<id>.json`, with its picture beside it
 //! as `characters/<id>.jpg`. Only active campaigns are changed (an archived one is read-only).
 
-use crate::commands::campaigns::{active_dir, dirs, now_ms, Picture};
+use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture_bytes, Picture};
 use crate::commands::search;
-use crate::storage::{blocking, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
+use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{self, Cursor};
+use std::io;
 use std::path::Path;
 use tauri::AppHandle;
 
@@ -62,15 +62,6 @@ pub struct CharacterList {
     pub unreadable: Vec<String>,
 }
 
-// Ids become file names, so only allow characters that can't leave the folder.
-fn check_id(id: &str) -> Result<(), StorageError> {
-    if !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-        Ok(())
-    } else {
-        Err(StorageError::Invalid(format!("\"{id}\" is not a character id.")))
-    }
-}
-
 /// Trims the texts and checks every rule of the form; all problems at once.
 fn check(character: &mut Character) -> Result<(), StorageError> {
     let mut problems = Vec::new();
@@ -110,11 +101,7 @@ fn read(folder: &Path, id: &str) -> Result<Character, StorageError> {
     })?;
     let mut character: Character = serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?;
     character.id = id.into(); // the file name is the id
-    let picture = folder.join(format!("{id}.jpg"));
-    character.picture = fs::metadata(&picture).ok().map(|m| Picture {
-        path: picture.to_string_lossy().into_owned(),
-        version: m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64),
-    });
+    character.picture = picture_at(&folder.join(format!("{id}.jpg")));
     Ok(character)
 }
 
@@ -129,7 +116,7 @@ pub fn list(campaign_dir: &Path) -> Result<CharacterList, StorageError> {
     let (mut characters, mut unreadable) = (Vec::new(), Vec::new());
     for entry in entries.filter_map(Result::ok) {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(id) = name.strip_suffix(".json").filter(|id| check_id(id).is_ok()) else { continue };
+        let Some(id) = name.strip_suffix(".json").filter(|id| check_id(id, "character").is_ok()) else { continue };
         match read(&folder, id) {
             Ok(c) => characters.push(c),
             Err(StorageError::Corrupt(_)) => unreadable.push(name),
@@ -156,7 +143,7 @@ pub fn save(campaign_dir: &Path, mut character: Character, now: u64) -> Result<C
         character.id = id;
         character.created_at = now;
     } else {
-        check_id(&character.id)?;
+        check_id(&character.id, "character")?;
         character.created_at = read(&folder, &character.id)?.created_at;
     }
     character.updated_at = now;
@@ -166,7 +153,7 @@ pub fn save(campaign_dir: &Path, mut character: Character, now: u64) -> Result<C
 
 /// Deletes the character and its picture.
 pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
-    check_id(id)?;
+    check_id(id, "character")?;
     let folder = campaign_dir.join(FOLDER);
     read(&folder, id)?;
     // The picture first: a crash in between leaves the character without it, never a picture without a character.
@@ -184,7 +171,7 @@ fn remove_file(path: &Path) -> Result<(), StorageError> {
 /// Sets the character's picture from an image the window cropped to a square; it's decoded (so only a real picture
 /// is kept), shrunk and stored as JPEG. `None` removes it.
 pub fn set_picture(campaign_dir: &Path, id: &str, bytes: Option<&[u8]>) -> Result<Character, StorageError> {
-    check_id(id)?;
+    check_id(id, "character")?;
     let folder = campaign_dir.join(FOLDER);
     read(&folder, id)?;
     let path = folder.join(format!("{id}.jpg"));
@@ -195,16 +182,7 @@ pub fn set_picture(campaign_dir: &Path, id: &str, bytes: Option<&[u8]>) -> Resul
     if bytes.len() > MAX_PICTURE_LEN {
         return Err(StorageError::Invalid(format!("The picture must be at most {} MB.", MAX_PICTURE_LEN / 1024 / 1024)));
     }
-    let mut image = image::ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()?
-        .decode()
-        .map_err(|_| StorageError::Invalid("Use a PNG, JPG, WebP or GIF picture.".into()))?;
-    if image.width().max(image.height()) > PICTURE_SIDE {
-        image = image.thumbnail(PICTURE_SIDE, PICTURE_SIDE);
-    }
-    let mut jpeg = vec![];
-    image.to_rgb8().write_to(&mut Cursor::new(&mut jpeg), image::ImageFormat::Jpeg).map_err(|e| StorageError::Io(e.to_string()))?;
-    write_atomic_bytes(&path, &jpeg)?;
+    store_picture_bytes(bytes, PICTURE_SIDE, &path)?;
     read(&folder, id)
 }
 
@@ -247,6 +225,7 @@ pub async fn set_character_picture(app: AppHandle, campaign: String, id: String,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {

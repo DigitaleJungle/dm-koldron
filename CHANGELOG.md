@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.12] - 2026-11-07
+
+### Added
+
+- Characters: the party band shows the party's name, editable in place; it defaults to "<campaign>'s party".
+
+### Changed
+
+- Characters: the party band uses the line colour, with the members' names smaller and centred under the party name.
+- Packs: images listed in images.json must be .png.
+
+### Fixed
+
+- Closing the window with unsaved encounter changes now asks Save / Don't save / Cancel instead of losing them.
+- Encounter cards ignore deleted characters, so their party line and difficulty stay correct.
+- Adding a monster from the browser stops at 999, like the + button.
+
 ## [0.4.11] - 2026-11-07
 
 ### Changed

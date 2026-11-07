@@ -54,7 +54,7 @@ The images the pack's entries name (an entry's `image`, e.g. `/api/images/monste
 { "host": "https://www.dnd5eapi.co", "images": { "/api/images/monsters/aboleth.png": 757000 } }
 ```
 
-`host` is `https://` and a host name only. Each key starts with `/` and is fetched from `host`; its value is the download size in bytes, for the estimate the app shows. The app only downloads paths listed here. For the SRD pack, `cargo run --example image_manifest` (in `src-tauri/`) writes this file from the data, leaving out images the server doesn't have.
+`host` is `https://` and a host name only. Each key starts with `/`, ends in `.png` and is fetched from `host`; its value is the download size in bytes, for the estimate the app shows. The app only downloads paths listed here. For the SRD pack, `cargo run --example image_manifest` (in `src-tauri/`) writes this file from the data, leaving out images the server doesn't have.
 
 ## Validation
 

@@ -4,7 +4,7 @@
 use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
 use crate::commands::packs::{disabled, enabled, loaded};
 use crate::packs::Pack;
-use crate::storage::{blocking, lock_update, to_json, write_atomic, StorageError};
+use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -101,15 +101,6 @@ pub struct Budget {
     pub high: u64,
 }
 
-// Ids become file names, so only allow characters that can't leave the folder.
-fn check_id(id: &str) -> Result<(), StorageError> {
-    if !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-        Ok(())
-    } else {
-        Err(StorageError::Invalid(format!("\"{id}\" is not an encounter id.")))
-    }
-}
-
 fn check(encounter: &mut Encounter) -> Result<(), StorageError> {
     encounter.name = encounter.name.trim().into();
     let mut problems = Vec::new();
@@ -166,7 +157,7 @@ pub fn list(campaign_dir: &Path) -> Result<EncounterList, StorageError> {
     let (mut encounters, mut unreadable) = (Vec::new(), Vec::new());
     for entry in entries.filter_map(Result::ok) {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(id) = name.strip_suffix(".json").filter(|id| check_id(id).is_ok()) else { continue };
+        let Some(id) = name.strip_suffix(".json").filter(|id| check_id(id, "encounter").is_ok()) else { continue };
         match read(&folder, id) {
             Ok(e) => encounters.push(e),
             Err(StorageError::Corrupt(_)) => unreadable.push(name),
@@ -179,7 +170,7 @@ pub fn list(campaign_dir: &Path) -> Result<EncounterList, StorageError> {
 }
 
 pub fn get(campaign_dir: &Path, id: &str) -> Result<Encounter, StorageError> {
-    check_id(id)?;
+    check_id(id, "encounter")?;
     read(&campaign_dir.join(FOLDER), id)
 }
 
@@ -197,7 +188,7 @@ pub fn save(campaign_dir: &Path, mut encounter: Encounter, now: u64) -> Result<E
         }
         encounter.id = id;
     } else {
-        check_id(&encounter.id)?;
+        check_id(&encounter.id, "encounter")?;
         read(&folder, &encounter.id)?; // replacing only what exists, and never a file that can't be read
     }
     encounter.saved_at = now;
@@ -208,7 +199,7 @@ pub fn save(campaign_dir: &Path, mut encounter: Encounter, now: u64) -> Result<E
 
 /// Sets a saved encounter's map from a picture file (shrunk, stored as JPEG), or removes it (`None`).
 pub fn set_map(campaign_dir: &Path, id: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
-    check_id(id)?;
+    check_id(id, "encounter")?;
     let folder = campaign_dir.join(FOLDER);
     read(&folder, id)?;
     let path = map_path(&folder, id);

@@ -37,6 +37,12 @@ export async function renameCampaign(id: string, name: string) {
   await refreshCampaigns();
 }
 
+export async function setPartyName(id: string, name: string) {
+  const updated = await api.setPartyName(id, name);
+  if (campaigns.current?.id === id) campaigns.current = updated;
+  await refreshCampaigns();
+}
+
 /** Asks for a picture and sets it, or removes it (`choose` false). Does nothing if the dialog is cancelled. */
 export async function setCampaignPicture(id: string, choose: boolean) {
   const updated = choose ? await api.chooseCampaignPicture(id) : await api.removeCampaignPicture(id);

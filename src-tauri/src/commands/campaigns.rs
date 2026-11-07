@@ -3,7 +3,7 @@
 //! `<app data>/archived-campaigns/<id>/`, where it can be restored or deleted for good.
 
 use crate::commands::search;
-use crate::storage::{blocking, data_dir, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
+use crate::storage::{blocking, check_id, data_dir, lock_update, to_json, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Cursor};
@@ -33,6 +33,9 @@ pub struct Campaign {
     /// Milliseconds since the Unix epoch.
     pub created_at: u64,
     pub last_opened_at: u64,
+    /// The party band's name on the Characters screen; none shows "<campaign name>'s party".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub party_name: Option<String>,
     /// The picture on its tile on the Start screen; filled in when read, never saved.
     #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub picture: Option<Picture>,
@@ -52,15 +55,6 @@ pub struct CampaignList {
 pub struct Dirs {
     pub active: PathBuf,
     pub archived: PathBuf,
-}
-
-// Ids become folder names, so only allow characters that can't escape the campaigns folders.
-fn check_id(id: &str) -> Result<(), StorageError> {
-    if !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-        Ok(())
-    } else {
-        Err(StorageError::Invalid(format!("\"{id}\" is not a campaign id.")))
-    }
 }
 
 fn read(dir: &Path) -> Result<Campaign, StorageError> {
@@ -90,8 +84,12 @@ pub fn store_picture(source: &Path, max_side: u32, to: &Path) -> Result<(), Stor
     if fs::metadata(source)?.len() > MAX_PICTURE_LEN {
         return Err(StorageError::Invalid(format!("The picture must be at most {} MB.", MAX_PICTURE_LEN / 1024 / 1024)));
     }
-    // Read errors stay I/O errors.
-    let mut image = image::ImageReader::open(source)?
+    store_picture_bytes(&fs::read(source)?, max_side, to) // read errors stay I/O errors
+}
+
+/// `store_picture` for a picture already in memory (the format from its content).
+pub fn store_picture_bytes(bytes: &[u8], max_side: u32, to: &Path) -> Result<(), StorageError> {
+    let mut image = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()?
         .decode()
         .map_err(|_| StorageError::Invalid("Use a PNG, JPG, WebP or GIF picture.".into()))?;
@@ -158,14 +156,14 @@ pub fn create(dirs: &Dirs, name: &str, now: u64) -> Result<Campaign, StorageErro
         n += 1;
         id = format!("{base}-{n}");
     }
-    let campaign = Campaign { id: id.clone(), name, created_at: now, last_opened_at: now, picture: None };
+    let campaign = Campaign { id: id.clone(), name, created_at: now, last_opened_at: now, party_name: None, picture: None };
     write_atomic(&dirs.active.join(&id).join(FILE_NAME), &to_json(&campaign)?)?;
     Ok(campaign)
 }
 
 /// Reads an active campaign, changes it and writes it back.
 fn edit(dirs: &Dirs, id: &str, change: impl FnOnce(&mut Campaign) -> Result<(), StorageError>) -> Result<Campaign, StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let dir = dirs.active.join(id);
     let _guard = lock_update();
     let mut campaign = read(&dir)?;
@@ -189,9 +187,21 @@ pub fn rename(dirs: &Dirs, id: &str, name: &str) -> Result<Campaign, StorageErro
     })
 }
 
+/// Trimmed and at most MAX_NAME_LEN characters; an empty name goes back to the default.
+pub fn rename_party(dirs: &Dirs, id: &str, name: &str) -> Result<Campaign, StorageError> {
+    let name = name.trim();
+    if name.chars().count() > MAX_NAME_LEN {
+        return Err(StorageError::Invalid(format!("Keep the party name under {MAX_NAME_LEN} characters.")));
+    }
+    edit(dirs, id, |c| {
+        c.party_name = (!name.is_empty()).then(|| name.to_string());
+        Ok(())
+    })
+}
+
 /// Moves a campaign folder between the active and archived folders. A rename is atomic on one disk.
 fn move_folder(from_root: &Path, to_root: &Path, id: &str) -> Result<(), StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let from = from_root.join(id);
     read(&from)?; // only move folders that really are campaigns
     let to = to_root.join(id);
@@ -213,7 +223,7 @@ pub fn restore(dirs: &Dirs, id: &str) -> Result<(), StorageError> {
 
 /// Sets an active campaign's picture from an image file (PNG, JPG, WebP or GIF), shrunk and stored as `picture.jpg`.
 pub fn save_picture(dirs: &Dirs, id: &str, source: &Path) -> Result<Campaign, StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let dir = dirs.active.join(id);
     read(&dir)?;
     store_picture(source, PICTURE_MAX_SIDE, &dir.join(PICTURE_FILE))?;
@@ -222,7 +232,7 @@ pub fn save_picture(dirs: &Dirs, id: &str, source: &Path) -> Result<Campaign, St
 
 /// An active campaign's folder, after checking the campaign exists (an archived one is read-only).
 pub fn active_dir(dirs: &Dirs, id: &str) -> Result<PathBuf, StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let dir = dirs.active.join(id);
     read(&dir)?;
     Ok(dir)
@@ -230,7 +240,7 @@ pub fn active_dir(dirs: &Dirs, id: &str) -> Result<PathBuf, StorageError> {
 
 /// Removes an active campaign's picture. Returns the campaign.
 pub fn remove_picture(dirs: &Dirs, id: &str) -> Result<Campaign, StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let dir = dirs.active.join(id);
     read(&dir)?;
     match fs::remove_file(dir.join(PICTURE_FILE)) {
@@ -242,7 +252,7 @@ pub fn remove_picture(dirs: &Dirs, id: &str) -> Result<Campaign, StorageError> {
 
 /// Permanently deletes a campaign and all its data, whether it is active or archived.
 pub fn delete(dirs: &Dirs, id: &str) -> Result<(), StorageError> {
-    check_id(id)?;
+    check_id(id, "campaign")?;
     let dir = [&dirs.active, &dirs.archived]
         .into_iter()
         .map(|root| root.join(id))
@@ -282,6 +292,12 @@ pub async fn open_campaign(app: AppHandle, id: String) -> Result<Campaign, Stora
 pub async fn rename_campaign(app: AppHandle, id: String, name: String) -> Result<Campaign, StorageError> {
     let dirs = dirs(&app)?;
     blocking(move || rename(&dirs, &id, &name).inspect(|_| search::changed())).await
+}
+
+#[tauri::command]
+pub async fn set_party_name(app: AppHandle, id: String, name: String) -> Result<Campaign, StorageError> {
+    let dirs = dirs(&app)?;
+    blocking(move || rename_party(&dirs, &id, &name)).await
 }
 
 #[tauri::command]
@@ -382,6 +398,18 @@ mod tests {
         assert!(matches!(rename(&dirs, &a.id, "strahd"), Err(StorageError::Invalid(_))));
         // Renaming to its own name (different case) is fine.
         assert!(rename(&dirs, &a.id, "SHADOWS over thornwood").is_ok());
+    }
+
+    #[test]
+    fn party_name_is_saved_trimmed_and_empty_goes_back_to_the_default() {
+        let dirs = temp_dirs("party");
+        let a = create(&dirs, "Thornwood", 1).unwrap();
+        assert_eq!(a.party_name, None);
+        assert_eq!(rename_party(&dirs, &a.id, "  The Lanterns ").unwrap().party_name.as_deref(), Some("The Lanterns"));
+        assert_eq!(open(&dirs, &a.id, 2).unwrap().party_name.as_deref(), Some("The Lanterns"));
+        assert_eq!(rename_party(&dirs, &a.id, "   ").unwrap().party_name, None);
+        assert!(matches!(rename_party(&dirs, &a.id, &"x".repeat(MAX_NAME_LEN + 1)), Err(StorageError::Invalid(_))));
+        assert!(matches!(rename_party(&dirs, "../x", "Lanterns"), Err(StorageError::Invalid(_))));
     }
 
     #[test]

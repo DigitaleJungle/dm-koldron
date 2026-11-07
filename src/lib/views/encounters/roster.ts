@@ -6,12 +6,15 @@ import type { RosterEntry } from "$lib/api/encounters";
 /** A pack entry's key: the same name in two packs stays two rows. */
 export const entryKey = (e: { pack: string; index: string }) => `${e.pack}/${e.index}`;
 
-/** Adds a monster, or one more of it when that pack entry is already there. */
+/** The most of one monster in a roster; Rust refuses to save more. */
+export const MAX_QUANTITY = 999;
+
+/** Adds a monster, or one more of it (up to MAX_QUANTITY) when that pack entry is already there. */
 export function addToRoster(roster: RosterEntry[], monster: CatalogRow): RosterEntry[] {
   const key = entryKey(monster);
   const found = roster.find((r) => entryKey(r) === key);
   return found
-    ? roster.map((r) => (r === found ? { ...r, quantity: r.quantity + 1 } : r))
+    ? roster.map((r) => (r === found ? { ...r, quantity: Math.min(r.quantity + 1, MAX_QUANTITY) } : r))
     : [...roster, { pack: monster.pack, index: monster.index, name: monster.name, source: monster.source, quantity: 1 }];
 }
 

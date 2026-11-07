@@ -27,14 +27,14 @@
   let loadError = $state<string | null>(null);
   // What the cards need besides the encounters; without it the cards show no rating (and letters for pictures).
   let monsters = $state<CatalogRow[]>([]);
-  let characters = $state<Character[]>([]);
+  let characters = $state<Character[] | null>(null); // null until loaded (or when they can't be)
   let budgets = $state<Budget[]>([]);
   let lookupErrors = $state<string[]>([]);
 
   $effect(() => {
     const id = campaign;
     let current = true; // ignore an answer for a campaign we've left
-    [list, loadError, lookupErrors] = [null, null, []];
+    [list, loadError, lookupErrors, characters] = [null, null, [], null];
     const failed = (text: (reason: string) => string) => (e: unknown) => current && lookupErrors.push(text(errorMessage(e)));
     listEncounters(id).then(
       (l) => current && (list = l),
@@ -49,7 +49,9 @@
   });
 
   const byKey = $derived(rowsByKey(monsters));
-  const characterById = $derived(new Map(characters.map((c) => [c.id, c])));
+  const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
+  // A deleted character stays in a saved encounter's party; leave it out, as Prepare does (once the characters are known).
+  const present = (ids: string[]) => (characters ? ids.filter((id) => characterById.has(id)) : ids);
 
   // Pictures, asked once per monster, when its pack's images are on.
   let pictures = $state<Record<string, string | null>>({});
@@ -82,15 +84,16 @@
 
   const cards = $derived<Card[]>(
     (list?.encounters ?? []).map((e) => {
+      const party = present(e.party);
       const xps = e.monsters.map((m) => monsterXp(byKey.get(entryKey(m))?.fields.xp));
-      const levels = e.party.map((id) => characterLevel(characterById.get(id)?.classes));
+      const levels = party.map((id) => characterLevel(characterById.get(id)?.classes));
       const result = difficulty(levels, e.monsters.map((m, i) => ({ quantity: m.quantity, xp: xps[i] })), budgets);
       return {
         ...e,
         count: e.monsters.reduce((n, m) => n + m.quantity, 0),
         band: result.band,
         xp: result.total,
-        partyLine: partyText(e.party),
+        partyLine: partyText(party),
         rows: strongestFirst(e, xps),
       };
     }),

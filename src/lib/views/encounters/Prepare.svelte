@@ -12,6 +12,7 @@
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
+  import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -23,7 +24,7 @@
   import NotesPanel, { TOPICS, TOPIC_ICONS, type Topic } from "./NotesPanel.svelte";
   import PartyPicker from "./PartyPicker.svelte";
   import { difficulty, monsterXp } from "./difficulty";
-  import { addToRoster, characterLevel, entryKey, rowsByKey } from "./roster";
+  import { addToRoster, characterLevel, entryKey, MAX_QUANTITY, rowsByKey } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -156,6 +157,19 @@
       if (navigation.type === "popstate") history.go(navigation.delta ?? -1);
       else void goto(navigation.to!.url);
     });
+  });
+
+  // Closing the window is leaving too (SvelteKit's "leave" can't be held), so ask the same question first.
+  $effect(() => {
+    const unlisten = onCloseRequested(async (event) => {
+      if (leaving || !changed) return;
+      event.preventDefault();
+      const answer = await askLeave();
+      if (answer === "cancel" || (answer === "save" && !(await save()))) return;
+      leaving = true;
+      await closeWindow();
+    });
+    return () => void unlisten.then((stop) => stop());
   });
 
   // ---- Party ------------------------------------------------------------------------------------
@@ -536,7 +550,7 @@
                       {/if}
                       <output class="badge" aria-live="polite" aria-label={t.roster.quantity(row.name)}>×{row.quantity}</output>
                       {#if !locked}
-                        <button class="hex-step more" aria-label={t.roster.more(row.name)} disabled={row.quantity >= 999} onclick={() => setQuantity(row, row.quantity + 1)}>
+                        <button class="hex-step more" aria-label={t.roster.more(row.name)} disabled={row.quantity >= MAX_QUANTITY} onclick={() => setQuantity(row, row.quantity + 1)}>
                           <i class="ti ti-plus" aria-hidden="true"></i>
                         </button>
                       {/if}

@@ -21,8 +21,9 @@
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
+  import CharacterCard from "./CharacterCard.svelte";
   import CharacterForm from "./CharacterForm.svelte";
-  import { averageLevel, blankCharacter, classLine, classNamesOf, selectCharacters, totalLevel, type CharacterSort, type PartyFilter } from "./characters";
+  import { averageLevel, blankCharacter, classNamesOf, selectCharacters, type CharacterSort, type PartyFilter } from "./characters";
 
   const t = strings.characters;
   const campaign = $derived(campaigns.current!.id);
@@ -231,30 +232,8 @@
       <ul class="cards">
         {#each shown as character (character.id)}
           <li animate:flip={moveMotion()} in:scale={enterMotion()}>
-            <article class="card">
-                <div class="head">
-                  <!-- A square picture with the total level on a dark hexagon at its lower right. -->
-                  <div class="portrait">
-                    {#if character.picture}
-                      <img class="picture" src={pictureSrc(character.picture)} alt="" />
-                    {:else}
-                      <span class="picture no-picture" aria-hidden="true"><i class="ti ti-user"></i></span>
-                    {/if}
-                    <span class="hex level"><span class="sr-only">{t.levelLabel}</span> {totalLevel(character)}</span>
-                  </div>
-                  <div class="info">
-                    <!-- The name's button covers the whole card: anywhere on it opens the form. -->
-                    <h2><button class="name" onclick={() => (editing = character)}>{character.name}</button></h2>
-                    <p>{classLine(character)}</p>
-                    {#if character.maxHp !== null}
-                      <!-- Current HP left empty shows as "—": it isn't known, so it isn't assumed full. -->
-                      <p class="hp">
-                        <span class="current">{character.currentHp === null ? "—" : formatNumber.format(character.currentHp)}</span>
-                        / {formatNumber.format(character.maxHp)} <span class="label">{t.hp}</span>
-                      </p>
-                    {/if}
-                  </div>
-                </div>
+            <CharacterCard {character} onclick={() => (editing = character)}>
+              {#snippet corner()}
                 <button
                   class="icon-btn party-toggle"
                   class:in={character.onHome}
@@ -268,7 +247,8 @@
                 >
                   <PartyIcon shape={partyIcon(character)} />
                 </button>
-              </article>
+              {/snippet}
+            </CharacterCard>
             {#if rowError?.id === character.id}<p class="error" role="alert">{rowError.text}</p>{/if}
           </li>
         {/each}
@@ -478,133 +458,6 @@
     gap: var(--space-1);
   }
 
-  .card {
-    position: relative;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    padding: var(--space-4);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-  }
-
-  .card:hover {
-    border-color: var(--color-border-strong);
-  }
-
-  /* The name, class line and HP beside the picture, from its top. */
-  .head {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-4);
-  }
-
-  .portrait {
-    position: relative;
-    flex: none;
-    width: var(--character-portrait-size);
-    height: var(--character-portrait-size);
-  }
-
-  /* Pictures are square (they're saved square), with the card's corners. */
-  .picture {
-    display: grid;
-    place-items: center;
-    width: 100%;
-    height: 100%;
-    border-radius: var(--radius-md);
-    object-fit: cover;
-  }
-
-  .hex {
-    display: grid;
-    place-items: center;
-    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  }
-
-  .no-picture {
-    background: var(--color-border);
-    color: var(--color-text-muted);
-    font-size: var(--icon-size-lg);
-  }
-
-  /* The total level on a dark hexagon at the portrait's lower right, like the ×count on an encounter's monster. */
-  .hex.level {
-    position: absolute;
-    right: calc(-1 * var(--space-2));
-    bottom: calc(-1 * var(--space-1));
-    width: var(--character-level-width);
-    height: var(--character-level-height);
-    background: var(--iron);
-    color: var(--bone);
-    font: var(--text-dice);
-  }
-
-  .info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  .info p {
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  /* "12 / 20 HP": the current HP large, in the party name's font. */
-  .hp .current {
-    font: var(--text-h2);
-    font-variant-numeric: lining-nums tabular-nums; /* old-style digits (Georgia's default) would dip below "/ 20 HP" */
-  }
-
-  h2 {
-    margin: 0;
-    overflow: hidden;
-    font: var(--text-h2);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Always underlined, but in a transparent colour until the card is hovered: a colour can ease in and out (the
-     global hover transition), a line can't. */
-  .name {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--color-text);
-    font: inherit;
-    text-align: left;
-    text-decoration: underline transparent;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 4px;
-    cursor: pointer;
-  }
-
-  /* Covers the card, under the party button. */
-  .name::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: var(--radius-md);
-  }
-
-  .name:focus-visible {
-    outline: none;
-  }
-
-  .name:focus-visible::after {
-    outline: var(--focus-ring) solid var(--color-focus);
-    outline-offset: 2px;
-  }
-
-  .card:hover .name {
-    text-decoration-color: currentColor;
-  }
-
   /* The party button in the bottom-right corner, above the card's cover. */
   .party-toggle {
     position: absolute;
@@ -626,8 +479,9 @@
     transition-timing-function: var(--ease-hover);
   }
 
-  .card:hover .party-toggle,
-  .card:has(:focus-visible) .party-toggle {
+  /* The card is CharacterCard's (its own styles); the button is ours, in its corner. */
+  :global(.card:hover) .party-toggle,
+  :global(.card:has(:focus-visible)) .party-toggle {
     opacity: 1;
   }
 

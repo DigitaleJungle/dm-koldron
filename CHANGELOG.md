@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.14] - 2026-11-08
+
+### Added
+
+- Encounter builder: the Party button opens the party in the details card as (compact) character cards, with Party (follows the campaign's party; the default for new encounters) or Custom (click cards to pick); the choice is saved with the encounter.
+- Notes: headings in three sizes (Heading 1, 2, 3) and Underline in the toolbar.
+
+### Changed
+
+- Encounter builder: Save is a button with its label; the Notes panel has no title.
+- Notes toolbar order: headings, bold, italic, underline, then the lists.
+- Encounter cards' party line and difficulty follow the campaign's party for encounters in Party mode; older encounters keep their own pick.
+
 ## [0.4.13] - 2026-11-08
 
 ### Added

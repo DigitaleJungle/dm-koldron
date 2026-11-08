@@ -13,6 +13,8 @@ export type Pin = { x: number; y: number; title: string; text: string };
 /** The DM's notes on an encounter: the Notes text (stored as `description`) and the map's pins. */
 export type Notes = { description: string; pins: Pin[] };
 
+export type PartyMode = "party" | "custom";
+
 /** Mirrors `Encounter` in src-tauri/src/commands/encounters.rs. `party`: character ids. `savedAt`: ms.
  *  `map`: the map picture beside the file, set by Rust only (ignored when saving). */
 export type Encounter = {
@@ -21,6 +23,8 @@ export type Encounter = {
   monsters: RosterEntry[];
   party: string[];
   status: EncounterStatus;
+  /** "party": whoever is in the campaign's party now; "custom": `party`. Older files read as "custom". */
+  partyMode: PartyMode;
   notes: Notes;
   map?: Picture | null;
   savedAt: number;

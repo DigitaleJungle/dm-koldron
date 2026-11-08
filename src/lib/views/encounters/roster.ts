@@ -1,7 +1,7 @@
 // The encounter being prepared: its roster rows, what the browser knows about each monster, and the party's levels.
 import type { CatalogRow } from "$lib/api/catalog";
-import type { ClassLevel } from "$lib/api/characters";
-import type { RosterEntry } from "$lib/api/encounters";
+import type { Character, ClassLevel } from "$lib/api/characters";
+import type { PartyMode, RosterEntry } from "$lib/api/encounters";
 
 /** A pack entry's key: the same name in two packs stays two rows. */
 export const entryKey = (e: { pack: string; index: string }) => `${e.pack}/${e.index}`;
@@ -29,6 +29,15 @@ export function rowsByKey(rows: CatalogRow[]): Map<string, CatalogRow> {
     for (const other of row.others) map.set(entryKey(other), row);
   }
   return map;
+}
+
+/**
+ * The ids of who fights: in Party mode the campaign's party as it is now (none until the characters are known), else
+ * the encounter's own pick, leaving out deleted characters once the characters are known.
+ */
+export function encounterParty(mode: PartyMode, pick: string[], characters: Character[] | null): string[] {
+  if (mode === "party") return (characters ?? []).filter((c) => c.onHome).map((c) => c.id);
+  return characters ? pick.filter((id) => characters.some((c) => c.id === id)) : pick;
 }
 
 /** Total character level (the sum of class levels), or null when it's missing or invalid. */

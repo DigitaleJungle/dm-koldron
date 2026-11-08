@@ -10,7 +10,7 @@
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { entryImage } from "$lib/api/images";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type RosterEntry } from "$lib/api/encounters";
+  import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
@@ -22,9 +22,9 @@
   import MonsterBlock from "$lib/views/library/entries/MonsterBlock.svelte";
   import DifficultyMeter from "./DifficultyMeter.svelte";
   import NotesPanel, { TOPICS, TOPIC_ICONS, type Topic } from "./NotesPanel.svelte";
-  import PartyPicker from "./PartyPicker.svelte";
+  import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
-  import { addToRoster, characterLevel, entryKey, MAX_QUANTITY, rowsByKey } from "./roster";
+  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowsByKey } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -45,12 +45,15 @@
 
   let name = $state("");
   let roster = $state<RosterEntry[]>([]);
+  /** The Custom pick (kept while in Party mode, to go back to). */
   let selected = $state(new Set<string>());
+  /** Party: whoever is in the campaign's party now (the default for a new encounter). Custom: `selected`. */
+  let partyMode = $state<PartyMode>("party");
   let notes = $state<Notes>({ description: "", pins: [] });
   /** What was last saved (or loaded), to tell whether there are changes. Null until everything has loaded. */
   let baseline = $state<string | null>(null);
 
-  const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort(), notes });
+  const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort(), partyMode, notes });
 
   // svelte-ignore state_referenced_locally
   const opening = id ? getEncounter(campaign, id) : Promise.resolve(null);
@@ -73,6 +76,7 @@
     if (opened.status === "rejected") return;
     const party = opened.value?.party ?? (chars.status === "fulfilled" ? chars.value.filter((c) => c.onHome).map((c) => c.id) : []);
     selected = new Set(party);
+    partyMode = opened.value?.partyMode ?? "party";
     baseline = snapshot();
   });
   catalogRows("monsters", ["challenge_rating", "type", "xp", "image"]).then(
@@ -106,6 +110,7 @@
         name: name.trim() || t.newTitle,
         monsters: roster,
         party: [...selected],
+        partyMode,
         status,
         notes,
         savedAt: 0,
@@ -173,7 +178,8 @@
   });
 
   // ---- Party ------------------------------------------------------------------------------------
-  const party = $derived((characters ?? []).filter((c) => selected.has(c.id)));
+  const partyIds = $derived(new Set(encounterParty(partyMode, [...selected], characters)));
+  const party = $derived((characters ?? []).filter((c) => partyIds.has(c.id)));
   const levels = $derived(party.map((c) => characterLevel(c.classes)));
 
   function toggleCharacter(characterId: string, on: boolean) {
@@ -312,13 +318,15 @@
     );
     return () => (stale = true);
   });
-  // The details card shows either a stat block or one of the notes (the buttons under the meter), never both.
-  let topic = $state<Topic | null>(null);
+  // The details card shows a stat block, the party (the characters' cards: one selects it for the encounter) or one of
+  // the notes; one at a time, opened by the buttons under the meter or a monster's tile.
+  type Panel = Topic | "party";
+  let topic = $state<Panel | null>(null);
   function toggleDetails(row: RosterEntry) {
     detailsKey = detailsKey === entryKey(row) ? null : entryKey(row);
     topic = null;
   }
-  function toggleTopic(next: Topic) {
+  function toggleTopic(next: Panel) {
     topic = topic === next ? null : next;
     detailsKey = null;
   }
@@ -398,8 +406,9 @@
           <i class="ti ti-player-play" aria-hidden="true"></i>
         </button>
       {:else}
-        <button class="icon-btn icon-btn-lg" aria-label={saving ? t.saving : t.save} disabled={saving || !changed} onclick={() => save()}>
+        <button class="btn" disabled={saving || !changed} onclick={() => save()}>
           <i class="ti ti-device-floppy" aria-hidden="true"></i>
+          {saving ? t.saving : t.save}
         </button>
         <button class="btn btn-primary" disabled={saving} onclick={() => save("ready")}>
           {t.ready}
@@ -575,12 +584,12 @@
                them swaps what's in it, so two cards never share the column while one fades out. -->
           {#if detailsRow || topic}
             <section
-              id={detailsRow ? "monster-details" : "encounter-notes"}
+              id={detailsRow ? "monster-details" : topic === "party" ? "encounter-party" : "encounter-notes"}
               bind:this={detailsCard}
               class="panel details"
               class:prose={!!detailsRow}
               transition:fade={fadeMotion()}
-              aria-label={detailsRow ? t.details.label(detailsRow.name) : t.notes.topics[topic!]}
+              aria-label={detailsRow ? t.details.label(detailsRow.name) : topic === "party" ? t.party.title : t.notes.topics[topic!]}
             >
               {#if detailsRow}
                 <button class="icon-btn details-close" aria-label={t.details.close} onclick={() => (detailsKey = null)}>
@@ -594,10 +603,40 @@
                 {:else}
                   <MonsterBlock loaded={detailsEntry} />
                 {/if}
+              {:else if topic === "party"}
+                <!-- Like a note, no ✕: the Party button (again), another one, or a monster closes it. A Ready
+                     encounter's party shows but can't change. -->
+                <!-- Party: the campaign's party, as it is at the time (the cards only show it). Custom: pick on the cards. -->
+                <div class="chips party-mode" role="group" aria-label={t.party.mode}>
+                  {#each ["party", "custom"] as const as mode (mode)}
+                    <button class="chip" aria-pressed={partyMode === mode} disabled={locked} onclick={() => (partyMode = mode)}>{t.party.modes[mode]}</button>
+                  {/each}
+                </div>
+                {#if partyError}
+                  <p class="error">{partyError}</p>
+                {:else if characters === null}
+                  <p class="muted">{t.party.loading}</p>
+                {:else if characters.length === 0}
+                  <p class="muted">{t.party.none}</p>
+                {:else}
+                  <ul class="party-cards">
+                    {#each characters as c (c.id)}
+                      <li>
+                        <CharacterCard
+                          character={c}
+                          heading="h4"
+                          compact
+                          selected={partyIds.has(c.id)}
+                          disabled={locked || partyMode === "party"}
+                          onclick={() => toggleCharacter(c.id, !selected.has(c.id))}
+                        />
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
               {:else if topic}
-                <!-- A note has no ✕: its button under the meter (again), another one, or a monster closes it. The map
-                     needs no title: it's plain to see. -->
-                {#if topic !== "map"}<h3 class="details-name">{t.notes.topics[topic]}</h3>{/if}
+                <!-- A note has no ✕ and no title (its pressed button under the meter says which it is): that button
+                     (again), another one, or a monster closes it. -->
                 <NotesPanel
                   {topic}
                   bind:notes
@@ -615,7 +654,10 @@
         <aside class="side">
           <DifficultyMeter {result} partySize={party.length} monsterCount={roster.length} hasBudgets={budgets.length > 0} {budgetError} />
           <div class="buttons">
-            <PartyPicker {characters} {selected} error={partyError} ontoggle={toggleCharacter} disabled={locked} />
+            <button class="btn topic" aria-pressed={topic === "party"} aria-controls="encounter-party" onclick={() => toggleTopic("party")}>
+              <i class="ti ti-users" aria-hidden="true"></i>
+              {t.party.title}
+            </button>
             {#each TOPICS as each (each)}
               <button class="btn topic" aria-pressed={topic === each} aria-controls="encounter-notes" onclick={() => toggleTopic(each)}>
                 <i class="ti {TOPIC_ICONS[each]}" aria-hidden="true"></i>
@@ -882,6 +924,26 @@
     margin: 0;
     padding-right: var(--space-7);
     font: var(--text-h2);
+  }
+
+  /* Party / Custom at the top, where a note's title would be (clear of nothing: the party has no ✕). */
+  .party-mode {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  /* The party's cards (the compact ones), as many across as fit the card. */
+  .party-cards {
+    list-style: none;
+    margin: var(--space-4) 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--character-card-width-compact)), 1fr));
+    gap: var(--space-3);
+  }
+
+  .party-cards li {
+    display: flex;
   }
 
   .details-close {

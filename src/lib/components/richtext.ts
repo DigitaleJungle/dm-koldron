@@ -6,7 +6,7 @@ import type { SearchHit } from "$lib/api/search";
 import { hitAddress } from "$lib/views/search/search";
 
 /** Tags kept (without any attributes); other elements are replaced by their content, these are dropped with theirs. */
-const KEEP = new Set(["P", "DIV", "BR", "B", "STRONG", "I", "EM", "U", "H4", "UL", "OL", "LI", "A"]);
+const KEEP = new Set(["P", "DIV", "BR", "B", "STRONG", "I", "EM", "U", "H2", "H3", "H4", "UL", "OL", "LI", "A"]);
 const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "SVG", "MATH", "HEAD", "TITLE"]);
 /** A tag's attributes: what it is, its pack, its index, and a character's campaign. */
 const TAG_FIELDS = ["kind", "pack", "index", "campaign"] as const;

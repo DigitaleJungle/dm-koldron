@@ -60,6 +60,15 @@ pub enum Status {
     Ready,
 }
 
+/// Who fights: the campaign's party as it is at the time (Party), or the encounter's own pick (Custom).
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PartyMode {
+    Party,
+    #[default]
+    Custom,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Encounter {
@@ -73,6 +82,10 @@ pub struct Encounter {
     /// Files saved before there was a status read as Draft.
     #[serde(default)]
     pub status: Status,
+    /// Files saved before there was a mode read as Custom: they keep their own `party`. In Party mode `party` is
+    /// still kept (the Custom pick to go back to).
+    #[serde(default)]
+    pub party_mode: PartyMode,
     /// Files saved before there were notes read with none.
     #[serde(default)]
     pub notes: Notes,
@@ -265,7 +278,7 @@ mod tests {
     }
 
     fn encounter(name: &str, monsters: Vec<RosterEntry>) -> Encounter {
-        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], status: Status::Draft, notes: Notes::default(), map: None, saved_at: 0 }
+        Encounter { id: String::new(), name: name.into(), monsters, party: vec!["a".into()], status: Status::Draft, party_mode: PartyMode::Custom, notes: Notes::default(), map: None, saved_at: 0 }
     }
 
     #[test]
@@ -303,6 +316,16 @@ mod tests {
         assert_eq!(get(&dir, &ready.id).unwrap().status, Status::Ready);
         fs::write(dir.join(FOLDER).join("old.json"), r#"{"name":"Old","monsters":[],"party":[]}"#).unwrap();
         assert_eq!(get(&dir, "old").unwrap().status, Status::Draft);
+    }
+
+    #[test]
+    fn keeps_the_party_mode_and_reads_older_files_as_custom() {
+        let dir = temp_dir("party-mode");
+        let party = save(&dir, Encounter { party_mode: PartyMode::Party, ..encounter("Bridge", vec![goblins(1)]) }, 1).unwrap();
+        assert_eq!(get(&dir, &party.id).unwrap().party_mode, PartyMode::Party);
+        fs::write(dir.join(FOLDER).join("old.json"), r#"{"name":"Old","monsters":[],"party":["x"]}"#).unwrap();
+        let old = get(&dir, "old").unwrap();
+        assert_eq!((old.party_mode, old.party), (PartyMode::Custom, vec!["x".to_string()]));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A rich text field: bold, italic, a heading and lists, typed in place (the window's own editing) with a small
+  // A rich text field: headings in three sizes, bold, italic, underline and lists, typed in place (the window's own editing) with a small
   // toolbar; Ctrl/Cmd+B, I and U work as usual. `value` is HTML, always cleaned to the allowed tags. Pasting keeps
   // only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list).
   // Typing @ tags a Catalog entry or one of the campaign's characters: a list of matches follows the text after the
@@ -19,10 +19,15 @@
   let editor: HTMLDivElement | undefined = $state();
   let active = $state<Record<string, boolean>>({});
 
-  const TOOLS = [
+  // A tool with a `block` turns the line into that block (again: back to a paragraph). Headings 1 to 3 are h2 to h4,
+  // under the page's own headings; h4 is what the single heading of older notes was, so those read as Heading 3.
+  const TOOLS: { command: string; icon: string; label: string; block?: string }[] = [
+    { command: "h2", icon: "ti-h-1", label: t.heading(1), block: "h2" },
+    { command: "h3", icon: "ti-h-2", label: t.heading(2), block: "h3" },
+    { command: "h4", icon: "ti-h-3", label: t.heading(3), block: "h4" },
     { command: "bold", icon: "ti-bold", label: t.bold },
     { command: "italic", icon: "ti-italic", label: t.italic },
-    { command: "heading", icon: "ti-heading", label: t.heading },
+    { command: "underline", icon: "ti-underline", label: t.underline },
     { command: "insertUnorderedList", icon: "ti-list", label: t.bullets },
     { command: "insertOrderedList", icon: "ti-list-numbers", label: t.numbers },
   ];
@@ -47,10 +52,10 @@
   }
 
   // shortcut: document.execCommand is deprecated but the only built-in rich editing; WebView2 and WebKit both support it.
-  function run(command: string) {
+  function run(tool: (typeof TOOLS)[number]) {
     editor?.focus();
-    if (command === "heading") document.execCommand("formatBlock", false, active.heading ? "p" : "h4");
-    else document.execCommand(command);
+    if (tool.block) document.execCommand("formatBlock", false, active[tool.command] ? "p" : tool.block);
+    else document.execCommand(tool.command);
     changed();
   }
 
@@ -58,10 +63,7 @@
   function update() {
     if (!editor || !editor.contains(document.getSelection()?.anchorNode ?? null)) return;
     const block = String(document.queryCommandValue("formatBlock")).toLowerCase();
-    active = {
-      ...Object.fromEntries(TOOLS.map((tool) => [tool.command, tool.command !== "heading" && document.queryCommandState(tool.command)])),
-      heading: block === "h4",
-    };
+    active = Object.fromEntries(TOOLS.map((tool) => [tool.command, tool.block ? block === tool.block : document.queryCommandState(tool.command)]));
   }
 
   function paste(e: ClipboardEvent) {
@@ -151,7 +153,7 @@
   <div class="toolbar" role="toolbar" aria-label={t.toolbar(label)}>
     {#each TOOLS as tool (tool.command)}
       <!-- mousedown is cancelled so the field keeps its selection -->
-      <button class="icon-btn tool" aria-label={tool.label} aria-pressed={!!active[tool.command]} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool.command)}>
+      <button class="icon-btn tool" aria-label={tool.label} aria-pressed={!!active[tool.command]} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
         <i class="ti {tool.icon}" aria-hidden="true"></i>
       </button>
     {/each}

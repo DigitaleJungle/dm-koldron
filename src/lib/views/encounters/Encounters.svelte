@@ -18,7 +18,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { BANDS, difficulty, monsterXp, type Band } from "./difficulty";
-  import { characterLevel, entryKey, rowsByKey } from "./roster";
+  import { characterLevel, encounterParty, entryKey, rowsByKey } from "./roster";
 
   const t = strings.encounters;
   const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
@@ -53,8 +53,6 @@
 
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
-  // A deleted character stays in a saved encounter's party; leave it out, as Prepare does (once the characters are known).
-  const present = (ids: string[]) => (characters ? ids.filter((id) => characterById.has(id)) : ids);
 
   // Pictures, asked once per monster, when its pack's images are on.
   let pictures = $state<Record<string, string | null>>({});
@@ -87,7 +85,7 @@
 
   const cards = $derived<Card[]>(
     (list?.encounters ?? []).map((e) => {
-      const party = present(e.party);
+      const party = encounterParty(e.partyMode, e.party, characters); // as in Prepare
       const xps = e.monsters.map((m) => monsterXp(byKey.get(entryKey(m))?.fields.xp));
       const levels = party.map((id) => characterLevel(characterById.get(id)?.classes));
       const result = difficulty(levels, e.monsters.map((m, i) => ({ quantity: m.quantity, xp: xps[i] })), budgets);

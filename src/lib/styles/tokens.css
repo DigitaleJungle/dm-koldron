@@ -155,6 +155,11 @@
   --character-portrait-size: 120px;
   --character-level-width: 40px;
   --character-level-height: 35px;
+  /* The compact card (the encounter builder's party): a smaller picture and level hexagon. */
+  --character-card-width-compact: 220px;
+  --character-portrait-size-compact: 72px;
+  --character-level-width-compact: 30px;
+  --character-level-height-compact: 26px;
   --party-hex-width: 88px;
   --choice-card-width: 260px;
   --choice-hero-art-width: 280px;

@@ -45,6 +45,16 @@ describe("canGoBack", () => {
   });
 });
 
+describe("isReplacing", () => {
+  it("is true only while a gotoReplacing is under way, so a guard that holds it can resume it in place", async () => {
+    expect(h.isReplacing()).toBe(false);
+    const replacing = h.gotoReplacing("http://app/start?x=1");
+    expect(h.isReplacing()).toBe(true); // what a beforeNavigate guard sees
+    await replacing;
+    expect(h.isReplacing()).toBe(false);
+  });
+});
+
 describe("keepScroll", () => {
   it("returns a pane to where it was only when coming back, once its content is there", () => {
     navigate("link", "http://app/list");
@@ -67,21 +77,5 @@ describe("keepScroll", () => {
     action.update({ id: "list", url: at, ready: true });
     expect(pane.scrollTop).toBe(50);
     action.destroy();
-  });
-});
-
-describe("previousUrl", () => {
-  it("is where a link came from, kept through refinements, and unknown after Back", async () => {
-    expect(h.previousUrl()).toBe(null); // opened right here
-    navigate("link", "http://app/library?tab=catalog");
-    const replacing = h.gotoReplacing("http://app/library?tab=catalog&q=fire");
-    navigate("goto", "http://app/library?tab=catalog&q=fire");
-    await replacing;
-    navigate("link", "http://app/library?tab=catalog&q=fire&entry=srd/fireball");
-    expect(h.previousUrl()?.href).toBe("http://app/library?tab=catalog&q=fire");
-    navigate("goto", "http://app/library?tab=catalog&q=fire&entry=srd/fireball&x=1");
-    expect(h.previousUrl()?.href).toBe("http://app/library?tab=catalog&q=fire&entry=srd/fireball");
-    navigate("popstate", "http://app/library?tab=catalog&q=fire", -1);
-    expect(h.previousUrl()).toBe(null);
   });
 });

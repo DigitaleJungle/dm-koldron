@@ -14,7 +14,7 @@
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
-  import { gotoReplacing } from "$lib/stores/history.svelte";
+  import { gotoReplacing, isReplacing } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
@@ -155,12 +155,13 @@
   // Hold the navigation (Back included), ask, then go on.
   beforeNavigate((navigation) => {
     if (leaving || !changed || !navigation.to || navigation.type === "leave") return;
+    const replace = isReplacing(); // e.g. archiving this campaign: Start takes its place in the history
     navigation.cancel();
     void askLeave().then(async (answer) => {
       if (answer === "cancel" || (answer === "save" && !(await save()))) return;
       leaving = true;
       if (navigation.type === "popstate") history.go(navigation.delta ?? -1);
-      else void goto(navigation.to!.url);
+      else void (replace ? gotoReplacing : goto)(navigation.to!.url.href);
     });
   });
 

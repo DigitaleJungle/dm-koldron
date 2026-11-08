@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { rulesChapter, rulesContents, type Chapter, type ContentsChapter } from "$lib/api/rules";
   import { errorMessage } from "$lib/api/storage";
@@ -13,6 +13,7 @@
     reloadKey,
     onopensettings,
     hasContents = $bindable(false),
+    bottom,
   }: {
     /** The contents column is hidden. */
     collapsed: boolean;
@@ -20,6 +21,8 @@
     reloadKey: number;
     onopensettings: () => void;
     hasContents?: boolean;
+    /** At the contents column's foot, under its scrolling list (the Library's Settings gear). */
+    bottom?: Snippet;
   } = $props();
 
   const t = strings.library;
@@ -118,11 +121,14 @@
   </div>
 {:else}
   <div class="body">
-    {#if !collapsed}
-      <aside id="library-contents">
+    <!-- Hidden, the column eases to no width and then can't be reached; shown, it eases back. -->
+    <aside id="library-contents" class:collapsed>
+      <!-- The sidebar's items (a layout container only, as in the campaign sidebar): they scroll, the foot stays. -->
+      <div class="items">
         <RulesContents {contents} {current} {section} onopen={open} />
-      </aside>
-    {/if}
+      </div>
+      {#if bottom}<div class="bottom">{@render bottom()}</div>{/if}
+    </aside>
     <main bind:this={pane} use:keepScroll={{ id: "rules", url: page.url.href, ready: !!chapter }} onwheel={stopScroll}>
       {#if chapterError}
         <p class="message error" role="alert">{t.loadError(chapterError)}</p>
@@ -152,14 +158,53 @@
     display: flex;
   }
 
-  /* The Settings gear sits in the corner over the column's bottom, hence the clearance. */
+  /* The contents column: its list scrolls, its foot (the gear) stays under it. Hiding and showing ease its width;
+     hidden, it turns invisible once closed (so the keyboard can't reach it) and visible at once when it opens. */
   aside {
     flex: 0 0 var(--library-contents-width);
     min-height: 0;
-    overflow-y: auto;
-    padding: var(--space-3) var(--space-3) var(--corner-clearance);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     border-right: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
+    transition:
+      flex-basis var(--duration-drawer) ease-in-out,
+      visibility 0s;
+  }
+
+  aside.collapsed {
+    flex-basis: 0;
+    border-right-width: 0;
+    visibility: hidden;
+    transition:
+      flex-basis var(--duration-drawer) ease-in-out,
+      visibility 0s var(--duration-drawer);
+  }
+
+  :global([data-motion="reduce"]) aside {
+    transition: none;
+  }
+
+  /* Their full width while the column eases, so the chapters don't rewrap as it narrows. */
+  .items,
+  .bottom {
+    flex: none;
+    width: var(--library-contents-width);
+    padding: 0 var(--space-3);
+  }
+
+  .items {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
+
+  .bottom {
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
   }
 
   main {

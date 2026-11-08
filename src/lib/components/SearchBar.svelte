@@ -4,7 +4,7 @@
   import { goto } from "$app/navigation";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
-  import { campaigns } from "$lib/stores/campaigns.svelte";
+  import { campaigns, libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
   import { hitAddress, hitMeta, searchAddress } from "$lib/views/search/search";
 
@@ -48,7 +48,7 @@
       active = Math.max(-1, Math.min(hits.length - 1, active + step));
     } else if (event.key === "Enter" && query.trim()) {
       event.preventDefault();
-      go(open && active >= 0 ? hitAddress(hits[active]) : searchAddress(query, campaign));
+      go(open && active >= 0 ? hitAddress(hits[active], libraryHome()) : searchAddress(query, campaign));
     } else if (event.key === "Escape" && open) {
       event.preventDefault();
       open = false;
@@ -94,7 +94,7 @@
           role="option"
           aria-selected={i === active}
           onmousedown={(e) => e.preventDefault()}
-          onclick={() => go(hitAddress(hit))}
+          onclick={() => go(hitAddress(hit, libraryHome()))}
           onmousemove={() => (active = i)}
         >
           <span class="name">{hit.name}</span>

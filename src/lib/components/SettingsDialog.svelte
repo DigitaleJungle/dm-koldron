@@ -1,5 +1,9 @@
 <script lang="ts" module>
   export type SectionId = "ui" | "campaigns" | "rules" | "about";
+
+  /** Counts every time any Settings dialog closes (packs may have been switched on or off there): screens showing
+   *  pack content read it to load again, whichever gear opened Settings (theirs or the campaign sidebar's). */
+  export const settingsClosed = $state({ count: 0 });
 </script>
 
 <script lang="ts">
@@ -63,7 +67,10 @@
   }
 </script>
 
-<dialog bind:this={dialog} aria-labelledby="settings-title" onclose={() => (open = false)} onclick={onBackdropClick}>
+<dialog bind:this={dialog} aria-labelledby="settings-title" onclose={() => {
+    open = false;
+    settingsClosed.count++;
+  }} onclick={onBackdropClick}>
   <header>
     <h2 id="settings-title">{t.title}</h2>
     <button class="icon-btn icon-btn-lg" aria-label={t.close} onclick={() => (open = false)}>

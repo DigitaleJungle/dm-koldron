@@ -5,12 +5,13 @@
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
+  import { settingsClosed } from "$lib/components/SettingsDialog.svelte";
   import { catalogEntry } from "$lib/api/catalog";
   import { listCharacters } from "$lib/api/characters";
   import { rulesSection } from "$lib/api/rules";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
-  import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
+  import { campaigns, libraryHome, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { entryCategory, entryFacts } from "$lib/views/library/catalog";
@@ -36,19 +37,12 @@
   let hits = $state<SearchHit[] | null>(null); // null while searching
   let error = $state<string | null>(null);
   let asked = 0;
-  // Packs may have been switched on or off in Settings, so the search runs again when it closes.
   let settingsOpen = $state(false);
-  let reloadKey = $state(0);
-  let settingsWasOpen = false;
-  $effect(() => {
-    if (settingsWasOpen && !settingsOpen) reloadKey++;
-    settingsWasOpen = settingsOpen;
-  });
   $effect(() => {
     const mine = ++asked;
     const text = query;
     const scope = campaign;
-    void reloadKey;
+    void settingsClosed.count; // packs may have been switched on or off: search again
     if (!text.trim()) return void ([hits, error] = [[], null]);
     searchAll(text, undefined, scope).then(
       (found) => mine === asked && ([hits, error] = [found, null]),
@@ -181,7 +175,7 @@
         <aside class="preview" aria-label={selected.name}>
           <header>
             <h2>{selected.name}</h2>
-            <a class="btn" href={hitAddress(selected)}>{strings.preview.open}</a>
+            <a class="btn" href={hitAddress(selected, libraryHome())}>{strings.preview.open}</a>
           </header>
           <div class="body prose">
             {#if previewError}

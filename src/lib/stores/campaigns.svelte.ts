@@ -1,4 +1,4 @@
-import { goto } from "$app/navigation";
+import { gotoReplacing } from "$lib/stores/history.svelte";
 import * as api from "$lib/api/campaigns";
 import type { Campaign, CampaignList } from "$lib/api/campaigns";
 import { errorMessage } from "$lib/api/storage";
@@ -13,6 +13,10 @@ export const campaigns = $state({
   /** The campaign the DM is working in: set when its screens open, kept in the Library, cleared on the Start screen. Search stays inside it. */
   scope: null as string | null,
 });
+
+/** The Library to open pack content in: the campaign's own while working in one (inside its screens), else the one
+ * outside any campaign. */
+export const libraryHome = () => (campaigns.scope ? `/campaign/${campaigns.scope}/library` : "/library");
 
 export async function refreshCampaigns() {
   try {
@@ -55,8 +59,9 @@ export async function archiveCampaign(id: string) {
   await api.archiveCampaign(id);
   await refreshCampaigns();
   if (campaigns.scope === id) campaigns.scope = null; // also when only the Library from it is open
-  // The open campaign is gone from the active list, so leave its screens.
-  if (campaigns.current?.id === id) await goto("/");
+  // The open campaign is gone from the active list, so leave its screens, in their place in the history: Back (or the
+  // mouse's back button) mustn't return to a campaign that's no longer there.
+  if (campaigns.current?.id === id) await gotoReplacing("/");
 }
 
 export async function restoreCampaign(id: string) {
@@ -69,5 +74,5 @@ export async function deleteCampaign(id: string) {
   await api.deleteCampaign(id);
   await refreshCampaigns();
   if (campaigns.scope === id) campaigns.scope = null;
-  if (campaigns.current?.id === id) await goto("/");
+  if (campaigns.current?.id === id) await gotoReplacing("/"); // as when archiving
 }

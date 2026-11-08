@@ -213,7 +213,9 @@ export function refKind(url: unknown): string | null {
   return kind && ENTRY_CATEGORIES.some((cat) => cat.id === kind) ? kind : null;
 }
 
-/** Library addresses: a Catalog entry page, and a rule section in the Rules tab. */
-export const entryAddress = (kind: string, pack: string, index: string) =>
-  `/library?${new URLSearchParams({ tab: "catalog", cat: kind, entry: `${pack}/${index}` })}`;
-export const sectionAddress = (pack: string, chapter: string, section: string) => `/library?${new URLSearchParams({ pack, chapter, section })}`;
+/** Library addresses: a Catalog entry page, and a rule section in the Rules tab. `base`: which Library (a campaign's
+ * own, `libraryHome()`, or the one outside any campaign). */
+export const entryAddress = (kind: string, pack: string, index: string, base = "/library") =>
+  `${base}?${new URLSearchParams({ tab: "catalog", cat: kind, entry: `${pack}/${index}` })}`;
+export const sectionAddress = (pack: string, chapter: string, section: string, base = "/library") =>
+  `${base}?${new URLSearchParams({ pack, chapter, section })}`;

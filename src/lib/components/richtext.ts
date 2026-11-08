@@ -30,13 +30,13 @@ function tagOf(a: Element): Tag | null {
 }
 
 /** Where a tag opens: the entry in the Catalog, or the character. */
-export const tagAddress = (tag: Tag) => hitAddress({ ...tag, source: "", name: "", chapterIndex: null, chapterName: null });
+export const tagAddress = (tag: Tag, base?: string) => hitAddress({ ...tag, source: "", name: "", chapterIndex: null, chapterName: null }, base);
 
 /**
- * The allowed subset of `value` as HTML. `links`: give each tag its address (to show it), else keep only its data
- * (to store it). Needs a DOM (the window), so it isn't unit-tested.
+ * The allowed subset of `value` as HTML. `links`: give each tag its address (to show it; Catalog entries in the Library
+ * at `base`), else keep only its data (to store it). Needs a DOM (the window), so it isn't unit-tested.
  */
-export function cleanHtml(value: string, { links = false } = {}): string {
+export function cleanHtml(value: string, { links = false, base }: { links?: boolean; base?: string } = {}): string {
   const doc = new DOMParser().parseFromString(`<body>${toHtml(value)}</body>`, "text/html");
   const clean = (node: Element) => {
     for (const child of [...node.children]) {
@@ -53,7 +53,7 @@ export function cleanHtml(value: string, { links = false } = {}): string {
       [...child.attributes].forEach((a) => child.removeAttribute(a.name));
       if (tag) {
         TAG_FIELDS.forEach((f) => tag[f] && child.setAttribute(`data-${f}`, tag[f]!));
-        if (links) child.setAttribute("href", tagAddress(tag));
+        if (links) child.setAttribute("href", tagAddress(tag, base));
       }
     }
   };

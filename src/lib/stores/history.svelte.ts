@@ -7,8 +7,6 @@ let replacing = false;
 // Whether the current screen was reached with Back (or Forward), and a number per navigation.
 let cameBack = false;
 let navigation = 0;
-// The address the current screen was opened from with a link or `goto`; null after Back or Forward, or on opening.
-let previous = $state<URL | null>(null);
 // Scroll positions of the scrolling panes, per address, saved when leaving it.
 const saved = new Map<string, number>();
 const panes = new Map<HTMLElement, string>();
@@ -26,15 +24,14 @@ export function trackHistory() {
     if (nav.type === "enter") depth = 0;
     else if (nav.type === "popstate") depth = Math.max(0, depth + (nav.delta ?? 0));
     else if (!replacing) depth++;
-    if (!replacing) previous = nav.type === "enter" || nav.type === "popstate" ? null : (nav.from?.url ?? null);
     replacing = false;
   });
 }
 
 export const canGoBack = () => depth > 0;
 
-/** Where the current screen was opened from, when that was a link or `goto` (reactive). */
-export const previousUrl = () => previous;
+/** True while a `gotoReplacing` is under way: a guard that holds the navigation resumes it in the same place. */
+export const isReplacing = () => replacing;
 
 /** True when this screen was reached with Back: then a pane's saved scroll position wins over scrolling to a target. */
 export const reachedByBack = () => cameBack;

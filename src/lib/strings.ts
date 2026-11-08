@@ -30,7 +30,6 @@ export const strings = {
     characters: "Characters",
     encounters: "Encounters",
     switchCampaign: (name: string) => `Campaign: ${name}. Switch campaign`,
-    campaignSettings: "Campaign settings",
     collapse: "Collapse sidebar",
     expand: "Expand sidebar",
     openMenu: "Open menu",

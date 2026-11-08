@@ -23,10 +23,11 @@ export const placeLabel = (hit: SearchHit) =>
 export const hitMeta = (hit: SearchHit, withKind = true) =>
   [...new Set([...(withKind ? [kindLabel(hit.kind)] : []), hit.source, placeLabel(hit)])].join(" · ");
 
-export const hitAddress = (hit: SearchHit) =>
+/** Where a hit opens; pack content in the Library at `base` (see `entryAddress`). */
+export const hitAddress = (hit: SearchHit, base = "/library") =>
   hit.kind === CHARACTERS ? `/campaign/${hit.campaign}/characters?${new URLSearchParams({ edit: hit.index })}`
-  : hit.kind === RULE_SECTIONS ? sectionAddress(hit.pack, hit.chapterIndex ?? "", hit.index)
-  : entryAddress(hit.kind, hit.pack, hit.index);
+  : hit.kind === RULE_SECTIONS ? sectionAddress(hit.pack, hit.chapterIndex ?? "", hit.index, base)
+  : entryAddress(hit.kind, hit.pack, hit.index, base);
 
 /** The search screen's address for a search, inside a campaign when one is given. */
 export const searchAddress = (query: string, campaign?: string) =>

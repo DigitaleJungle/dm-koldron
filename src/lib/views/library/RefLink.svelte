@@ -3,6 +3,7 @@
   // (Escape, ✕ or clicking outside closes it: the browser's popover does that); otherwise it's just the name.
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
   import { errorMessage } from "$lib/api/storage";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
   import { entryAddress, entryCategory, entryFacts, refKind } from "./catalog";
 
@@ -62,7 +63,7 @@
       {/if}
     </div>
     <footer>
-      <a href={entryAddress(kind, pack, ref.index)}>{t.open}</a>
+      <a href={entryAddress(kind, pack, ref.index, libraryHome())}>{t.open}</a>
     </footer>
   </div>
 {:else}

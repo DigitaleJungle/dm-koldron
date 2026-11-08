@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.15] - 2026-11-08
+
+### Changed
+
+- Back is a true back everywhere, the same as the mouse's back button (the Library's Back no longer jumps to the Start screen).
+- Library inside a campaign: it opens within the campaign's screens (sidebar and search bar stay), with Back only on a Catalog entry; search results, references and note tags open there while working in the campaign.
+- Campaign sidebar: the collapse button is at the top, the campaign settings cog is gone, the collapsed sidebar switches campaigns from the campaign's initial, and collapsing and expanding animate.
+- Library: the contents column animates when hidden or shown, and the Settings gear sits at its foot instead of over the chapters.
+
+### Fixed
+
+- Archiving or deleting the open campaign (also from an encounter with unsaved changes) no longer leaves it one Back away.
+- Turning packs on or off from any Settings gear refreshes the Library and the search screen.
+
 ## [0.4.14] - 2026-11-08
 
 ### Added

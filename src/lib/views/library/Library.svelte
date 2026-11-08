@@ -1,33 +1,35 @@
 <script lang="ts">
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
-  import { gotoReplacing, previousUrl } from "$lib/stores/history.svelte";
+  import { gotoReplacing } from "$lib/stores/history.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
-  import SettingsButton from "$lib/components/SettingsButton.svelte";
-  import type { SectionId } from "$lib/components/SettingsDialog.svelte";
+  import SettingsDialog, { settingsClosed, type SectionId } from "$lib/components/SettingsDialog.svelte";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
   import Catalog from "./Catalog.svelte";
   import RulesReader from "./RulesReader.svelte";
 
+  // `embedded`: inside a campaign's screens (/campaign/<id>/library), whose shell has the sidebar, the search bar and
+  // Settings: then no search bar or gear of its own, and Back only on a Catalog entry. Outside any campaign
+  // (/library) it has all three on every page.
+  let { embedded = false }: { embedded?: boolean } = $props();
+
   const t = strings.library;
+  const base = $derived(embedded ? libraryHome() : "/library");
   const COLLAPSED_KEY = "library.contentsCollapsed";
 
   // ?tab=catalog, else the Rules tab.
   const tab = $derived(page.url.searchParams.get("tab") === "catalog" ? "catalog" : "rules");
-  // Back from a Catalog entry goes to its list (same category, filters, sort and page); from anywhere else in the
-  // Library, to the Start screen. Opened from that list, it goes back through history instead, so the list's scroll
-  // position comes back too.
+  // Back goes back through history, like the mouse's back button (tabs and chapters take the current place, so they
+  // aren't steps). Where there's nothing to go back to (the app was opened here): from a Catalog entry its list,
+  // else the Start screen.
   const backTo = $derived.by(() => {
     const params = new URLSearchParams(page.url.searchParams);
     if (tab !== "catalog" || !params.has("entry")) return "/";
     params.delete("entry");
     params.delete("kind");
-    return `/library?${params}`;
-  });
-  const openedFromList = $derived.by(() => {
-    const from = previousUrl();
-    return backTo !== "/" && from?.pathname === "/library" && from.searchParams.get("tab") === "catalog" && !from.searchParams.has("entry");
+    return `${base}?${params}`;
   });
   function switchTab(event: MouseEvent & { currentTarget: HTMLAnchorElement }) {
     event.preventDefault();
@@ -35,7 +37,8 @@
   }
   let settingsOpen = $state(false);
   let settingsSection = $state<SectionId>();
-  let reloadKey = $state(0);
+  // Packs may have been switched on or off in Settings (whichever gear opened it), so the tabs load again when it closes.
+  const reloadKey = $derived(settingsClosed.count);
   let rulesHasContents = $state(false);
 
   // Remembered on this device only; storage can be unavailable, then the contents show.
@@ -56,14 +59,12 @@
     }
   }
 
-  // Packs may have been switched on or off in Settings, so the tabs load again when it closes.
-  let settingsWasOpen = false;
+  // Outside a campaign the gear sits at the foot of the shown contents column, else in the corner.
+  const gearInContents = $derived(!embedded && tab === "rules" && rulesHasContents && !collapsed);
+
+  // A hint opens Settings at Rules; once closed, the gear opens it where it was.
   $effect(() => {
-    if (settingsWasOpen && !settingsOpen) {
-      settingsSection = undefined;
-      reloadKey++;
-    }
-    settingsWasOpen = settingsOpen;
+    if (!settingsOpen) settingsSection = undefined;
   });
 
   function openRulesSettings() {
@@ -74,9 +75,9 @@
 
 <svelte:head><title>{t.title}</title></svelte:head>
 
-<div class="library">
+<div class="library" class:embedded>
   <header class="top">
-    <BackButton always={!openedFromList} fallback={backTo} />
+    {#if !embedded || (tab === "catalog" && page.url.searchParams.has("entry"))}<BackButton fallback={backTo} />{/if}
     {#if tab === "rules" && rulesHasContents}
       <button
         class="icon-btn icon-btn-lg"
@@ -90,26 +91,41 @@
     {/if}
     <nav class="tabs" aria-label={t.tabs}>
       <!-- Switching tabs takes the current place in the history, so Back never steps between them. -->
-      <a href="/library" aria-current={tab === "rules" ? "page" : undefined} onclick={switchTab}>{t.rulesTab}</a>
-      <a href="/library?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined} onclick={switchTab}>{strings.catalog.title}</a>
+      <a href={base} aria-current={tab === "rules" ? "page" : undefined} onclick={switchTab}>{t.rulesTab}</a>
+      <a href="{base}?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined} onclick={switchTab}>{strings.catalog.title}</a>
     </nav>
-    <div class="search"><SearchBar /></div>
+    {#if !embedded}<div class="search"><SearchBar /></div>{/if}
   </header>
 
   {#if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} />
   {:else}
-    <RulesReader {collapsed} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} />
+    <RulesReader {collapsed} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} bottom={gearInContents ? gear : undefined} />
   {/if}
 
-  <div class="corner"><SettingsButton bind:open={settingsOpen} section={settingsSection} /></div>
+  <!-- One dialog: the gear opens it where it was, the "turn a pack on" hints at Rules. Inside a campaign the shell has
+       the gear; outside, it sits at the foot of the contents column while that's shown (clear of the chapters), else
+       in the corner. -->
+  <SettingsDialog bind:open={settingsOpen} section={settingsSection} />
+  {#if !embedded && !gearInContents}<div class="corner">{@render gear()}</div>{/if}
 </div>
+
+{#snippet gear()}
+  <button class="icon-btn icon-btn-lg" aria-label={strings.settings.open} aria-haspopup="dialog" onclick={() => (settingsOpen = true)}>
+    <i class="ti ti-settings" aria-hidden="true"></i>
+  </button>
+{/snippet}
 
 <style>
   .library {
     display: flex;
     flex-direction: column;
     height: 100vh;
+  }
+
+  /* Inside the campaign shell: its screen's height, under the shell's search bar. */
+  .library.embedded {
+    height: 100%;
   }
 
   .top {

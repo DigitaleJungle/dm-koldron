@@ -4,6 +4,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { page } from "$app/state";
   import { errorMessage } from "$lib/api/storage";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { entryAddress, entryCategory, entryFacts, sectionAddress, type Category } from "./catalog";
@@ -53,7 +54,7 @@
   const facts = $derived(loaded ? entryFacts(category, loaded) : []);
 
   // A rule section opens in the Rules tab; another entry on its own page. The pack shows when it's another one.
-  const alsoHref = (a: Also) => (a.chapterIndex ? sectionAddress(a.pack, a.chapterIndex, a.index) : entryAddress(a.kind, a.pack, a.index));
+  const alsoHref = (a: Also) => (a.chapterIndex ? sectionAddress(a.pack, a.chapterIndex, a.index, libraryHome()) : entryAddress(a.kind, a.pack, a.index, libraryHome()));
   const alsoLabel = (a: Also) =>
     `${a.chapterName ?? entryCategory(a.kind).label} → ${a.name}${a.pack !== loaded?.pack ? ` (${a.source})` : ""}`;
 </script>

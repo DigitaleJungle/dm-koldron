@@ -13,6 +13,7 @@
   import { untrack } from "svelte";
   import RichText from "$lib/components/RichText.svelte";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
 
   let {
@@ -227,7 +228,7 @@
   {#if isEmpty(value)}
     <p class="muted">{t.empty}</p>
   {:else}
-    <div class="note-text prose">{@html cleanHtml(value, { links: true })}</div>
+    <div class="note-text prose">{@html cleanHtml(value, { links: true, base: libraryHome() })}</div>
   {/if}
 {/snippet}
 

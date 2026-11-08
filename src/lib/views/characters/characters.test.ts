@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Character } from "$lib/api/characters";
-import { averageLevel, blankCharacter, clamp01, classLine, selectCharacters, totalLevel } from "./characters";
+import { averageLevel, blankCharacter, clamp01, classLine, classNamesOf, selectCharacters, totalLevel } from "./characters";
 
 const make = (name: string, player: string, classes: [string, number][]): Character => ({
   ...blankCharacter(),
@@ -37,6 +37,15 @@ describe("characters", () => {
     expect(selectCharacters(all, "", "class").map((c) => c.name)).toEqual(["Brannoc", "Mira Ashvale", "Tavi"]);
     expect(selectCharacters(all, "", "name", "in").map((c) => c.name)).toEqual(["Tavi"]);
     expect(selectCharacters(all, "", "name", "out").map((c) => c.name)).toEqual(["Brannoc", "Mira Ashvale"]);
+  });
+
+  it("filter by class, any of a multiclass character's, ignoring case", () => {
+    const all = [tavi, mira, brannoc];
+    expect(selectCharacters(all, "", "name", "all", "wizard").map((c) => c.name)).toEqual(["Mira Ashvale", "Tavi"]);
+    expect(selectCharacters(all, "", "name", "all", "Rogue").map((c) => c.name)).toEqual(["Mira Ashvale"]);
+    expect(selectCharacters(all, "", "name", "all", "Bard")).toEqual([]);
+    expect(selectCharacters(all, "", "name", "all", "")).toHaveLength(3);
+    expect(classNamesOf([...all, make("Ash", "", [["fighter", 1]])])).toEqual(["Fighter", "Rogue", "Wizard"]);
   });
 
   it("average the party's level", () => {

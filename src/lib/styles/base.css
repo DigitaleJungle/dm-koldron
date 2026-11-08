@@ -49,6 +49,18 @@ p {
   animation-duration: var(--duration-drawer);
 }
 
+/* Hover feedback eases in and out, so the app feels smooth. Zero specificity: a component's own transition wins.
+   With Settings → UI → Animations off it's instant. */
+:where(a, button, input, select, textarea, label, summary, tr, [role="menuitem"], [role="option"], [role="tab"], .card) {
+  transition-property: color, background-color, border-color, box-shadow, opacity, text-decoration-color, fill, stroke;
+  transition-duration: var(--duration-hover);
+  transition-timing-function: var(--ease-hover);
+}
+
+[data-motion="reduce"] :where(a, button, input, select, textarea, label, summary, tr, [role="menuitem"], [role="option"], [role="tab"], .card) {
+  transition: none;
+}
+
 /* Headlines are Fraunces; smaller headings stay in the reading face. */
 h1,
 h2 {

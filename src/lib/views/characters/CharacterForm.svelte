@@ -1,9 +1,10 @@
 <script lang="ts">
   // Add character / Edit: one form in a modal dialog. Rust checks every rule again when it saves; the form shows its
   // answer. A picked picture is dragged into place in a square frame, cropped here and stored once the character is saved.
-  import { onDestroy, untrack } from "svelte";
+  // A saved character can be deleted here too, after a confirmation in the footer.
+  import { onDestroy, tick, untrack } from "svelte";
   import { pictureSrc } from "$lib/api/campaigns";
-  import { saveCharacter, setCharacterPicture, type Character } from "$lib/api/characters";
+  import { deleteCharacter, saveCharacter, setCharacterPicture, type Character } from "$lib/api/characters";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
   import { clamp01, cropPicture, defaultCrop, loadPicture, totalLevel, type Crop } from "./characters";
@@ -14,6 +15,7 @@
     classNames,
     onclose,
     onsaved,
+    ondeleted,
   }: {
     campaign: string;
     /** The character to edit, or a blank one to add. */
@@ -22,6 +24,7 @@
     classNames: string[];
     onclose: () => void;
     onsaved: (saved: Character) => void;
+    ondeleted: (deleted: Character) => void;
   } = $props();
 
   const t = strings.characters.form;
@@ -130,6 +133,36 @@
       }
     }
     onsaved(saved);
+    onclose();
+  }
+
+  // Delete: the footer asks first (Cancel, the default, or Delete); deleting closes the form.
+  let confirming = $state(false);
+  let deleting = $state(false);
+
+  async function askDelete() {
+    confirming = true;
+    await tick();
+    document.getElementById(`${id}-keep`)?.focus();
+  }
+
+  async function keep() {
+    confirming = false;
+    await tick();
+    document.getElementById(`${id}-delete`)?.focus();
+  }
+
+  async function remove() {
+    deleting = true;
+    error = null;
+    try {
+      await deleteCharacter(campaign, character.id);
+    } catch (e) {
+      error = strings.characters.deleteError(character.name, errorMessage(e));
+      deleting = false;
+      return;
+    }
+    ondeleted(character);
     onclose();
   }
 
@@ -261,8 +294,20 @@
     </div>
 
     <footer>
-      <button type="button" class="btn" onclick={onclose}>{t.cancel}</button>
-      <button type="submit" class="btn btn-primary" disabled={saving || total > 20}>{saving ? t.saving : t.save}</button>
+      {#if confirming}
+        <p class="confirm" role="alert">{strings.characters.confirmDelete(character.name)}</p>
+        <button id="{id}-keep" type="button" class="btn" onclick={keep}>{t.cancel}</button>
+        <button type="button" class="btn btn-danger" disabled={deleting} onclick={remove}>{strings.characters.delete}</button>
+      {:else}
+        {#if character.id}
+          <button id="{id}-delete" type="button" class="btn delete" onclick={askDelete}>
+            <i class="ti ti-trash" aria-hidden="true"></i>
+            {strings.characters.delete}
+          </button>
+        {/if}
+        <button type="button" class="btn" onclick={onclose}>{t.cancel}</button>
+        <button type="submit" class="btn btn-primary" disabled={saving || total > 20}>{saving ? t.saving : t.save}</button>
+      {/if}
     </footer>
   </form>
 </dialog>
@@ -312,6 +357,18 @@
     justify-content: flex-end;
     padding-right: var(--space-5);
     border-top: var(--border-width) solid var(--color-border);
+  }
+
+  /* Delete on the left, away from Save; the question takes its place while it's asked. */
+  .delete {
+    margin-right: auto;
+    color: var(--color-danger);
+  }
+
+  .confirm {
+    margin: 0 auto 0 0;
+    color: var(--color-danger);
+    font-size: var(--text-sm);
   }
 
   .body {

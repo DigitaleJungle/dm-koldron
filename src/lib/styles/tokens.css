@@ -220,6 +220,9 @@
   --party-avatar-width: 120px;
   --search-dropdown-max-height: 400px;
   --duration-drawer: 200ms;
+  /* Hover (and the state changes that go with it) eases in and out, short enough never to feel slow. */
+  --duration-hover: 150ms;
+  --ease-hover: ease-in-out;
   --color-backdrop: color-mix(in srgb, var(--charcoal) 55%, transparent);
   /* Text over a picture (the party avatars on Home): charcoal in both themes, bone text well above 4.5:1. */
   --color-overlay: color-mix(in srgb, var(--charcoal) 80%, transparent);

@@ -7,6 +7,9 @@ export const HEX_HEIGHT = Math.sqrt(3) / 2;
 /** The space between two hexagons, as a share of a hexagon's width. */
 const GAP = 0.05;
 
+/** How much likelier a spot is for each extra placed hexagon it touches (1 would ignore touching). */
+const COMPACT = 4;
+
 // Axial neighbours of a flat-topped hexagon.
 const NEIGHBOURS = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0]];
 
@@ -23,8 +26,9 @@ function random(seed: string): () => number {
 
 /**
  * `count` cells: the first in the middle, each next one touching those before it. A free spot next to more placed
- * hexagons is likelier, which keeps the comb round rather than a long chain. Positions start at 0, 0. With `maxRows`,
- * a spot that would make the comb taller than that many hexagons (at least 2) isn't picked, so it grows sideways
+ * hexagons is much likelier (COMPACT times per extra one), which keeps the comb round rather than a long chain.
+ * Positions start at 0, 0. With `maxRows` (in halves too: columns sit half a hexagon apart), a spot that would make
+ * the comb taller than that many hexagons (at least 2) isn't picked, so it grows sideways
  * instead (there's always such a spot: the rightmost hexagon has a free neighbour half a row up and one half a row
  * down; with 1 there would be none, since every neighbour is at least half a row up or down).
  */
@@ -39,11 +43,22 @@ export function hexcomb(count: number, seed: string, maxRows = Infinity): Cell[]
     const rows = placed.map(row);
     const [top, bottom] = [Math.min(...rows), Math.max(...rows)];
     const fits = (spot: [number, number]) => Math.max(bottom, row(spot)) - Math.min(top, row(spot)) <= maxRows - 1;
-    // Every free neighbour that fits once per placed hexagon it touches.
-    const spots = placed
-      .flatMap(([q, r]) => NEIGHBOURS.map(([dq, dr]) => [q + dq, r + dr] as [number, number]))
-      .filter((spot) => !taken.has(`${spot[0]},${spot[1]}`) && fits(spot));
-    const spot = spots[Math.floor(next() * spots.length)];
+    // Every free neighbour that fits, with how many placed hexagons it touches.
+    const touches = new Map<string, { spot: [number, number]; n: number }>();
+    for (const [q, r] of placed) {
+      for (const [dq, dr] of NEIGHBOURS) {
+        const spot: [number, number] = [q + dq, r + dr];
+        const key = `${spot[0]},${spot[1]}`;
+        if (taken.has(key) || !fits(spot)) continue;
+        const found = touches.get(key);
+        if (found) found.n++;
+        else touches.set(key, { spot, n: 1 });
+      }
+    }
+    // Each extra hexagon a spot touches makes it COMPACT times likelier, so the comb fills in instead of trailing off.
+    const weighted = [...touches.values()].map(({ spot, n }) => ({ spot, weight: COMPACT ** (n - 1) }));
+    let pick = next() * weighted.reduce((sum, w) => sum + w.weight, 0);
+    const spot = (weighted.find((w) => (pick -= w.weight) < 0) ?? weighted[weighted.length - 1]).spot;
     placed.push(spot);
     taken.add(`${spot[0]},${spot[1]}`);
   }

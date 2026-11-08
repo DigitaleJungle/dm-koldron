@@ -11,17 +11,26 @@ export type CharacterSort = "name" | "level" | "class";
 export type PartyFilter = "all" | "in" | "out";
 
 /**
- * Every search word in the name, the class line or the player, and in or out of the party as asked; by name, by
- * level (highest first) or by class line, ties by name.
+ * Every search word in the name, the class line or the player, in or out of the party as asked, and with a class of
+ * that name (any case; empty: any class); by name, by level (highest first) or by class line, ties by name.
  */
-export function selectCharacters(list: Character[], search: string, sort: CharacterSort, party: PartyFilter = "all"): Character[] {
+export function selectCharacters(list: Character[], search: string, sort: CharacterSort, party: PartyFilter = "all", className = ""): Character[] {
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (c: Character) => words.every((w) => [c.name, classLine(c), c.player].some((text) => text.toLowerCase().includes(w)));
-  const inFilter = (c: Character) => party === "all" || c.onHome === (party === "in");
+  const wanted = className.toLowerCase();
+  const inFilter = (c: Character) =>
+    (party === "all" || c.onHome === (party === "in")) && (!wanted || c.classes.some((k) => k.name.toLowerCase() === wanted));
   const byName = (a: Character, b: Character) => a.name.localeCompare(b.name);
   const first = (a: Character, b: Character) =>
     sort === "level" ? totalLevel(b) - totalLevel(a) : sort === "class" ? classLine(a).localeCompare(classLine(b)) : 0;
   return list.filter((c) => matches(c) && inFilter(c)).sort((a, b) => first(a, b) || byName(a, b));
+}
+
+/** The classes the characters have, each once (ignoring case, the first spelling kept), alphabetically. */
+export function classNamesOf(list: Character[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const c of list) for (const { name } of c.classes) if (!byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }
 
 /** The party's average level, to one decimal ("5", "4.5"); null without a party. */

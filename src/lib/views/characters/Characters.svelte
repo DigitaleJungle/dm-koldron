@@ -1,25 +1,28 @@
 <script lang="ts">
   // The campaign's characters (docs/Characters (light), without its page title, count line and dashed add card): the
-  // party on a line-coloured band with its editable name, then search by name, class or player (?q=), a party filter (?party=in|out), sort by name,
-  // level or class (?sort=level|class), and the cards. A card's name opens its form; in its bottom-right corner a party
-  // button (users when in the party, turning into users-minus on hover; users-plus on card hover otherwise); its menu
-  // (top right) has Edit, Add to / Remove from party and Delete. ?edit=<id> opens that character's form (from search).
-  import { tick } from "svelte";
+  // party on a line-coloured band (its editable name and Add character; pictures, names and stats once anyone is in
+  // it), then search by name, class or player (?q=), a party filter (?party=in|out), a class filter (?class=), sort by
+  // name, level or class (?sort=level|class) at the right, and the cards. A card shows the picture (total level on a
+  // hexagon) with, beside it from the top, the name, class line and HP; the name opens its form; in its bottom-right
+  // corner a party button (users when in the party, turning into users-minus on hover; users-plus on card hover
+  // otherwise). Delete is in the form. ?edit=<id> opens that character's form (from search).
   import { afterNavigate } from "$app/navigation";
+  import { flip } from "svelte/animate";
+  import { scale } from "svelte/transition";
   import { page } from "$app/state";
   import { catalogRows } from "$lib/api/catalog";
   import { pictureSrc } from "$lib/api/campaigns";
-  import { deleteCharacter, listCharacters, saveCharacter, type Character, type CharacterList } from "$lib/api/characters";
+  import { listCharacters, saveCharacter, type Character, type CharacterList } from "$lib/api/characters";
   import { errorMessage } from "$lib/api/storage";
   import HexCollage from "$lib/components/HexCollage.svelte";
-  import Menu, { type MenuItem } from "$lib/components/Menu.svelte";
   import PartyIcon from "$lib/components/PartyIcon.svelte";
   import { campaigns, setPartyName } from "$lib/stores/campaigns.svelte";
+  import { enterMotion, moveMotion } from "$lib/motion";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import CharacterForm from "./CharacterForm.svelte";
-  import { averageLevel, blankCharacter, classLine, selectCharacters, totalLevel, type CharacterSort, type PartyFilter } from "./characters";
+  import { averageLevel, blankCharacter, classLine, classNamesOf, selectCharacters, totalLevel, type CharacterSort, type PartyFilter } from "./characters";
 
   const t = strings.characters;
   const campaign = $derived(campaigns.current!.id);
@@ -55,7 +58,13 @@
   const FILTERS: PartyFilter[] = ["all", "in", "out"];
   const sort = $derived<CharacterSort>(SORTS.find((s) => s === page.url.searchParams.get("sort")) ?? "name");
   const filter = $derived<PartyFilter>(FILTERS.find((f) => f === page.url.searchParams.get("party")) ?? "all");
-  const shown = $derived(list ? selectCharacters(list.characters, search, sort, filter) : []);
+  const classFilter = $derived(page.url.searchParams.get("class") ?? "");
+  // The classes the campaign's characters have, plus the one asked for (?class=) should none have it any more.
+  const classOptions = $derived.by(() => {
+    const names = classNamesOf(list?.characters ?? []);
+    return classFilter && !names.some((n) => n.toLowerCase() === classFilter.toLowerCase()) ? [classFilter, ...names] : names;
+  });
+  const shown = $derived(list ? selectCharacters(list.characters, search, sort, filter, classFilter) : []);
   const party = $derived((list?.characters ?? []).filter((c) => c.onHome).sort((a, b) => a.name.localeCompare(b.name)));
 
   // The party's name saves on Enter or leaving the field; Escape puts the saved one back. Empty goes back to the default.
@@ -102,17 +111,11 @@
     list = { ...list, characters: [...others, character] };
   }
 
-  let deletingId = $state<string | null>(null);
   let rowError = $state<{ id: string; text: string } | null>(null);
   let busy = $state(false);
   /** The character whose party button the pointer (or keyboard focus) is on: it then shows "remove". */
   let pointing = $state<string | null>(null);
   const partyIcon = (c: Character) => (!c.onHome ? "plus" : pointing === c.id ? "minus" : "users");
-
-  async function focusMenu(id: string) {
-    await tick();
-    document.getElementById(`character-menu-${id}`)?.focus();
-  }
 
   async function run(character: Character, failed: (name: string, reason: string) => string, work: () => Promise<void>) {
     busy = true;
@@ -129,76 +132,80 @@
   const toggleHome = (character: Character) =>
     run(character, t.homeError, async () => saved(await saveCharacter(campaign, { ...character, onHome: !character.onHome })));
 
-  async function askDelete(character: Character) {
-    deletingId = character.id;
-    await tick();
-    document.getElementById(`cancel-delete-${character.id}`)?.focus();
+  const formatNumber = new Intl.NumberFormat();
+
+  // Deleted from its form: gone from the list.
+  function deleted(character: Character) {
+    if (list) list = { ...list, characters: list.characters.filter((c) => c.id !== character.id) };
+    notify(t.deleted(character.name));
   }
-
-  function cancelDelete(character: Character) {
-    deletingId = null;
-    focusMenu(character.id);
-  }
-
-  const confirmDelete = (character: Character) =>
-    run(character, t.deleteError, async () => {
-      await deleteCharacter(campaign, character.id);
-      if (list) list = { ...list, characters: list.characters.filter((c) => c.id !== character.id) };
-      deletingId = null;
-      notify(t.deleted(character.name));
-    });
-
-  const itemsFor = (character: Character): MenuItem[] => [
-    { label: t.edit, onselect: () => (editing = character) },
-    { label: character.onHome ? t.removeFromHome : t.addToHome, onselect: () => toggleHome(character) },
-    { label: t.delete, onselect: () => askDelete(character) },
-  ];
 </script>
 
 <svelte:head><title>{t.title}</title></svelte:head>
 
 <div class="characters" use:keepScroll={{ id: "characters", url: page.url.href, ready: !!list }}>
-  {#if party.length > 0}
-    <section class="party" aria-label={t.party}>
-      <!-- The party's pictures as hexagons, placed like an encounter's monsters (the same each visit). -->
-      <div class="party-art">
+  <!-- Two layers of the same size: the background with the pictures, and on top of it all the text and controls. -->
+  <section class="party" aria-label={t.party}>
+    <div class="party-art" class:filled={party.length > 0}>
+      {#if party.length > 0}
+        <!-- The party's pictures as hexagons, placed like an encounter's monsters (the same each visit). -->
         <HexCollage
           tiles={party.map((c) => ({ key: c.id, picture: c.picture ? pictureSrc(c.picture) : null, letter: c.name.charAt(0) }))}
           seed={campaign}
           hexWidth="var(--party-hex-width)"
-          maxRows={2}
+          maxRows={2.5}
         />
-      </div>
-      <div class="party-middle">
+      {/if}
+    </div>
+    <div class="party-content">
+      <div class="party-title">
         <label class="party-name">
           <span class="sr-only">{t.partyName}</span>
           <input value={partyName} maxlength="100" autocomplete="off" onchange={(e) => renameParty(e.currentTarget)} onkeydown={revertParty} />
         </label>
         {#if partyError}<p class="error" role="alert">{partyError}</p>{/if}
-        <p class="party-names">{party.map((c) => c.name).join(", ")}</p>
+        {#if party.length > 0}
+          <ul class="party-names">
+            {#each party as c (c.id)}<li>{c.name}</li>{/each}
+          </ul>
+        {/if}
       </div>
-      <dl class="party-stats">
-        <div>
-          <dt class="band-label">{t.members}</dt>
-          <dd class="dice">{new Intl.NumberFormat().format(party.length)}</dd>
-        </div>
-        <div>
-          <dt class="band-label">{t.averageLevel}</dt>
-          <dd class="dice">{averageLevel(party)}</dd>
-        </div>
-      </dl>
-    </section>
-  {/if}
+      {#if party.length > 0}
+        <dl class="party-stats">
+          <div>
+            <dt class="band-label">{t.members}</dt>
+            <dd>{formatNumber.format(party.length)}</dd>
+          </div>
+          <div>
+            <dt class="band-label">{t.averageLevel}</dt>
+            <dd>{averageLevel(party)}</dd>
+          </div>
+        </dl>
+      {/if}
+      <button class="btn btn-primary add" onclick={() => (editing = blankCharacter())}>
+        <i class="ti ti-plus" aria-hidden="true"></i>
+        {t.add}
+      </button>
+    </div>
+  </section>
 
   <div class="tools">
     <label for="character-search" class="sr-only">{t.search}</label>
     <input id="character-search" class="text-field" type="search" placeholder={t.search} autocomplete="off" bind:value={search} oninput={() => refine({ q: search || null })} />
     <div class="chips" role="group" aria-label={t.filter}>
-      {#each FILTERS as each (each)}
-        <button class="chip" aria-pressed={filter === each} onclick={() => refine({ party: each === "all" ? null : each })}>{t.filters[each]}</button>
+      <!-- Pressing the pressed one again turns the filter off (all characters). -->
+      {#each ["in", "out"] as const as each (each)}
+        <button class="chip" aria-pressed={filter === each} onclick={() => refine({ party: filter === each ? null : each })}>{t.filters[each]}</button>
       {/each}
     </div>
-    <label class="sort">
+    <label class="select">
+      <span>{t.classFilter}</span>
+      <select value={classFilter} onchange={(e) => refine({ class: e.currentTarget.value || null })}>
+        <option value="">{t.allClasses}</option>
+        {#each classOptions as name (name)}<option value={name}>{name}</option>{/each}
+      </select>
+    </label>
+    <label class="select sort">
       <span>{t.sort}</span>
       <select value={sort} onchange={(e) => refine({ sort: e.currentTarget.value === "name" ? null : e.currentTarget.value })}>
         <option value="name">{t.byName}</option>
@@ -206,10 +213,6 @@
         <option value="class">{t.byClass}</option>
       </select>
     </label>
-    <button class="btn btn-primary add" onclick={() => (editing = blankCharacter())}>
-      <i class="ti ti-plus" aria-hidden="true"></i>
-      {t.add}
-    </button>
   </div>
 
   {#if loadError}
@@ -227,17 +230,8 @@
     {:else}
       <ul class="cards">
         {#each shown as character (character.id)}
-          <li>
-            {#if deletingId === character.id}
-              <div class="confirm" role="alertdialog" aria-labelledby="delete-text-{character.id}" tabindex="-1" onkeydown={(e) => e.key === "Escape" && cancelDelete(character)}>
-                <p id="delete-text-{character.id}">{t.confirmDelete(character.name)}</p>
-                <div class="actions">
-                  <button id="cancel-delete-{character.id}" class="btn small" onclick={() => cancelDelete(character)}>{t.cancel}</button>
-                  <button class="btn btn-danger small" disabled={busy} onclick={() => confirmDelete(character)}>{t.delete}</button>
-                </div>
-              </div>
-            {:else}
-              <article class="card">
+          <li animate:flip={moveMotion()} in:scale={enterMotion()}>
+            <article class="card">
                 <div class="head">
                   <!-- A square picture with the total level on a dark hexagon at its lower right. -->
                   <div class="portrait">
@@ -246,19 +240,20 @@
                     {:else}
                       <span class="picture no-picture" aria-hidden="true"><i class="ti ti-user"></i></span>
                     {/if}
-                    <span class="hex level" aria-hidden="true">{totalLevel(character)}</span>
+                    <span class="hex level"><span class="sr-only">{t.levelLabel}</span> {totalLevel(character)}</span>
                   </div>
                   <div class="info">
                     <!-- The name's button covers the whole card: anywhere on it opens the form. -->
                     <h2><button class="name" onclick={() => (editing = character)}>{character.name}</button></h2>
                     <p>{classLine(character)}</p>
-                    <p class="label">{t.levelLabel} <span class="dice">{totalLevel(character)}</span></p>
+                    {#if character.maxHp !== null}
+                      <!-- Current HP left empty shows as "—": it isn't known, so it isn't assumed full. -->
+                      <p class="hp">
+                        <span class="current">{character.currentHp === null ? "—" : formatNumber.format(character.currentHp)}</span>
+                        / {formatNumber.format(character.maxHp)} <span class="label">{t.hp}</span>
+                      </p>
+                    {/if}
                   </div>
-                </div>
-                <div class="menu">
-                  <Menu id="character-menu-{character.id}" label={t.actionsFor(character.name)} items={itemsFor(character)} triggerClass="icon-btn">
-                    {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
-                  </Menu>
                 </div>
                 <button
                   class="icon-btn party-toggle"
@@ -274,7 +269,6 @@
                   <PartyIcon shape={partyIcon(character)} />
                 </button>
               </article>
-            {/if}
             {#if rowError?.id === character.id}<p class="error" role="alert">{rowError.text}</p>{/if}
           </li>
         {/each}
@@ -284,7 +278,7 @@
 </div>
 
 {#if editing}
-  <CharacterForm {campaign} character={editing} {classNames} onclose={() => (editing = null)} onsaved={saved} />
+  <CharacterForm {campaign} character={editing} {classNames} onclose={() => (editing = null)} onsaved={saved} ondeleted={deleted} />
 {/if}
 
 <style>
@@ -297,35 +291,72 @@
     padding: var(--space-5) var(--space-5) var(--corner-clearance);
   }
 
-  /* The party, on a band in the line colour (light beige in light, dark grey in dark). */
+  /* The party: two layers in one grid cell, so both are exactly the band's size. The line colour is light beige in
+     light, dark grey in dark. */
   .party {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-6);
-    padding: var(--space-6);
+    display: grid;
     border-radius: var(--radius-md);
     background: var(--line);
     color: var(--color-text);
   }
 
-  /* Exactly two hexagons high (two rows, the gap between them and the collage's margin: 1.982 hexagon widths), so the
-     band never changes height: the collage grows sideways (maxRows), and shrinks only if it gets wider than the band. */
+  .party-art,
+  .party-content {
+    grid-area: 1 / 1;
+    padding: var(--space-4);
+  }
+
+  /* Exactly two and a half hexagons high (1.5 steps of a row and its gap, one hexagon and the collage's margin: 2.44
+     hexagon widths), so the band never changes height: the collage grows sideways (maxRows), and shrinks only if it
+     gets wider than the band. Without a party there's no collage and the text layer alone sets the height. */
   .party-art {
     display: flex;
     align-items: center;
-    height: calc(1.982 * var(--party-hex-width));
   }
 
-  /* Between the pictures and the stats: the party's name at the top, the members' names at the bottom, both centred. */
-  .party-middle {
-    flex: 1;
-    align-self: stretch;
+  .party-art.filled {
+    height: calc(2.44 * var(--party-hex-width) + 2 * var(--space-4));
+  }
+
+  /* Equal side columns keep the middle (the party's name and the members' names) centred on the band; the right one
+     grows only when the button wouldn't fit. The names in the middle of the band, stats top right, Add character
+     bottom right. */
+  .party-content {
+    display: grid;
+    grid-template-columns: 1fr minmax(0, 2fr) minmax(max-content, 1fr);
+    grid-template-rows: auto 1fr auto;
+    align-items: start;
+    gap: var(--space-2) var(--space-3);
+    pointer-events: none; /* the pictures underneath stay reachable */
+  }
+
+  .party-content > * {
+    pointer-events: auto;
+  }
+
+  /* The party's name with the members' names right under it, together in the band's middle. */
+  .party-title {
+    grid-area: 1 / 2 / 4 / 3;
+    align-self: center;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    gap: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .party-stats {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+
+  .party .error {
+    margin: 0;
     text-align: center;
+  }
+
+  .add {
+    grid-area: 3 / 3;
+    justify-self: end;
+    align-self: end;
   }
 
   /* Text until hovered or focused, like an encounter's name in Prepare. */
@@ -347,13 +378,22 @@
     background: var(--color-surface);
   }
 
-  .party-middle .error {
+  /* The members' names, centred at the bottom, a dot between them. */
+  .party-names {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 var(--space-2);
     margin: 0;
+    padding: 0;
+    list-style: none;
+    font: var(--text-body-sm);
   }
 
-  .party-names {
-    margin: 0;
-    font: var(--text-body-sm);
+  .party-names li + li::before {
+    content: "·" / ""; /* decorative: screen readers hear a list of names */
+    margin-right: var(--space-2);
+    font-weight: var(--weight-bold);
   }
 
   .band-label {
@@ -366,18 +406,21 @@
   .party-stats {
     display: flex;
     gap: var(--space-6);
-    margin: 0 0 0 auto;
+    margin: 0;
   }
 
+  /* Each number centred under its label, in the party name's font. */
   .party-stats div {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 2px;
   }
 
   .party-stats dd {
     margin: 0;
-    font-size: var(--text-md);
+    font: var(--text-h2);
+    font-variant-numeric: lining-nums tabular-nums;
   }
 
   .tools {
@@ -402,7 +445,7 @@
     padding: 0 var(--space-3);
   }
 
-  .sort {
+  .select {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -410,7 +453,8 @@
     font-size: var(--text-sm);
   }
 
-  .add {
+  /* Sort at the right end of the row. */
+  .sort {
     margin-left: auto;
   }
 
@@ -450,9 +494,10 @@
     border-color: var(--color-border-strong);
   }
 
+  /* The name, class line and HP beside the picture, from its top. */
   .head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-4);
   }
 
@@ -503,7 +548,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding-right: var(--control-height-sm); /* clear of the menu in the corner */
   }
 
   .info p {
@@ -511,8 +555,10 @@
     overflow-wrap: anywhere;
   }
 
-  .label .dice {
-    letter-spacing: 0;
+  /* "12 / 20 HP": the current HP large, in the party name's font. */
+  .hp .current {
+    font: var(--text-h2);
+    font-variant-numeric: lining-nums tabular-nums; /* old-style digits (Georgia's default) would dip below "/ 20 HP" */
   }
 
   h2 {
@@ -523,6 +569,8 @@
     white-space: nowrap;
   }
 
+  /* Always underlined, but in a transparent colour until the card is hovered: a colour can ease in and out (the
+     global hover transition), a line can't. */
   .name {
     padding: 0;
     border: none;
@@ -530,10 +578,13 @@
     color: var(--color-text);
     font: inherit;
     text-align: left;
+    text-decoration: underline transparent;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
     cursor: pointer;
   }
 
-  /* Covers the card, under the menu and the party button. */
+  /* Covers the card, under the party button. */
   .name::after {
     content: "";
     position: absolute;
@@ -551,20 +602,10 @@
   }
 
   .card:hover .name {
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 4px;
+    text-decoration-color: currentColor;
   }
 
-  /* The menu in the top-right corner, the party button in the bottom-right one; both above the card's cover. */
-  /* One above the party button (on this card and the next), so the open menu is drawn over it. */
-  .menu {
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-2);
-    z-index: 2;
-  }
-
+  /* The party button in the bottom-right corner, above the card's cover. */
   .party-toggle {
     position: absolute;
     right: var(--space-2);
@@ -580,7 +621,9 @@
      it). Not on mere focus: a clicked button keeps focus, so it would stay on one card and vanish on the next click. */
   .party-toggle:not(.in) {
     opacity: 0;
-    transition: opacity 150ms ease;
+    transition-property: opacity, color, background-color;
+    transition-duration: var(--duration-hover);
+    transition-timing-function: var(--ease-hover);
   }
 
   .card:hover .party-toggle,
@@ -590,33 +633,6 @@
 
   :global([data-motion="reduce"]) .party-toggle {
     transition: none;
-  }
-
-  .confirm {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-3);
-    border: var(--border-width) solid var(--color-danger);
-    border-radius: var(--radius-md);
-    background: var(--color-danger-soft);
-    font-size: var(--text-sm);
-  }
-
-  .confirm p {
-    margin: 0;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
-
-  .small {
-    min-height: var(--control-height-sm);
-    padding: 0 var(--space-3);
-    font-size: var(--text-sm);
   }
 
   .error {

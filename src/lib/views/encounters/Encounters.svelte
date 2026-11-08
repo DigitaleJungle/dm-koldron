@@ -3,6 +3,8 @@
   // the same each visit), name, Draft / Ready, the monsters, difficulty, XP and party. Search (?q=), difficulty
   // filter (?band=) and sort (?sort=name|xp) refine the list in place; a card opens the encounter in Prepare.
   import { afterNavigate } from "$app/navigation";
+  import { flip } from "svelte/animate";
+  import { scale } from "svelte/transition";
   import { page } from "$app/state";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
@@ -10,6 +12,7 @@
   import { entryImage } from "$lib/api/images";
   import { errorMessage } from "$lib/api/storage";
   import HexCollage from "$lib/components/HexCollage.svelte";
+  import { enterMotion, moveMotion } from "$lib/motion";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -173,7 +176,7 @@
     {:else}
       <ul class="cards">
         {#each shown as c (c.id)}
-          <li>
+          <li animate:flip={moveMotion()} in:scale={enterMotion()}>
             <article class="card">
               <div class="art">
                 <HexCollage

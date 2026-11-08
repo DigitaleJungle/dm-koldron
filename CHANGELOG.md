@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.13] - 2026-11-08
+
+### Added
+
+- Characters: a Class filter (a multiclass character shows under each of its classes).
+- Characters: cards show current / max HP, the current HP large.
+
+### Changed
+
+- Characters: the party band always shows, with the party's name and the members' names together in its middle, Members and Avg. level (larger, centred) top right, and Add character bottom right.
+- Characters: the party's pictures can be two and a half hexagons high, and hexagon collages (also on encounter cards) are more compact.
+- Characters: Delete moved from the card's menu (now gone) into the character form, after a confirmation.
+- Characters: the name sits at the top beside the picture; the level only shows on its hexagon.
+- Characters: the party filter is In party / Not in party, pressed again to turn it off; Sort sits at the right.
+- Hover effects ease in and out, and the Characters and Encounters cards glide into place when filtering.
+
 ## [0.4.12] - 2026-11-07
 
 ### Added

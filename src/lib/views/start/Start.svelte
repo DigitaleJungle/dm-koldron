@@ -283,7 +283,7 @@
     background: var(--color-overlay);
     color: var(--color-overlay-text);
     opacity: 0;
-    transition: opacity 150ms;
+    transition: opacity var(--duration-hover) var(--ease-hover);
   }
 
   .pictured:hover .caption,

@@ -13,3 +13,4 @@ Plugins:
 - Addressable RGB control
 - StreamDeck support
 - Importing pdf Rule books (AI to import into something usefull?)
+- Advanced Encounters (Phases, Lair effects, Multiple notes)

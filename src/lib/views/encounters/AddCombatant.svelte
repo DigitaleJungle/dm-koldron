@@ -2,9 +2,9 @@
   import type { CatalogRow } from "$lib/api/catalog";
   import type { Character } from "$lib/api/characters";
 
-  /** What the DM picked; Run builds the combatant (and rolls a monster's initiative). */
+  /** What the DM picked; Run builds the combatant (and rolls a monster's initiative when none is given). */
   export type Pick =
-    | { kind: "monster"; row: CatalogRow }
+    | { kind: "monster"; row: CatalogRow; initiative: number | null }
     | { kind: "character"; character: Character; initiative: number | null }
     | { kind: "custom"; name: string; maxHp: number; ac: number | null; initiative: number | null };
 </script>
@@ -34,7 +34,7 @@
     return monsters.filter((m) => !q || m.name.toLowerCase().includes(q)).slice(0, MAX_SHOWN);
   });
 
-  const whole = (n: number | null) => (typeof n === "number" && Number.isInteger(n) ? n : null);
+  const whole = (n: number | null) => (typeof n === "number" && Number.isInteger(n) && Math.abs(n) <= MAX_NUMBER ? n : null);
 
   export function open() {
     search = "";
@@ -69,13 +69,22 @@
   </div>
 
   {#if kind === "monster"}
-    <label for="add-search" class="sr-only">{t.search}</label>
-    <!-- svelte-ignore a11y_autofocus: the dialog's first job is the search -->
-    <input id="add-search" class="text-field" type="search" placeholder={t.search} autocomplete="off" bind:value={search} autofocus />
+    <div class="monster-row">
+      <label class="grow">
+        <span class="label">{t.search}</span>
+        <!-- svelte-ignore a11y_autofocus: the dialog's first job is the search -->
+        <input class="text-field" type="search" autocomplete="off" bind:value={search} autofocus />
+      </label>
+      <!-- Empty: the monster rolls its initiative when it's added. -->
+      <label class="init">
+        <span class="label">{t.initiative}</span>
+        <input class="text-field dice" type="number" min={-MAX_NUMBER} max={MAX_NUMBER} step="1" placeholder={t.roll} bind:value={initiative} />
+      </label>
+    </div>
     <ul class="found">
       {#each found as row (`${row.pack}/${row.index}`)}
         <li>
-          <button class="pick" onclick={() => pick({ kind: "monster", row })}>
+          <button class="pick" onclick={() => pick({ kind: "monster", row, initiative: whole(initiative) })}>
             <span>{row.name}</span>
             <span class="muted dice">CR {crText(row.fields.challenge_rating)}</span>
           </button>
@@ -141,8 +150,19 @@
     gap: var(--space-1);
   }
 
-  .numbers label {
+  .numbers label,
+  .grow {
     flex: 1;
+  }
+
+  .monster-row {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+  }
+
+  .monster-row .init input {
+    width: var(--level-input-width);
   }
 
   .found {

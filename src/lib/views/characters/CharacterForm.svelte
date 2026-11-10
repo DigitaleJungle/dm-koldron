@@ -111,7 +111,7 @@
     if (saving) return;
     saving = true;
     error = null;
-    const stats = ["maxHp", "currentHp", "tempHp", "ac", "passivePerception", "passiveInsight", "passiveInvestigation"] as const;
+    const stats = ["maxHp", "currentHp", "tempHp", "ac", "initiative", "passivePerception", "passiveInsight", "passiveInvestigation"] as const;
     const toSave: Character = { ...$state.snapshot(draft), classes: draft.classes.map((c) => ({ name: c.name, level: Number(c.level) })) };
     for (const key of stats) toSave[key] = stat(draft[key]);
     let saved: Character;
@@ -173,11 +173,14 @@
     if (pressedBackdrop && event.target === dialog) onclose();
   }
 
-  const stats: { key: "maxHp" | "currentHp" | "tempHp" | "ac" | "passivePerception" | "passiveInsight" | "passiveInvestigation"; label: string }[] = [
+  type StatKey = "maxHp" | "currentHp" | "tempHp" | "ac" | "initiative" | "passivePerception" | "passiveInsight" | "passiveInvestigation";
+  /** `min`: the initiative modifier can be negative; the rest can't. */
+  const stats: { key: StatKey; label: string; min?: number }[] = [
     { key: "maxHp", label: t.maxHp },
     { key: "currentHp", label: t.currentHp },
     { key: "tempHp", label: t.tempHp },
     { key: "ac", label: t.ac },
+    { key: "initiative", label: t.initiative, min: -MAX_STAT },
     { key: "passivePerception", label: t.passivePerception },
     { key: "passiveInsight", label: t.passiveInsight },
     { key: "passiveInvestigation", label: t.passiveInvestigation },
@@ -280,7 +283,7 @@
           {#each stats as s (s.key)}
             <label class="field">
               <span>{s.label}</span>
-              <input type="number" min="0" max={MAX_STAT} step="1" bind:value={draft[s.key]} />
+              <input type="number" min={s.min ?? 0} max={MAX_STAT} step="1" bind:value={draft[s.key]} />
             </label>
           {/each}
         </div>

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.18] - 2026-11-10
+
+### Added
+
+- Characters have an Initiative modifier (can be negative); it shows in search and on the Roll initiative step of Run, and breaks initiative ties.
+- + Combatant: a monster can be given its initiative instead of rolling it (left empty, it still rolls).
+
+### Changed
+
+- Run: the Amount field and the Damage, Heal and Temp HP buttons are more compact.
+- Encounters: the difficulty filter has no All button; pressing the pressed band again shows all encounters, as on the Characters screen.
+
 ## [0.4.17] - 2026-11-10
 
 ### Changed

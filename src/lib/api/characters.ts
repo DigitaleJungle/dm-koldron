@@ -14,6 +14,8 @@ export type Character = {
   currentHp: number | null;
   tempHp: number | null;
   ac: number | null;
+  /** The initiative modifier; can be negative. */
+  initiative: number | null;
   passivePerception: number | null;
   passiveInsight: number | null;
   passiveInvestigation: number | null;

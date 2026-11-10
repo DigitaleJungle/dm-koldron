@@ -246,7 +246,7 @@ mod tests {
             id: String::new(), name: "Mira".into(), player: "Lotte".into(),
             classes: vec![characters::ClassLevel { name: "Rogue".into(), level: 3 }],
             max_hp: None, current_hp: None, temp_hp: None, ac: None, passive_perception: None,
-            passive_insight: None, passive_investigation: None, on_home: false, created_at: 0, updated_at: 0, picture: None,
+            passive_insight: None, passive_investigation: None, initiative: None, on_home: false, created_at: 0, updated_at: 0, picture: None,
         };
         characters::save(&active_dir(&dirs, &a.id).unwrap(), mira, 5).unwrap();
         let (packs, _) = crate::packs::load_dir(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs")).unwrap();

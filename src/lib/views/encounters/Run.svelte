@@ -131,6 +131,7 @@
     maxHp: Math.max(0, c.maxHp ?? 0),
     tempHp: Math.max(0, c.tempHp ?? 0),
     ac: c.ac,
+    initiativeBonus: c.initiative ?? 0, // breaks initiative ties, as a monster's DEX modifier does
   });
 
   async function roll(bonus: number): Promise<number | null> {
@@ -302,6 +303,12 @@
     return "";
   }
 
+  /** Under a character on the Roll initiative step: its class line and PC, then its initiative modifier (to roll with). */
+  function setupLine(c: Combatant): string {
+    const bonus = c.kind === "character" ? characterById.get(c.character)?.initiative : null;
+    return [subLine(c), typeof bonus === "number" ? t.bonus(signed(bonus)) : ""].filter(Boolean).join(" · ");
+  }
+
   /** The selected combatant's line: "Fighter 5 · Player character · AC 18 · Init 19", "Undead · CR 5 · Init 16". */
   function selectedLine(c: Combatant): string {
     const init = t.initLine(c.initiative === null ? "–" : String(c.initiative));
@@ -399,7 +406,7 @@
     if (pick.kind === "monster") {
       const same = run.combatants.filter((x) => x.kind === "monster" && entryKey(x) === entryKey(pick.row)).length;
       c = await monsterCombatant(pick.row.pack, pick.row.index, same ? `${pick.row.name} ${same + 1}` : pick.row.name, crypto.randomUUID());
-      c.initiative = await roll(c.initiativeBonus);
+      c.initiative = pick.initiative ?? (await roll(c.initiativeBonus));
     } else if (pick.kind === "character") {
       // Its own group marks it as added (the party's characters have none), so a rebuilt run keeps it.
       c = { ...characterCombatant(pick.character, pick.initiative), group: crypto.randomUUID() };
@@ -565,7 +572,7 @@
             {@render hex(c)}
             <span class="setup-name">
               <strong>{c.name}</strong>
-              <span class="muted small">{subLine(c)}</span>
+              <span class="muted small">{setupLine(c)}</span>
             </span>
             <input class="text-field dice init-field" type="number" min={-R.MAX_NUMBER} max={R.MAX_NUMBER} aria-label={t.initiativeOf(c.name)} value={c.initiative ?? ""} oninput={(e) => setInitiative([c.id], typed(e))} />
             <span class="icon-btn-lg" aria-hidden="true"></span>
@@ -701,9 +708,9 @@
                   <span class="label">{t.amount}</span>
                   <input class="text-field dice amount-field" type="number" min="0" max={R.MAX_NUMBER} inputmode="numeric" bind:value={amount} />
                 </label>
-                <button class="btn btn-lg hp-damage" onclick={() => applyHp("damage")}>{t.damage}</button>
-                <button class="btn btn-lg hp-heal" onclick={() => applyHp("heal")}>{t.heal}</button>
-                <button class="btn btn-lg" onclick={() => applyHp("temp")}>{t.temp}</button>
+                <button class="btn hp-btn hp-damage" onclick={() => applyHp("damage")}>{t.damage}</button>
+                <button class="btn hp-btn hp-heal" onclick={() => applyHp("heal")}>{t.heal}</button>
+                <button class="btn hp-btn" onclick={() => applyHp("temp")}>{t.temp}</button>
               </div>
             </div>
             <div class="cond-row">
@@ -1350,12 +1357,17 @@
     font-size: var(--text-xl);
   }
 
+  /* Compact: the amount and its three buttons at the normal control height, close together. */
   .hp-controls {
     display: flex;
-    flex: 1 1 300px;
+    flex: none;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .hp-btn {
+    padding: 0 var(--space-3);
   }
 
   .amount {
@@ -1366,8 +1378,7 @@
 
   .amount-field {
     width: var(--run-amount-width);
-    min-height: var(--control-height-lg);
-    font-size: var(--text-xl);
+    font-size: var(--text-md);
   }
 
   .hp-damage {

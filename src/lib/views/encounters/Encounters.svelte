@@ -132,9 +132,9 @@
     <label for="encounter-search" class="sr-only">{t.list.search}</label>
     <input id="encounter-search" type="search" placeholder={t.list.search} autocomplete="off" bind:value={search} oninput={() => refine({ q: search || null })} />
     <div class="chips" role="group" aria-label={t.list.difficulty}>
-      <button class="chip" aria-pressed={band === null} onclick={() => refine({ band: null })}>{t.list.all}</button>
+      <!-- Pressing the pressed one again turns the filter off (all encounters), as on the Characters screen. -->
       {#each BANDS as b (b)}
-        <button class="chip" aria-pressed={band === b} onclick={() => refine({ band: b })}>{t.meter.bands[b]}</button>
+        <button class="chip" aria-pressed={band === b} onclick={() => refine({ band: band === b ? null : b })}>{t.meter.bands[b]}</button>
       {/each}
     </div>
     <label class="sort">

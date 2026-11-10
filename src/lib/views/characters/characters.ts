@@ -53,6 +53,7 @@ export const blankCharacter = (): Character => ({
   currentHp: null,
   tempHp: null,
   ac: null,
+  initiative: null,
   passivePerception: null,
   passiveInsight: null,
   passiveInvestigation: null,

@@ -39,6 +39,9 @@ pub struct Character {
     pub current_hp: Option<u32>,
     pub temp_hp: Option<u32>,
     pub ac: Option<u32>,
+    /// The initiative modifier (can be negative). Older files have none.
+    #[serde(default)]
+    pub initiative: Option<i32>,
     pub passive_perception: Option<u32>,
     pub passive_insight: Option<u32>,
     pub passive_investigation: Option<u32>,
@@ -245,6 +248,7 @@ mod tests {
             current_hp: Some(31),
             temp_hp: None,
             ac: Some(15),
+            initiative: Some(-1),
             passive_perception: Some(14),
             passive_insight: None,
             passive_investigation: None,
@@ -268,6 +272,10 @@ mod tests {
         let list = list(&dir).unwrap();
         assert_eq!(list.characters.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Brannoc", "Mira Ashvale"]);
         assert!(list.unreadable.is_empty());
+        assert_eq!(list.characters[1].initiative, Some(-1)); // a negative modifier is kept
+        // A file from before there was an initiative still reads, without one.
+        fs::write(dir.join(FOLDER).join("old.json"), r#"{"name":"Tavi","classes":[{"name":"Rogue","level":1}],"maxHp":null,"currentHp":null,"tempHp":null,"ac":null,"passivePerception":null,"passiveInsight":null,"passiveInvestigation":null}"#).unwrap();
+        assert_eq!(read(&dir.join(FOLDER), "old").unwrap().initiative, None);
     }
 
     #[test]

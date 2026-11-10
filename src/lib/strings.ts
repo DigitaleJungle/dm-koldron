@@ -93,6 +93,7 @@ export const strings = {
       currentHp: "Current HP",
       tempHp: "Temp HP",
       ac: "AC",
+      initiative: "Initiative",
       passivePerception: "Passive Perception",
       passiveInsight: "Passive Insight",
       passiveInvestigation: "Passive Investigation",
@@ -231,7 +232,6 @@ export const strings = {
     list: {
       search: "Search by name or monster",
       difficulty: "Filter by difficulty",
-      all: "All",
       sort: "Sort",
       byEdited: "Last edited",
       byName: "Name",
@@ -434,6 +434,7 @@ export const strings = {
         maxHp: "HP",
         ac: "AC",
         initiative: "Initiative",
+        roll: "Roll",
         cancel: "Cancel",
         add: "Add",
       },

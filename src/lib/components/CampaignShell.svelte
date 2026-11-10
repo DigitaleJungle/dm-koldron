@@ -65,6 +65,7 @@
     { href: `${base}/library`, label: t.library, icon: "ti-book", current: page.url.pathname.startsWith(`${base}/library`) },
     { href: `${base}/characters`, label: t.characters, icon: "ti-users", current: page.url.pathname.startsWith(`${base}/characters`) },
     { href: `${base}/encounters`, label: t.encounters, icon: "ti-swords", current: page.url.pathname.startsWith(`${base}/encounters`) },
+    { href: `${base}/sessions`, label: t.sessions, icon: "ti-notebook", current: page.url.pathname.startsWith(`${base}/sessions`) },
   ]);
 </script>
 

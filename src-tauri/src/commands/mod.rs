@@ -8,4 +8,5 @@ pub mod images;
 pub mod packs;
 pub mod rules;
 pub mod search;
+pub mod sessions;
 pub mod settings;

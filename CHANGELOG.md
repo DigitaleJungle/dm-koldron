@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0] - 2026-11-10
+
+### Added
+
+- Sessions screen in the campaign sidebar: a list of sessions (number, title, date and time, prep progress) with search and New session.
+- Session prep page: steps you add yourself (Note with rich text and @ tags; List as bulleted, numbered or checklist; one Encounter, new or picked, with Edit in builder and Run encounter), each marked ready, with the prep progress in the header.
+- Session page right column: the party with a note for the session, the campaign-wide Open threads (saved at once) and a To bring list.
+
 ## [0.4.18] - 2026-11-10
 
 ### Added

@@ -18,7 +18,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { BANDS, difficulty, monsterXp, type Band } from "./difficulty";
-  import { characterLevel, encounterParty, entryKey, rowsByKey } from "./roster";
+  import { characterLevel, encounterParty, entryKey, rowKeys, rowsByKey } from "./roster";
 
   const t = strings.encounters;
   const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
@@ -70,11 +70,13 @@
     }
   });
 
-  type Card = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; rows: RosterEntry[] };
+  type Card = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; rows: (RosterEntry & { key: string })[] };
 
   /** The monsters for the collage, strongest first: that one goes in the middle, the rest outward. */
-  const strongestFirst = (e: Encounter, xps: (number | null)[]) =>
-    e.monsters.map((m, i) => ({ m, xp: xps[i] ?? 0 })).sort((a, b) => b.xp - a.xp).map(({ m }) => m);
+  const strongestFirst = (e: Encounter, xps: (number | null)[]) => {
+    const keys = rowKeys(e.monsters); // a split group is its own hexagon
+    return e.monsters.map((m, i) => ({ m: { ...m, key: keys[i] }, xp: xps[i] ?? 0 })).sort((a, b) => b.xp - a.xp).map(({ m }) => m);
+  };
 
   function partyText(ids: string[]) {
     if (ids.length === 0) return t.list.noParty;
@@ -178,7 +180,7 @@
             <article class="card">
               <div class="art">
                 <HexCollage
-                  tiles={c.rows.map((r) => ({ key: entryKey(r), picture: pictures[entryKey(r)] ?? null, letter: r.name.charAt(0), count: r.quantity }))}
+                  tiles={c.rows.map((r) => ({ key: r.key, picture: pictures[entryKey(r)] ?? null, letter: r.name.charAt(0), count: r.quantity }))}
                   seed={c.id}
                   hexWidth="var(--encounter-hex-width)"
                 />
@@ -188,11 +190,10 @@
                   <!-- The name's link covers the whole card; Run sits above it. -->
                   <h2 class="name"><a class="open" href="{base}/{c.id}">{c.name}</a></h2>
                   {#if c.status === "ready"}
-                    <!-- Run is TODO 10. -->
-                    <button class="btn btn-primary run" disabled>
+                    <a class="btn btn-primary run" href="{base}/{c.id}/run">
                       {t.start}
                       <i class="ti ti-player-play" aria-hidden="true"></i>
-                    </button>
+                    </a>
                   {:else}
                     <span class="status">{t.list.draft}</span>
                   {/if}

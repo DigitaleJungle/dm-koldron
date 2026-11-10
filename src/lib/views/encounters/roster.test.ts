@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
 import type { Character } from "$lib/api/characters";
 import { blankCharacter } from "$lib/views/characters/characters";
-import { addToRoster, characterLevel, encounterParty, MAX_QUANTITY, rowsByKey } from "./roster";
+import { addToRoster, characterLevel, encounterParty, MAX_QUANTITY, rowKeys, rowsByKey, splitRow } from "./roster";
 
 const goblin = (pack: string, others: CatalogRow["others"] = []): CatalogRow => ({
   kind: "monsters",
@@ -50,5 +50,26 @@ describe("roster", () => {
     expect(characterLevel([])).toBeNull();
     expect(characterLevel(undefined)).toBeNull();
     expect(characterLevel([cls(Number.NaN)])).toBeNull();
+  });
+});
+
+describe("split groups", () => {
+  const row = (quantity: number, index = "goblin") => ({ pack: "srd", index, name: index, source: "SRD", quantity });
+
+  it("splits in half beside the row, the odd one in the first, and never a single monster", () => {
+    expect(splitRow([row(1, "orc"), row(5), row(2, "wolf")], 1).map((r) => [r.index, r.quantity])).toEqual([
+      ["orc", 1],
+      ["goblin", 3],
+      ["goblin", 2],
+      ["wolf", 2],
+    ]);
+    const single = [row(1)];
+    expect(splitRow(single, 0)).toBe(single);
+  });
+
+  it("gives every row its own key, and adding the same monster raises the first group", () => {
+    const roster = splitRow([row(4)], 0);
+    expect(rowKeys([...roster, row(1, "orc")])).toEqual(["srd/goblin", "srd/goblin#2", "srd/orc"]);
+    expect(addToRoster(roster, { ...goblin("srd"), index: "goblin" }).map((r) => r.quantity)).toEqual([3, 2]);
   });
 });

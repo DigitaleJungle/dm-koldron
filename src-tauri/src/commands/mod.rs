@@ -2,6 +2,7 @@ pub mod about;
 pub mod campaigns;
 pub mod catalog;
 pub mod characters;
+pub mod dice;
 pub mod encounters;
 pub mod images;
 pub mod packs;

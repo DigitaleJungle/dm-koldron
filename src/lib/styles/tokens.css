@@ -189,6 +189,12 @@
   --encounter-art-height: 208px;
   --encounter-hex-width: 64px;
   --entry-picture-size: 400px;
+  /* Encounters → Run: the initiative column, the DM notes column, the amount field, an HP bar, the map dialog. */
+  --run-order-width: 420px;
+  --run-notes-width: 380px;
+  --run-amount-width: 80px;
+  --run-bar-height: 6px;
+  --run-map-width: 1120px;
   --meter-width: 200px; /* the right column of the encounter builder: the meter and the buttons under it */
   --meter-height: 240px; /* the scale at its smallest; it grows to fill the column */
   --dialog-width: 440px;

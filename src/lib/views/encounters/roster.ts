@@ -6,6 +6,29 @@ import type { PartyMode, RosterEntry } from "$lib/api/encounters";
 /** A pack entry's key: the same name in two packs stays two rows. */
 export const entryKey = (e: { pack: string; index: string }) => `${e.pack}/${e.index}`;
 
+/**
+ * Each roster row's own key: its entry key, then "#2", "#3"… for later rows of the same monster (a split group).
+ * shortcut: removing an earlier row of a monster shifts the later ones' keys, so their tiles animate as if swapped;
+ * give rows a stored id if that ever matters.
+ */
+export function rowKeys(roster: { pack: string; index: string }[]): string[] {
+  const seen = new Map<string, number>();
+  return roster.map((r) => {
+    const key = entryKey(r);
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    return n === 1 ? key : `${key}#${n}`;
+  });
+}
+
+/** Splits the row at `i` (×2 or more) into two groups beside each other, the odd one in the first: ×5 → ×3 + ×2. */
+export function splitRow(roster: RosterEntry[], i: number): RosterEntry[] {
+  const row = roster[i];
+  if (!row || row.quantity < 2) return roster;
+  const second = Math.floor(row.quantity / 2);
+  return [...roster.slice(0, i), { ...row, quantity: row.quantity - second }, { ...row, quantity: second }, ...roster.slice(i + 1)];
+}
+
 /** The most of one monster in a roster; Rust refuses to save more. */
 export const MAX_QUANTITY = 999;
 

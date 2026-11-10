@@ -24,7 +24,7 @@
   import NotesPanel, { TOPICS, TOPIC_ICONS, type Topic } from "./NotesPanel.svelte";
   import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
-  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowsByKey } from "./roster";
+  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowKeys, rowsByKey, splitRow } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -298,7 +298,9 @@
 
   // Clicking a tile opens its full stat block in a card under the tiles; again (or ✕) closes it.
   let detailsKey = $state<string | null>(null);
-  const detailsRow = $derived(roster.find((r) => entryKey(r) === detailsKey) ?? null); // gone when removed
+  /** Each tile's key (a split group has its own). */
+  const keys = $derived(rowKeys(roster));
+  const detailsRow = $derived(roster[keys.indexOf(detailsKey ?? "")] ?? null); // gone when removed
   // Only which monster is open matters to the stat block: + and − replace its roster entry but mustn't reload it.
   const detailsOpenKey = $derived(detailsRow ? entryKey(detailsRow) : null);
   let detailsEntry = $state<CatalogEntry | null>(null);
@@ -323,8 +325,8 @@
   // the notes; one at a time, opened by the buttons under the meter or a monster's tile.
   type Panel = Topic | "party";
   let topic = $state<Panel | null>(null);
-  function toggleDetails(row: RosterEntry) {
-    detailsKey = detailsKey === entryKey(row) ? null : entryKey(row);
+  function toggleDetails(key: string) {
+    detailsKey = detailsKey === key ? null : key;
     topic = null;
   }
   function toggleTopic(next: Panel) {
@@ -401,11 +403,10 @@
         <button class="icon-btn icon-btn-lg" aria-label={t.toDraft} disabled={saving} onclick={() => save("draft")}>
           <i class="ti ti-pencil" aria-hidden="true"></i>
         </button>
-        <!-- Run is TODO 10. -->
-        <button class="btn btn-primary" disabled>
+        <a class="btn btn-primary run" href="{base}/{encounter?.id}/run">
           {t.start}
           <i class="ti ti-player-play" aria-hidden="true"></i>
-        </button>
+        </a>
       {:else}
         <button class="btn" disabled={saving || !changed} onclick={() => save()}>
           <i class="ti ti-device-floppy" aria-hidden="true"></i>
@@ -527,17 +528,17 @@
             {/if}
             <!-- Always there, so the first tile added and the last one removed animate too. -->
             <ul class="roster">
-              {#each roster as row, i (entryKey(row))}
+              {#each roster as row, i (keys[i])}
                 {@const known = byKey.get(entryKey(row))}
                 {@const picture = pictures[entryKey(row)]}
                 {@const xp = rosterXp[i]}
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions: the name is the keyboard's button; the whole tile is clickable for the mouse -->
                 <li
                   class="tile"
-                  class:open={detailsKey === entryKey(row)}
+                  class:open={detailsKey === keys[i]}
                   transition:scale={cardMotion()}
                   animate:flip={{ duration: cardMotion().duration }}
-                  onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(row)}
+                  onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(keys[i])}
                 >
                   {#if !locked}
                     <button class="icon-btn tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
@@ -568,8 +569,14 @@
                   </div>
                   <div class="tile-who">
                     <h3>
-                      <button class="tile-name" aria-expanded={detailsKey === entryKey(row)} aria-controls="monster-details" onclick={() => toggleDetails(row)}>{row.name}</button>
+                      <button class="tile-name" aria-expanded={detailsKey === keys[i]} aria-controls="monster-details" onclick={() => toggleDetails(keys[i])}>{row.name}</button>
                     </h3>
+                    {#if !locked && row.quantity > 1}
+                      <!-- Two groups of the same monster, each rolling its own initiative in Run. -->
+                      <button class="icon-btn tile-split" aria-label={t.roster.split(row.name)} onclick={() => (roster = splitRow(roster, i))}>
+                        <i class="ti ti-arrows-split" aria-hidden="true"></i>
+                      </button>
+                    {/if}
                     <!-- Its pack is off: the source says where it came from. -->
                     {#if !known}<p class="tile-meta">{row.source}</p>{/if}
                     <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
@@ -726,6 +733,10 @@
   .name-field {
     flex: 1;
     min-width: 0;
+  }
+
+  .run {
+    text-decoration: none;
   }
 
   .name-field input,
@@ -1017,6 +1028,19 @@
     right: var(--space-1);
     width: var(--roster-touch-size);
     height: var(--roster-touch-size);
+  }
+
+  /* Bottom-right, across from nothing: splitting is rarer than removing. */
+  .tile-split {
+    position: absolute;
+    right: var(--space-1);
+    bottom: var(--space-1);
+    width: var(--roster-touch-size);
+    height: var(--roster-touch-size);
+  }
+
+  .minimized .tile-split {
+    display: none;
   }
 
   .tile-remove:hover {

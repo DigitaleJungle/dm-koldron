@@ -1,5 +1,6 @@
 mod bundles;
 mod commands;
+mod dice;
 mod packs;
 mod storage;
 mod window_state;
@@ -50,11 +51,15 @@ pub fn run() {
             commands::characters::save_character,
             commands::characters::delete_character,
             commands::characters::set_character_picture,
+            commands::dice::roll_dice,
             commands::encounters::list_encounters,
             commands::encounters::get_encounter,
             commands::encounters::save_encounter,
             commands::encounters::set_encounter_map,
             commands::encounters::encounter_budgets,
+            commands::encounters::get_run,
+            commands::encounters::save_run,
+            commands::encounters::end_run,
             commands::images::list_pack_images,
             commands::images::entry_image,
             commands::images::download_images,

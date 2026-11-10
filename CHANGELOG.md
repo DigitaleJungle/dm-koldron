@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.16] - 2026-11-10
+
+### Added
+
+- Encounters → Run: roll initiative (one roll per monster group, or separately; characters typed in), then step through turns with Next turn (Space) and Previous, rounds and the active turn.
+- Run tracks HP (damage takes temp HP first, heal, temp HP), conditions (monster immunities can't be picked), concentration, and death saves for downed characters, with Bloodied, Down, Defeated, Stable and Dead states.
+- Run shows the selected monster's full stat block or a character's passive scores, the encounter's notes, an encounter log (automatic and typed entries) and the map with its pins.
+- + Combatant during a run: a monster from the packs, a campaign character or a custom one.
+- End encounter can write the characters' HP back to them; a running encounter is saved as it changes and offers Continue or Start over when reopened.
+- Prepare: split a group of monsters in half, so the same monster can fight as two groups with their own initiative.
+
+### Changed
+
+- The Run buttons on the encounter list and in Prepare are now active.
+
 ## [0.4.15] - 2026-11-08
 
 ### Changed

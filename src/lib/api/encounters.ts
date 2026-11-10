@@ -36,6 +36,41 @@ export type EncounterList = { encounters: Encounter[]; unreadable: string[] };
 /** XP per character of one level for the three 2024 difficulties, from the packs' `encounter-budgets`. */
 export type Budget = { level: number; low: number; moderate: number; high: number };
 
+/** A condition on a combatant, from a pack's conditions. */
+export type Condition = { index: string; name: string };
+
+/** One line of the encounter log: the round, whose turn it was, and what happened. */
+export type LogEntry = { round: number; actor: string; text: string };
+
+export type CombatantKind = "monster" | "character" | "custom";
+
+/** Mirrors `Combatant` in src-tauri/src/commands/encounters.rs. A monster has `pack` and `index`, a character
+ *  `character` (its id); `group`: monsters sharing one initiative roll. HP are whole numbers ≥ 0; `maxHp` 0: unknown. */
+export type Combatant = {
+  id: string;
+  kind: CombatantKind;
+  pack: string;
+  index: string;
+  character: string;
+  group: string;
+  name: string;
+  initiative: number | null;
+  initiativeBonus: number;
+  hp: number;
+  maxHp: number;
+  tempHp: number;
+  ac: number | null;
+  concentrating: boolean;
+  conditions: Condition[];
+  /** A downed character's death saving throws, 0 to 3 each. */
+  deathSuccesses: number;
+  deathFailures: number;
+};
+
+/** Mirrors `Run`: a running encounter, saved beside it as it changes. `round` 0: rolling initiative, before Start.
+ *  `turn`: index into `combatants`, which are kept in initiative order. `log`: newest first. `savedAt`: ms, set by Rust. */
+export type Run = { round: number; turn: number; combatants: Combatant[]; log: LogEntry[]; savedAt: number };
+
 // All of these reject with a StorageError.
 export function listEncounters(campaign: string): Promise<EncounterList> {
   return invoke("list_encounters", { campaign });
@@ -53,6 +88,21 @@ export function saveEncounter(campaign: string, encounter: Encounter): Promise<E
 /** Makes the picture file at `path` (from `choosePictureFile`) a saved encounter's map, or removes it (`null`). */
 export function setEncounterMap(campaign: string, id: string, path: string | null): Promise<Picture | null> {
   return invoke("set_encounter_map", { campaign, id, path });
+}
+
+/** The encounter's run, or null when it isn't running. */
+export function getRun(campaign: string, encounter: string): Promise<Run | null> {
+  return invoke("get_run", { campaign, encounter });
+}
+
+/** Saves the run (atomically, after checking it). Returns it as saved. */
+export function saveRun(campaign: string, encounter: string, run: Run): Promise<Run> {
+  return invoke("save_run", { campaign, encounter, run });
+}
+
+/** Ends the run: removes its file. */
+export function endRun(campaign: string, encounter: string): Promise<void> {
+  return invoke("end_run", { campaign, encounter });
 }
 
 /** The budget table of the first switched-on pack that has one; empty when none has. */

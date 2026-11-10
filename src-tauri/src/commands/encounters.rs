@@ -226,6 +226,169 @@ pub fn set_map(campaign_dir: &Path, id: &str, source: Option<&Path>) -> Result<O
     Ok(picture_at(&path))
 }
 
+const MAX_COMBATANTS: usize = 1000;
+const MAX_ID_LEN: usize = 64;
+const MAX_CONDITIONS: usize = 50;
+const MAX_LOG: usize = 1000;
+const MAX_LOG_TEXT: usize = 500;
+const DEATH_SAVES: u8 = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CombatantKind {
+    Monster,
+    Character,
+    Custom,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Condition {
+    pub index: String,
+    pub name: String,
+}
+
+/// One line of the encounter log: the round and whose turn it was, and what happened.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEntry {
+    pub round: u32,
+    pub actor: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Combatant {
+    pub id: String,
+    pub kind: CombatantKind,
+    #[serde(default)]
+    pub pack: String,
+    #[serde(default)]
+    pub index: String,
+    #[serde(default)]
+    pub character: String,
+    #[serde(default)]
+    pub group: String,
+    pub name: String,
+    #[serde(default)]
+    pub initiative: Option<i32>,
+    #[serde(default)]
+    pub initiative_bonus: i32,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub temp_hp: i32,
+    #[serde(default)]
+    pub ac: Option<i32>,
+    #[serde(default)]
+    pub concentrating: bool,
+    #[serde(default)]
+    pub conditions: Vec<Condition>,
+    /// A downed character's death saving throws, 0 to 3 each.
+    #[serde(default)]
+    pub death_successes: u8,
+    #[serde(default)]
+    pub death_failures: u8,
+}
+
+/// A fight in progress, saved beside its encounter as `encounters/<id>.run.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Run {
+    /// 0 = setup, before Start.
+    pub round: u32,
+    /// Index into `combatants`.
+    pub turn: u32,
+    pub combatants: Vec<Combatant>,
+    /// Newest first.
+    #[serde(default)]
+    pub log: Vec<LogEntry>,
+    /// Milliseconds since the Unix epoch; set by `save_run`.
+    #[serde(default)]
+    pub saved_at: u64,
+}
+
+fn check_run(run: &mut Run) -> Result<(), StorageError> {
+    let mut problems = Vec::new();
+    if run.combatants.len() > MAX_COMBATANTS {
+        problems.push(format!("A fight can have at most {MAX_COMBATANTS} combatants."));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for c in &mut run.combatants {
+        c.name = c.name.trim().into();
+        if !(1..=MAX_ID_LEN).contains(&c.id.chars().count()) || !ids.insert(c.id.clone()) {
+            problems.push("Each combatant needs its own id of 1 to 64 characters.".into());
+        }
+        if !(1..=MAX_NAME_LEN).contains(&c.name.chars().count()) {
+            problems.push(format!("A name must be 1 to {MAX_NAME_LEN} characters."));
+        }
+        if c.hp < 0 || c.max_hp < 0 || c.temp_hp < 0 {
+            problems.push("HP can't be negative.".into());
+        }
+        if c.kind == CombatantKind::Monster && (c.pack.is_empty() || c.index.is_empty()) {
+            problems.push("A monster needs its pack and index.".into());
+        }
+        if c.kind == CombatantKind::Character && c.character.is_empty() {
+            problems.push("A character combatant needs its character.".into());
+        }
+        if c.conditions.len() > MAX_CONDITIONS {
+            problems.push(format!("A combatant can have at most {MAX_CONDITIONS} conditions."));
+        }
+        if c.conditions.iter().any(|k| !(1..=MAX_ID_LEN).contains(&k.index.chars().count()) || !(1..=MAX_NAME_LEN).contains(&k.name.chars().count())) {
+            problems.push("A condition needs an index and a name.".into());
+        }
+    }
+    if run.combatants.iter().any(|c| c.death_successes > DEATH_SAVES || c.death_failures > DEATH_SAVES) {
+        problems.push(format!("Death saves go up to {DEATH_SAVES}."));
+    }
+    if run.log.len() > MAX_LOG {
+        problems.push(format!("The log can have at most {MAX_LOG} entries."));
+    }
+    if run.log.iter().any(|l| l.actor.chars().count() > MAX_NAME_LEN || !(1..=MAX_LOG_TEXT).contains(&l.text.chars().count())) {
+        problems.push(format!("A log entry must be 1 to {MAX_LOG_TEXT} characters."));
+    }
+    if run.turn as usize >= run.combatants.len().max(1) {
+        problems.push("The turn must point at a combatant.".into());
+    }
+    problems.dedup();
+    if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
+}
+
+fn run_path(folder: &Path, id: &str) -> PathBuf {
+    folder.join(format!("{id}.run.json"))
+}
+
+pub fn get_run_at(campaign_dir: &Path, id: &str) -> Result<Option<Run>, StorageError> {
+    check_id(id, "encounter")?;
+    let folder = campaign_dir.join(FOLDER);
+    read(&folder, id)?; // NotFound when the encounter itself is gone
+    match fs::read_to_string(run_path(&folder, id)) {
+        Ok(text) => serde_json::from_str(&text).map(Some).map_err(|e| StorageError::Corrupt(e.to_string())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn save_run_at(campaign_dir: &Path, id: &str, mut run: Run, now: u64) -> Result<Run, StorageError> {
+    check_id(id, "encounter")?;
+    check_run(&mut run)?;
+    let folder = campaign_dir.join(FOLDER);
+    let _guard = lock_update();
+    read(&folder, id)?;
+    run.saved_at = now;
+    write_atomic(&run_path(&folder, id), &to_json(&run)?)?;
+    Ok(run)
+}
+
+pub fn end_run_at(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
+    check_id(id, "encounter")?;
+    let _guard = lock_update();
+    match fs::remove_file(run_path(&campaign_dir.join(FOLDER), id)) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
+}
+
 /// The budget table of the first switched-on pack that has one (a ruleset's pack); empty when none has.
 pub fn budgets(packs: &[&Pack]) -> Vec<Budget> {
     let Some(rows) = packs.iter().find_map(|p| p.entries.get("encounter-budgets")) else { return Vec::new() };
@@ -259,6 +422,21 @@ pub async fn set_encounter_map(app: AppHandle, campaign: String, id: String, pat
 #[tauri::command]
 pub async fn encounter_budgets(app: AppHandle) -> Result<Vec<Budget>, StorageError> {
     blocking(move || Ok(budgets(&enabled(&loaded(&app)?.0, &disabled(&app)?)))).await
+}
+
+#[tauri::command]
+pub async fn get_run(app: AppHandle, campaign: String, encounter: String) -> Result<Option<Run>, StorageError> {
+    blocking(move || get_run_at(&active_dir(&dirs(&app)?, &campaign)?, &encounter)).await
+}
+
+#[tauri::command]
+pub async fn save_run(app: AppHandle, campaign: String, encounter: String, run: Run) -> Result<Run, StorageError> {
+    blocking(move || save_run_at(&active_dir(&dirs(&app)?, &campaign)?, &encounter, run, now_ms())).await
+}
+
+#[tauri::command]
+pub async fn end_run(app: AppHandle, campaign: String, encounter: String) -> Result<(), StorageError> {
+    blocking(move || end_run_at(&active_dir(&dirs(&app)?, &campaign)?, &encounter)).await
 }
 
 #[cfg(test)]
@@ -355,6 +533,58 @@ mod tests {
         let damaged = Encounter { id: "b".into(), ..encounter("A", vec![]) };
         assert!(matches!(save(&dir, damaged, 1), Err(StorageError::Corrupt(_))));
         assert_eq!(fs::read_to_string(dir.join(FOLDER).join("b.json")).unwrap(), "{ nope");
+    }
+
+    fn combatant(id: &str) -> Combatant {
+        Combatant { id: id.into(), kind: CombatantKind::Monster, pack: "srd".into(), index: "goblin-warrior".into(), character: String::new(), group: String::new(), name: "Goblin".into(), initiative: Some(12), initiative_bonus: 2, hp: 7, max_hp: 7, temp_hp: 0, ac: Some(15), concentrating: false, conditions: vec![], death_successes: 0, death_failures: 0 }
+    }
+
+    fn run_of(combatants: Vec<Combatant>) -> Run {
+        Run { round: 1, turn: 0, combatants, log: vec![LogEntry { round: 1, actor: "Goblin".into(), text: "Lysa took 5 damage.".into() }], saved_at: 0 }
+    }
+
+    #[test]
+    fn saves_and_reads_a_run_ends_it_and_list_ignores_it() {
+        let dir = temp_dir("run");
+        let e = save(&dir, encounter("Bridge", vec![goblins(2)]), 1).unwrap();
+        assert_eq!(get_run_at(&dir, &e.id).unwrap(), None);
+        end_run_at(&dir, &e.id).unwrap(); // nothing to remove is fine
+        let mut first = combatant("a");
+        first.conditions = vec![Condition { index: "prone".into(), name: "Prone".into() }];
+        let saved = save_run_at(&dir, &e.id, run_of(vec![first, combatant("b")]), 55).unwrap();
+        assert_eq!(saved.saved_at, 55);
+        assert_eq!(get_run_at(&dir, &e.id).unwrap(), Some(saved));
+        let listed = list(&dir).unwrap();
+        assert_eq!((listed.encounters.len(), listed.unreadable.len()), (1, 0));
+        end_run_at(&dir, &e.id).unwrap();
+        assert_eq!(get_run_at(&dir, &e.id).unwrap(), None);
+    }
+
+    #[test]
+    fn rejects_bad_runs_unknown_encounters_and_keeps_a_damaged_run() {
+        let dir = temp_dir("run-rules");
+        let e = save(&dir, encounter("Bridge", vec![]), 1).unwrap();
+        let bad = |run: Run| matches!(save_run_at(&dir, &e.id, run, 2), Err(StorageError::Invalid(_)));
+        assert!(bad(run_of(vec![combatant("a"), combatant("a")])));
+        assert!(bad(run_of(vec![Combatant { name: " ".into(), ..combatant("a") }])));
+        assert!(bad(Run { turn: 1, ..run_of(vec![combatant("a")]) }));
+        assert!(bad(Run { turn: 1, ..run_of(vec![]) }));
+        assert!(bad(run_of(vec![Combatant { pack: String::new(), ..combatant("a") }])));
+        assert!(bad(run_of(vec![Combatant { hp: -1, ..combatant("a") }])));
+        assert!(bad(run_of(vec![Combatant { death_failures: 4, ..combatant("a") }])));
+        let empty_note = LogEntry { round: 1, actor: String::new(), text: String::new() };
+        assert!(bad(Run { log: vec![empty_note], ..run_of(vec![combatant("a")]) }));
+        // Older run files, with condition durations and no log or death saves, still read.
+        let older = r#"{"round":1,"turn":0,"combatants":[{"id":"a","kind":"custom","name":"Ally","hp":5,"maxHp":5,"tempHp":0,
+            "conditions":[{"index":"prone","name":"Prone","endsRound":3}]}]}"#;
+        let read: Run = serde_json::from_str(older).unwrap();
+        assert_eq!((read.log.len(), read.combatants[0].death_failures), (0, 0));
+        assert!(matches!(get_run_at(&dir, "nope"), Err(StorageError::NotFound(_))));
+        assert!(matches!(save_run_at(&dir, "nope", run_of(vec![]), 2), Err(StorageError::NotFound(_))));
+        let path = dir.join(FOLDER).join(format!("{}.run.json", e.id));
+        fs::write(&path, "{ nope").unwrap();
+        assert!(matches!(get_run_at(&dir, &e.id), Err(StorageError::Corrupt(_))));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{ nope");
     }
 
     #[test]

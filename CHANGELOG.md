@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.3] - 2026-11-11
+
+### Changed
+
+- Sessions: session prep rebuilt around scenes. Each scene has what happens, a location, linked NPCs, linked encounters, its own checklist and a Ready state; locations and NPCs are shared across the session, with Previously, Premise and a session checklist in an Across session column (one section open at a time).
+- Sessions: location, NPC and encounter cards can be dragged onto a scene; the scene's dropdowns do the same from the keyboard. Encounters lists the campaign's encounters that are ready to run, and Manage encounters opens the Encounters screen.
+- Sessions: changes save automatically; leaving after a failed save asks Stay or Leave anyway. New session creates the session at once.
+- Sessions: the header shows the party's hexagon collage, a party note, counts for scenes, NPCs and checklist items, and a Run session button (disabled for now).
+- Sessions: two sessions can no longer have the same number.
+- Sessions: the Note, List, Encounter and Map steps, To bring and Open threads are gone; sessions saved in the step format open without their steps.
+
 ## [0.5.2] - 2026-11-10
 
 ### Added

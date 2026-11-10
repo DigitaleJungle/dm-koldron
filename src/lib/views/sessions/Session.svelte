@@ -1,27 +1,32 @@
 <script lang="ts">
-  // Sessions → one session: the header (number, title, date, time, players, prep progress) stays put; the steps, the
-  // open step and the right column each scroll inside their own column. Leaving with unsaved changes asks Save /
-  // Don't save / Cancel. A new session (id null) gets its address once it's saved.
+  // Sessions → one session: the header (party collage, number and title, date, time, players, party note, counts, Run
+  // session) stays put; the scenes, the editor and Across session each scroll inside their own column. Every change
+  // saves itself a second after the last one, and before leaving. A new session (id null) is created at once, then
+  // opened at its own address.
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import { tick } from "svelte";
   import BackButton from "$lib/components/BackButton.svelte";
+  import HexCollage from "$lib/components/HexCollage.svelte";
+  import { pictureSrc } from "$lib/api/campaigns";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, listEncounters, saveEncounter, type Budget, type Encounter } from "$lib/api/encounters";
-  import { deleteSession, getSession, listSessions, saveSession, setSessionMap, type Session, type Step, type StepKind } from "$lib/api/sessions";
+  import { encounterBudgets, listEncounters, type Budget, type Encounter } from "$lib/api/encounters";
+  import { deleteSession, getSession, listSessions, saveSession, type Session } from "$lib/api/sessions";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing, keepScroll } from "$lib/stores/history.svelte";
-  import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { difficulty, monsterXp } from "$lib/views/encounters/difficulty";
   import { characterLevel, encounterParty, entryKey, rowsByKey } from "$lib/views/encounters/roster";
+  import Checklist from "./Checklist.svelte";
+  import ManageLocations from "./ManageLocations.svelte";
+  import ManageNpcs from "./ManageNpcs.svelte";
+  import SceneEditor from "./SceneEditor.svelte";
+  import SceneList from "./SceneList.svelte";
   import SessionAside from "./SessionAside.svelte";
-  import StepList from "./StepList.svelte";
-  import StepPanel from "./StepPanel.svelte";
-  import { newStep, nextNumber, readyCount } from "./sessions";
+  import { checkCounts, linkTo, newScene, nextNumber, readyToRun, type Linkable, type Pane, type Section } from "./sessions";
 
   /** The saved session to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -31,51 +36,55 @@
   const campaign = campaigns.current!.id;
   const base = `/campaign/${campaign}/sessions`;
   const encountersBase = `/campaign/${campaign}/encounters`;
+  const AUTOSAVE_MS = 1000;
+
+  const blank = (number: number): Session => ({
+    id: "",
+    number,
+    title: t.newTitle,
+    date: null,
+    time: null,
+    partyNote: "",
+    previously: "",
+    premise: "",
+    scenes: [],
+    locations: [],
+    npcs: [],
+    checklist: [],
+    updated: 0,
+  });
 
   // ---- Loading -----------------------------------------------------------------------------------
   let loadError = $state<string | null>(null);
-  let draft = $state<Session>({ id: "", number: 1, title: "", date: null, time: null, steps: [], partyNote: "", toBring: [], updated: 0 });
-  let selected = $state<string | null>(null);
+  let draft = $state<Session>(blank(1));
   /** What was last saved (or loaded), to tell whether there are changes. Null until it has loaded. */
   let baseline = $state<string | null>(null);
+  const snapshot = () => JSON.stringify({ ...draft, updated: 0 });
 
-  // A Map step's picture is stored at once, not with Save, so it isn't a change.
-  const snapshot = () => JSON.stringify({ ...draft, title: draft.title.trim(), updated: 0, steps: draft.steps.map((s) => ({ ...s, map: null })) });
-  /** The Map steps as last saved (or loaded): only those can be given a picture. */
-  let savedMaps = $state(new Set<string>());
-  const mapsOf = (s: Session) => new Set(s.steps.filter((st) => st.kind === "map").map((st) => st.id));
-
-  /** Sets a Map step's picture. A step not saved yet (or a new session) is saved first, as New encounter does. */
-  function mapSetter(step: Step) {
-    return async (path: string | null) => {
-      if (!draft.id || !savedMaps.has(step.id)) {
-        if (!(await save(false))) throw new Error(saveError ?? t.saveError(""));
-      }
-      step.map = await setSessionMap(campaign, draft.id, step.id, path);
-      // A new session gets its own address once it has its map.
-      if (!id) {
-        leaving = true;
-        await gotoReplacing(`${base}/${draft.id}`);
-      }
-    };
-  }
+  /** Left already: a new session created after that doesn't take you back to it. */
+  let gone = false;
+  $effect(() => () => (gone = true));
 
   // svelte-ignore state_referenced_locally
-  const opening = id ? getSession(campaign, id) : listSessions(campaign).then((l) => nextNumber(l.sessions));
-  opening.then(
-    (opened) => {
-      if (typeof opened === "number") draft.number = opened;
-      else {
+  if (id) {
+    getSession(campaign, id).then(
+      (opened) => {
         draft = opened;
-        savedMaps = mapsOf(opened);
-      }
-      selected = draft.steps[0]?.id ?? null;
-      baseline = snapshot();
-    },
-    (err) => (loadError = t.openError(errorMessage(err))),
-  );
+        selected = opened.scenes[0]?.id ?? null;
+        baseline = snapshot();
+      },
+      (err) => (loadError = t.openError(errorMessage(err))),
+    );
+  } else {
+    listSessions(campaign)
+      .then((l) => saveSession(campaign, blank(nextNumber(l.sessions))))
+      .then(
+        (created) => (gone ? undefined : gotoReplacing(`${base}/${created.id}`)),
+        (err) => (loadError = t.openError(errorMessage(err))),
+      );
+  }
 
-  // What the encounter step and the party need; without it they show no rating or no one.
+  // What the encounters and the party need; without it they show no rating or no one.
   let all = $state<Encounter[] | null>(null);
   let encounterError = $state<string | null>(null);
   let characters = $state<Character[] | null>(null);
@@ -83,7 +92,7 @@
   let budgets = $state<Budget[]>([]);
   listEncounters(campaign).then(
     (l) => (all = l.encounters),
-    (err) => (encounterError = t.items.loadError(errorMessage(err))),
+    (err) => (encounterError = t.encounters.loadError(errorMessage(err))),
   );
   listCharacters(campaign).then((l) => (characters = l.characters), () => {});
   catalogRows("monsters", ["xp"]).then((rows) => (monsters = rows), () => {});
@@ -92,6 +101,9 @@
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
   const party = $derived(encounterParty("party", [], characters).flatMap((cid) => characterById.get(cid) ?? [])); // as in Prepare
+  const encounterById = $derived(new Map((all ?? []).map((x) => [x.id, x])));
+  const ready = $derived(all ? readyToRun(all) : null);
+  const fmt = new Intl.NumberFormat();
 
   /** Difficulty and XP as the Encounters cards compute them. */
   function rate(encounter: Encounter) {
@@ -101,27 +113,72 @@
     return { band: result.band, xp: result.total };
   }
 
-  // ---- Steps -------------------------------------------------------------------------------------
-  const index = $derived(draft.steps.findIndex((s) => s.id === selected));
-  const ready = $derived(readyCount(draft.steps));
-
-  function addStep(kind: StepKind) {
-    const step = newStep(kind);
-    draft.steps.push(step);
-    selected = step.id;
+  const encounterName = (eid: string) => encounterById.get(eid)?.name ?? (all === null ? t.loading : t.encounters.missing);
+  function encounterMeta(eid: string): string | null {
+    const x = encounterById.get(eid);
+    if (!x) return null;
+    const r = rate(x);
+    return `${r.band ? e.meter.bands[r.band] : e.meter.noRating} · ${t.encounters.xp(fmt.format(r.xp))}`;
   }
 
-  function removeStep(id: string) {
-    const at = draft.steps.findIndex((s) => s.id === id);
+  // ---- What the editor shows ---------------------------------------------------------------------
+  /** The open scene, unless a full view (`pane`) is open instead. */
+  let selected = $state<string | null>(null);
+  let pane = $state<Pane | null>(null);
+  let section = $state<Section | null>(null);
+  const index = $derived(pane ? -1 : draft.scenes.findIndex((s) => s.id === selected));
+  const counts = $derived(checkCounts(draft));
+
+  function openScene(sid: string) {
+    selected = sid;
+    pane = null;
+  }
+
+  function addScene() {
+    const scene = newScene();
+    draft.scenes.push(scene);
+    openScene(scene.id);
+  }
+
+  function removeScene() {
+    const at = index;
     if (at < 0) return;
-    draft.steps.splice(at, 1);
-    if (selected === id) selected = (draft.steps[Math.min(at, draft.steps.length - 1)] ?? null)?.id ?? null;
+    draft.scenes.splice(at, 1);
+    selected = draft.scenes[Math.max(0, at - 1)]?.id ?? null;
+  }
+
+  // ---- Drag and drop -----------------------------------------------------------------------------
+  let dragged = $state<{ item: Linkable; name: string } | null>(null);
+  let overEditor = $state(false);
+  let lastDrop = $state("");
+
+  function startDrag(item: Linkable, name: string) {
+    dragged = { item, name };
+    lastDrop = "";
+  }
+
+  function endDrag() {
+    dragged = null;
+    overEditor = false;
+  }
+
+  /** Adds what's dragged to the scene, opens it and says so. */
+  function dropOn(sid: string) {
+    const scene = draft.scenes.find((s) => s.id === sid);
+    if (dragged && scene) {
+      linkTo(scene, dragged.item);
+      openScene(sid);
+      lastDrop = t.scenes.added(dragged.name, scene.title || t.scenes.untitled);
+    }
+    endDrag();
   }
 
   // ---- Saving and leaving ------------------------------------------------------------------------
   let saving = $state(false);
   let saveError = $state<string | null>(null);
   const valid = $derived(Number.isInteger(draft.number) && draft.number >= 1);
+  const changed = $derived(baseline !== null && snapshot() !== baseline);
+  let leaving = false;
 
   // Renaming: the pencil shows the number and title fields; Enter or leaving them keeps the change, Escape puts back
   // what was there (as does a number that isn't 1 or more).
@@ -145,79 +202,84 @@
     await tick();
     pencil?.focus();
   }
-  const changed = $derived(baseline !== null && snapshot() !== baseline);
-  let leaving = false;
 
-  /** Saves the changes; a new session then gets its own address (unless `go` is false). */
-  async function save(go = true): Promise<boolean> {
-    if (saving) return false;
+  let inflight: Promise<boolean> | null = null;
+  /** What last failed to save: not tried again until something changes. */
+  let failed = $state<string | null>(null);
+
+  /** Saves the changes (after a save that's under way); false when it couldn't (the error shows). */
+  async function save(): Promise<boolean> {
+    while (inflight) await inflight;
+    if (!changed) return true;
     if (!valid) {
       saveError = t.saveError(t.number);
       return false;
     }
-    saving = true;
-    saveError = null;
     const sent = snapshot();
+    saving = true;
+    inflight = saveSession(campaign, { ...draft, title: draft.title.trim() || t.newTitle }).then(
+      (saved) => {
+        draft.updated = saved.updated;
+        baseline = sent; // typed on while it saved: those changes are still unsaved, and save next
+        [saveError, failed] = [null, null];
+        return true;
+      },
+      (err) => {
+        [saveError, failed] = [t.saveError(errorMessage(err)), sent];
+        return false;
+      },
+    );
     try {
-      const saved = await saveSession(campaign, { ...draft, title: draft.title.trim() || t.newTitle });
-      draft.id = saved.id;
-      draft.updated = saved.updated;
-      savedMaps = mapsOf(saved);
-      if (sent === snapshot()) {
-        draft.title = saved.title; // a blank title was saved as "New session"
-        baseline = snapshot();
-      } else baseline = sent; // typed on while it saved: those changes are still unsaved
-      notify(t.saved(saved.title));
-      if (!id && go) {
-        leaving = true;
-        await gotoReplacing(`${base}/${saved.id}`);
-      }
-      return true;
-    } catch (err) {
-      saveError = t.saveError(errorMessage(err));
-      return false;
+      return await inflight;
     } finally {
-      saving = false;
+      [inflight, saving] = [null, false];
     }
   }
 
-  type LeaveAnswer = "save" | "discard" | "cancel";
-  let leaveDialog: HTMLDialogElement | undefined = $state();
-  let resolveLeave: ((answer: LeaveAnswer) => void) | null = null;
+  // A second after the last change; not while renaming (a number half typed may be another session's).
+  $effect(() => {
+    if (!changed || saving || renaming || !valid || snapshot() === failed) return;
+    const timer = setTimeout(() => void save(), AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  });
 
-  function askLeave(): Promise<LeaveAnswer> {
+  let leaveDialog: HTMLDialogElement | undefined = $state();
+  let resolveLeave: ((leave: boolean) => void) | null = null;
+
+  /** Saves before leaving; when that fails, asks whether to leave anyway (true) or stay. */
+  async function saveBeforeLeaving(): Promise<boolean> {
+    if (await save()) return true;
     leaveDialog?.showModal();
     return new Promise((resolve) => (resolveLeave = resolve));
   }
 
-  // Escape closes the dialog too, which counts as Cancel.
-  function answerLeave(answer: LeaveAnswer) {
+  // Escape closes the dialog too, which counts as Stay.
+  function answerLeave(leave: boolean) {
     const resolve = resolveLeave;
     resolveLeave = null;
     if (leaveDialog?.open) leaveDialog.close();
-    resolve?.(answer);
+    resolve?.(leave);
   }
 
-  // Hold the navigation (Back included), ask, then go on.
+  // Leaving saves first (Back included).
   beforeNavigate((navigation) => {
     if (leaving || !changed || !navigation.to || navigation.type === "leave") return;
     const replace = isReplacing();
     navigation.cancel();
-    void askLeave().then(async (answer) => {
-      if (answer === "cancel" || (answer === "save" && !(await save(false)))) return;
+    void saveBeforeLeaving().then((ok) => {
+      if (!ok) return;
       leaving = true;
       if (navigation.type === "popstate") history.go(navigation.delta ?? -1);
       else void (replace ? gotoReplacing : goto)(navigation.to!.url.href);
     });
   });
 
-  // Closing the window is leaving too (SvelteKit's "leave" can't be held), so ask the same question first.
+  // Closing the window is leaving too (SvelteKit's "leave" can't be held).
   $effect(() => {
     const unlisten = onCloseRequested(async (event) => {
       if (leaving || !changed) return;
       event.preventDefault();
-      const answer = await askLeave();
-      if (answer === "cancel" || (answer === "save" && !(await save(false)))) return;
+      if (!(await saveBeforeLeaving())) return;
       leaving = true;
       await closeWindow();
     });
@@ -241,7 +303,6 @@
   }
 
   async function remove() {
-    if (!draft.id) return;
     deleting = true;
     saveError = null;
     try {
@@ -255,42 +316,14 @@
     await gotoReplacing(base);
   }
 
-  // ---- A new encounter for the open step -----------------------------------------------------------
-  let creating = $state(false);
-  /** An empty Draft encounter linked to the step, saved with the session (a new one gets its address first), then opened in Prepare. */
-  async function createEncounter() {
-    const step = draft.steps[index];
-    if (creating || saving || !step) return;
-    if (!valid) {
-      saveError = t.saveError(t.number);
-      return;
-    }
-    creating = true;
-    saveError = null;
-    try {
-      const encounter = await saveEncounter(campaign, {
-        id: "",
-        name: e.newTitle,
-        monsters: [],
-        party: [],
-        status: "draft",
-        partyMode: "party",
-        notes: { description: "", pins: [] },
-        savedAt: 0,
-      });
-      step.encounter = encounter.id;
-      all = [...(all ?? []), encounter];
-      if (!(await save())) return;
-      leaving = true;
-      await goto(`${encountersBase}/${encounter.id}`);
-    } catch (err) {
-      saveError = t.items.createError(errorMessage(err));
-    } finally {
-      creating = false;
-    }
+  // ---- Party note --------------------------------------------------------------------------------
+  let noteOpen = $state(false);
+  let noteField: HTMLTextAreaElement | undefined = $state();
+  async function toggleNote() {
+    noteOpen = !noteOpen;
+    await tick();
+    noteField?.focus();
   }
-
-  const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "full" });
 </script>
 
 <svelte:head><title>{draft.title.trim() || t.newTitle}</title></svelte:head>
@@ -304,29 +337,38 @@
   <p class="status muted" role="status">{t.loading}</p>
 {:else}
   <div class="session">
-    <header class="top">
+    <div class="top">
       <BackButton fallback={base} />
-      {#if saveError}<span class="error small" role="alert">{saveError}</span>{/if}
-      <span class="spacer"></span>
-      {#if draft.id}
-        {#if confirming}
-          <p class="confirm" role="alert">{t.confirmDelete(draft.title.trim() || t.newTitle)}</p>
-          <button id="session-keep" class="btn" onclick={keep}>{t.cancel}</button>
-          <button class="btn btn-danger" disabled={deleting} onclick={remove}>{t.delete}</button>
-        {:else}
-          <button id="session-delete" class="btn delete" onclick={askDelete}>
-            <i class="ti ti-trash" aria-hidden="true"></i>
-            {t.delete}
-          </button>
-        {/if}
+      {#if saveError}
+        <span class="error small" role="alert">{saveError}</span>
+      {:else if saving}
+        <span class="muted small" role="status">{t.saving}</span>
       {/if}
-      <button class="btn save" disabled={saving || !changed || !valid} onclick={() => save()}>
-        <i class="ti ti-device-floppy" aria-hidden="true"></i>
-        {saving ? t.saving : t.save}
-      </button>
-    </header>
+      <span class="spacer"></span>
+      {#if confirming}
+        <p class="confirm" role="alert">{t.confirmDelete(draft.title.trim() || t.newTitle)}</p>
+        <button id="session-keep" class="btn" onclick={keep}>{t.cancel}</button>
+        <button class="btn btn-danger" disabled={deleting} onclick={remove}>{t.delete}</button>
+      {:else}
+        <button id="session-delete" class="btn delete" onclick={askDelete}>
+          <i class="ti ti-trash" aria-hidden="true"></i>
+          {t.delete}
+        </button>
+      {/if}
+    </div>
 
-    <section class="head">
+    <header class="head">
+      {#if party.length > 0}
+        <div class="party" aria-label={t.party} role="img">
+          <!-- The party's pictures as hexagons, the same collage as the Characters screen's party band. -->
+          <HexCollage
+            tiles={party.map((c) => ({ key: c.id, picture: c.picture ? pictureSrc(c.picture) : null, letter: c.name.charAt(0) }))}
+            seed={campaign}
+            hexWidth="var(--session-hex-width)"
+            maxRows={2.5}
+          />
+        </div>
+      {/if}
       <div class="who">
         {#if renaming}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -362,47 +404,103 @@
             <input class="inline" type="time" bind:value={() => draft.time ?? "", (v) => (draft.time = v || null)} />
           </label>
           <span>{t.players(party.length)}</span>
+          <button class="icon-btn" aria-label={t.partyNote} aria-expanded={noteOpen} aria-controls="party-note" onclick={toggleNote}>
+            <i class="ti ti-notes" aria-hidden="true"></i>
+          </button>
         </div>
-      </div>
-      <div class="prep">
-        <span class="count">{t.readyOf(ready, draft.steps.length)}</span>
-        <progress max={Math.max(draft.steps.length, 1)} value={ready} aria-label={t.prep}></progress>
-      </div>
-    </section>
-
-    <div class="columns">
-      <div class="col" use:keepScroll={{ id: "session-steps", url: page.url.href, ready: true }}>
-        <StepList steps={draft.steps} {selected} onselect={(sid) => (selected = sid)} onadd={addStep} onremove={removeStep} />
-      </div>
-      <div class="col" use:keepScroll={{ id: "session-step", url: page.url.href, ready: true }}>
-        {#if index >= 0}
-          <StepPanel
-            bind:step={draft.steps[index]}
-            {encountersBase}
-            encounters={all}
-            {encounterError}
-            {rate}
-            busy={creating || saving}
-            oncreate={createEncounter}
-            setMap={mapSetter(draft.steps[index])}
-          />
+        {#if noteOpen}
+          <textarea id="party-note" bind:this={noteField} class="text-field note" rows="2" maxlength="20000" aria-label={t.partyNote} placeholder={t.partyNote} bind:value={draft.partyNote}></textarea>
+        {:else if draft.partyNote.trim()}
+          <p class="note-text">{draft.partyNote}</p>
         {/if}
       </div>
+      <dl class="counts">
+        <div>
+          <dt>{t.counts.scenes}</dt>
+          <dd>{fmt.format(draft.scenes.length)}</dd>
+        </div>
+        <div>
+          <dt>{t.counts.npcs}</dt>
+          <dd>{fmt.format(draft.npcs.length)}</dd>
+        </div>
+        <div>
+          <dt>{t.counts.checklist}</dt>
+          <dd>{fmt.format(counts.done)}<span class="of">/{fmt.format(counts.total)}</span></dd>
+        </div>
+      </dl>
+      <!-- The live session view comes later. -->
+      <button class="btn btn-primary run" disabled>
+        {t.run}
+        <i class="ti ti-player-play" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <div class="columns">
+      <div class="col" use:keepScroll={{ id: "session-scenes", url: page.url.href, ready: true }}>
+        <SceneList session={draft} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} />
+      </div>
+      <main
+        class="col editor"
+        aria-label={draft.title || t.newTitle}
+        use:keepScroll={{ id: "session-editor", url: page.url.href, ready: true }}
+        ondragover={(ev) => {
+          if (!dragged || index < 0) return;
+          ev.preventDefault();
+          overEditor = true;
+        }}
+        ondragleave={(ev) => {
+          if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) overEditor = false;
+        }}
+        ondrop={(ev) => {
+          ev.preventDefault();
+          if (index >= 0) dropOn(draft.scenes[index].id);
+        }}
+      >
+        {#if pane}
+          <div class="pane">
+            {#if pane === "locations"}
+              <ManageLocations bind:session={draft} />
+            {:else if pane === "npcs"}
+              <ManageNpcs bind:session={draft} />
+            {:else}
+              <h2>{t.sections.checklist}</h2>
+              <Checklist bind:items={draft.checklist} placeholder={t.checklist.placeholder} />
+            {/if}
+          </div>
+        {:else if index >= 0}
+          {#if dragged}
+            <div class="drop" class:over={overEditor}>{t.scenes.dropHere(dragged.name)}</div>
+          {/if}
+          <SceneEditor bind:session={draft} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onremove={removeScene} />
+        {:else}
+          <p class="muted">{t.scenes.empty}</p>
+        {/if}
+      </main>
       <div class="col" use:keepScroll={{ id: "session-aside", url: page.url.href, ready: true }}>
-        <SessionAside {campaign} {party} bind:partyNote={draft.partyNote} bind:toBring={draft.toBring} />
+        <SessionAside
+          bind:session={draft}
+          bind:open={section}
+          {lastDrop}
+          {ready}
+          {encounterError}
+          encountersHref={encountersBase}
+          {encounterMeta}
+          onmanage={(p) => (pane = p)}
+          ondragstart={startDrag}
+          ondragend={endDrag}
+        />
       </div>
     </div>
   </div>
 {/if}
 
-<dialog bind:this={leaveDialog} class="dialog leave" aria-labelledby="leave-title" aria-describedby="leave-question" onclose={() => answerLeave("cancel")}>
+<dialog bind:this={leaveDialog} class="dialog leave" aria-labelledby="leave-title" aria-describedby="leave-reason" onclose={() => answerLeave(false)}>
   <h2 id="leave-title">{t.leave.title}</h2>
-  <p id="leave-question">{t.leave.question(draft.title.trim() || t.newTitle)}</p>
+  <p id="leave-reason">{saveError}</p>
   <div class="actions">
-    <button class="btn" onclick={() => answerLeave("cancel")}>{t.leave.cancel}</button>
-    <button class="btn" onclick={() => answerLeave("discard")}>{t.leave.discard}</button>
+    <button class="btn" onclick={() => answerLeave(true)}>{t.leave.leave}</button>
     <!-- svelte-ignore a11y_autofocus: the safe answer is the default -->
-    <button class="btn btn-primary" autofocus onclick={() => answerLeave("save")}>{t.leave.save}</button>
+    <button class="btn btn-primary" autofocus onclick={() => answerLeave(false)}>{t.leave.stay}</button>
   </div>
 </dialog>
 
@@ -447,12 +545,19 @@
   .head {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: center;
     gap: var(--space-5);
-    padding: var(--space-3) var(--space-5);
+    padding: var(--space-4) var(--space-5);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
+  }
+
+  /* Two and a half hexagons high at most, like the party band; it grows sideways instead. */
+  .party {
+    flex: none;
+    display: flex;
+    height: calc(2.44 * var(--session-hex-width));
   }
 
   .who {
@@ -468,16 +573,15 @@
     align-items: center;
     gap: var(--space-2);
     margin: 0;
-    font-size: var(--text-xl);
-    font-weight: var(--weight-bold);
+    font: var(--text-h1);
+    letter-spacing: var(--tracking-tight);
   }
 
   .rename {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-xl);
-    font-weight: var(--weight-bold);
+    font: var(--text-h2);
   }
 
   .rename .grow {
@@ -493,11 +597,6 @@
     background: none;
     color: var(--color-text);
     font: inherit;
-  }
-
-  .rename .inline {
-    font-size: var(--text-xl);
-    font-weight: var(--weight-bold);
   }
 
   .rename .num {
@@ -527,20 +626,53 @@
     font-size: var(--text-sm);
   }
 
-  .prep {
+  .note {
+    resize: vertical;
+    font: inherit;
+  }
+
+  .note-text {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .counts {
+    display: flex;
+    gap: var(--space-6);
+    margin: 0;
+  }
+
+  .counts div {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    min-width: var(--select-width);
+    gap: 2px;
   }
 
-  .count {
-    font: var(--text-dice);
+  .counts dt {
+    color: var(--color-text-muted);
+    font: var(--text-label);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
   }
 
-  progress {
-    width: 100%;
-    accent-color: var(--color-accent);
+  .counts dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-bold);
+  }
+
+  .of {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .run {
+    min-height: var(--control-height-lg);
   }
 
   .columns {
@@ -549,7 +681,7 @@
     display: grid;
     grid-template-columns: var(--session-steps-width) minmax(0, 1fr) var(--session-aside-width);
     grid-template-rows: minmax(0, 1fr);
-    gap: var(--space-3);
+    gap: var(--space-4);
   }
 
   .col {
@@ -557,14 +689,122 @@
     overflow-y: auto;
   }
 
-  .leave .actions {
+  .editor {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding: var(--space-5);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .drop {
+    padding: var(--space-4);
+    border: var(--focus-ring) dashed var(--color-accent);
+    border-radius: var(--radius-md);
+    color: var(--color-accent);
+    text-align: center;
+  }
+
+  .drop.over {
+    border-style: solid;
+    border-color: var(--potion-glow);
+    background: var(--potion-glow);
+    color: var(--charcoal);
+  }
+
+  /* What the full views (locations, NPCs, checklist) share; the scene editor is outside, so none of it reaches there. */
+  .pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
+  .pane :global(h2) {
+    margin: 0;
+    font: var(--text-h2);
+  }
+
+  .pane :global(.card) {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-2);
+    padding: var(--space-4);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+  }
+
+  .pane :global(.row) {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+  }
+
+  .pane :global(.grow) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pane :global(.field) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .pane :global(.pair) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .pane :global(.small-label) {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-bold);
+  }
+
+  .pane :global(.strong) {
+    font-weight: var(--weight-bold);
+  }
+
+  .pane :global(textarea) {
+    resize: vertical;
+    font: inherit;
+  }
+
+  .pane :global(.btn.icon) {
+    justify-content: center;
+    width: var(--control-height);
+    padding: 0;
+  }
+
+  .pane :global(.note) {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .pane :global(.add) {
+    display: flex;
+    gap: var(--space-2);
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .pane :global(.add input) {
+    flex: 1;
+    min-width: 0;
   }
 
   .muted {
     color: var(--color-text-muted);
+  }
+
+  .leave .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
   }
 
   .small {

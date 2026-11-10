@@ -140,6 +140,7 @@
   --search-width: 360px;
   --session-steps-width: 280px;
   --session-aside-width: 320px;
+  --session-hex-width: 40px; /* the party collage in a session's header */
   --character-form-width: 640px;
   --level-input-width: 80px;
   --stat-input-width: 140px;

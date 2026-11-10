@@ -1,28 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Picture } from "$lib/api/campaigns";
-import type { Pin } from "$lib/api/encounters";
 
-export type StepKind = "note" | "list" | "encounter" | "map";
+/** A checklist item. Mirrors `Check` in src-tauri/src/commands/sessions.rs, as do the types below. */
+export type Check = { text: string; done: boolean };
 
-export type ListStyle = "bulleted" | "numbered" | "check";
-
-/** Mirrors `Item` in src-tauri/src/commands/sessions.rs; the kind decides which fields count: note: `body` (cleaned
- *  HTML, the only item); list: `title`, `body` (plain text), plus `done` in a checklist. */
-export type Item = { title: string; body: string; done: boolean };
-
-/** An Encounter step has no items; `encounter` is its encounter's id, or null until one is picked. `listStyle`
- *  counts for a List step only; `pins` and `map` (its picture, found by Rust, never saved from here) for a Map step. */
-export type Step = {
+/** `locationId` and `npcIds` point into the session's own lists, `encounterIds` to the campaign's encounters. */
+export type Scene = {
   id: string;
-  kind: StepKind;
   title: string;
+  summary: string;
   ready: boolean;
-  items: Item[];
-  encounter: string | null;
-  listStyle: ListStyle;
-  pins: Pin[];
-  map: Picture | null;
+  locationId: string | null;
+  npcIds: string[];
+  encounterIds: string[];
+  checklist: Check[];
 };
+
+export type Location = { id: string; name: string; description: string };
+
+export type Npc = { id: string; name: string; wants: string; voice: string };
 
 /** `date`: `YYYY-MM-DD`, `time`: `HH:MM`, or null; `updated`: ms, set by Rust. */
 export type Session = {
@@ -31,14 +26,18 @@ export type Session = {
   title: string;
   date: string | null;
   time: string | null;
-  steps: Step[];
   partyNote: string;
-  toBring: string[];
+  previously: string;
+  premise: string;
+  scenes: Scene[];
+  locations: Location[];
+  npcs: Npc[];
+  checklist: Check[];
   updated: number;
 };
 
 /** What the list shows of a session. */
-export type SessionRow = { id: string; number: number; title: string; date: string | null; time: string | null; ready: number; steps: number };
+export type SessionRow = { id: string; number: number; title: string; date: string | null; time: string | null; ready: number; scenes: number };
 
 /** Highest number first; `unreadable`: files that couldn't be read, left untouched. */
 export type SessionList = { sessions: SessionRow[]; unreadable: string[] };
@@ -60,19 +59,4 @@ export function saveSession(campaign: string, session: Session): Promise<Session
 /** Deletes the session only; its encounters stay. */
 export function deleteSession(campaign: string, id: string): Promise<void> {
   return invoke("delete_session", { campaign, id });
-}
-
-/** Sets a saved Map step's picture from the file at `path`, or removes it (null). Returns the picture now there. */
-export function setSessionMap(campaign: string, session: string, step: string, path: string | null): Promise<Picture | null> {
-  return invoke("set_session_map", { campaign, session, step, path });
-}
-
-/** The campaign's open threads, shared by every session. */
-export function getThreads(campaign: string): Promise<string[]> {
-  return invoke("get_threads_cmd", { campaign });
-}
-
-/** Replaces the open threads at once; returns them as saved. */
-export function saveThreads(campaign: string, threads: string[]): Promise<string[]> {
-  return invoke("save_threads_cmd", { campaign, threads });
 }

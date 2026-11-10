@@ -84,7 +84,7 @@
             <a class="row" href="{base}/{s.id}">
               <span class="name">{s.number} · {s.title}</span>
               <span class="muted">{whenText(s.date, s.time)}</span>
-              <span class="muted count">{t.readyOf(s.ready, s.steps)}</span>
+              <span class="muted count">{t.readyOf(s.ready, s.scenes)}</span>
             </a>
           </li>
         {/each}

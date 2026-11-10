@@ -1,80 +1,65 @@
-//! Sessions: one file per session in its campaign's folder, `sessions/<id>.json`, plus the campaign-wide open threads
-//! in `threads.json`. Only active campaigns are changed (an archived one is read-only). A session is a list of prep
-//! steps; an encounters step links encounters by id, the encounters themselves live in their own folder. A Map step's
-//! picture is stored beside the session as `sessions/<session>.<step>.map.jpg`.
+//! Sessions: one file per session in its campaign's folder, `sessions/<id>.json`. Only active campaigns are changed (an
+//! archived one is read-only). A session holds its scenes in order, plus the locations, NPCs and checklist shared
+//! across them; a scene links those by id, and the campaign's encounters (in their own folder) by their ids.
 
-use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
-use crate::commands::encounters::{check_pins, Pin, MAP_MAX_SIDE};
+use crate::commands::campaigns::{active_dir, dirs, now_ms};
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::AppHandle;
 
 const FOLDER: &str = "sessions";
-const THREADS_FILE: &str = "threads.json";
 const MAX_TITLE_LEN: usize = 100;
 const MAX_NOTE_LEN: usize = 20_000;
-const MAX_STEPS: usize = 100;
-const MAX_ITEMS: usize = 500;
-const MAX_LINES: usize = 200;
 const MAX_LINE_LEN: usize = 200;
+/// The most scenes, locations, NPCs or checklist items a session (or a scene's checklist) can hold.
+const MAX_ENTRIES: usize = 200;
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Kind {
-    Note,
-    List,
-    Encounter,
-    Map,
-}
-
-/// How a List step shows its items.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ListStyle {
-    #[default]
-    Bulleted,
-    Numbered,
-    Check,
-}
-
-/// One entry of a step; which fields count depends on the step's kind (the rest are cleared on save):
-/// note: `body` (HTML, the only item); list: `title` and `body` (plain text), plus `done` in a checklist.
-/// An Encounter step has no items; it keeps its encounter's id in `Step::encounter`.
+/// A checklist item.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct Item {
-    pub title: String,
-    pub body: String,
+#[serde(default)]
+pub struct Check {
+    pub text: String,
     pub done: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Step {
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Scene {
     /// Chosen by the window; unique within the session.
     pub id: String,
-    pub kind: Kind,
     pub title: String,
-    #[serde(default)]
+    /// What happens.
+    pub summary: String,
     pub ready: bool,
-    #[serde(default)]
-    pub items: Vec<Item>,
-    /// An Encounter step's encounter; none until one is picked.
-    #[serde(default)]
-    pub encounter: Option<String>,
-    /// A List step's style; Bulleted for other kinds.
-    #[serde(default)]
-    pub list_style: ListStyle,
-    /// A Map step's pins.
-    #[serde(default)]
-    pub pins: Vec<Pin>,
-    /// A Map step's picture, found beside the session when it's read; never saved in the file or taken from the window.
-    #[serde(default, skip_deserializing)]
-    pub map: Option<Picture>,
+    /// One of the session's locations, or none.
+    pub location_id: Option<String>,
+    pub npc_ids: Vec<String>,
+    /// The campaign's encounters.
+    pub encounter_ids: Vec<String>,
+    pub checklist: Vec<Check>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Location {
+    pub id: String,
+    pub name: String,
+    /// What the party sees, hears and smells.
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Npc {
+    pub id: String,
+    pub name: String,
+    pub wants: String,
+    /// How they talk.
+    pub voice: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,13 +76,23 @@ pub struct Session {
     /// `HH:MM`, the start time.
     #[serde(default)]
     pub time: Option<String>,
-    #[serde(default)]
-    pub steps: Vec<Step>,
     /// Plain text about the party, for this session.
     #[serde(default)]
     pub party_note: String,
+    /// A recap of the last session.
     #[serde(default)]
-    pub to_bring: Vec<String>,
+    pub previously: String,
+    /// What this session is about and how it opens.
+    #[serde(default)]
+    pub premise: String,
+    #[serde(default)]
+    pub scenes: Vec<Scene>,
+    #[serde(default)]
+    pub locations: Vec<Location>,
+    #[serde(default)]
+    pub npcs: Vec<Npc>,
+    #[serde(default)]
+    pub checklist: Vec<Check>,
     /// Milliseconds since the Unix epoch; set by `save`.
     #[serde(default)]
     pub updated: u64,
@@ -113,7 +108,7 @@ pub struct SessionRow {
     pub date: Option<String>,
     pub time: Option<String>,
     pub ready: usize,
-    pub steps: usize,
+    pub scenes: usize,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -145,89 +140,60 @@ fn valid_time(time: &str) -> bool {
         && matches!(number(3..5), Some(0..=59))
 }
 
-/// Trims every line; blank ones, too many or too long ones are problems.
-fn check_lines(lines: &mut [String], what: &str, problems: &mut Vec<String>) {
-    for line in lines.iter_mut() {
-        *line = line.trim().into();
-    }
-    if lines.iter().any(|l| l.is_empty()) {
-        problems.push(format!("An entry in {what} can't be empty."));
-    }
-    if lines.len() > MAX_LINES || lines.iter().any(|l| l.chars().count() > MAX_LINE_LEN) {
-        problems.push(format!("{what} can hold at most {MAX_LINES} entries of {MAX_LINE_LEN} characters."));
+/// Trims the text; one over `max` characters is a problem.
+fn check_text(text: &mut String, max: usize, what: &str, problems: &mut Vec<String>) {
+    *text = text.trim().into();
+    if text.chars().count() > max {
+        problems.push(format!("{what} must be at most {max} characters."));
     }
 }
 
-fn check_step(step: &mut Step, problems: &mut Vec<String>) {
-    step.title = step.title.trim().into();
-    // A step gets its title after it's added, so an empty one is fine.
-    let name = if step.title.is_empty() { "A step".to_string() } else { format!("Step \"{}\"", step.title) };
-    if step.title.chars().count() > MAX_TITLE_LEN {
-        problems.push(format!("{name} has a title over {MAX_TITLE_LEN} characters."));
+fn check_count(len: usize, what: &str, problems: &mut Vec<String>) {
+    if len > MAX_ENTRIES {
+        problems.push(format!("{what} can hold at most {MAX_ENTRIES} entries."));
     }
-    if step.items.len() > MAX_ITEMS {
-        problems.push(format!("{name} can hold at most {MAX_ITEMS} items."));
+}
+
+/// Trims every item; a blank, too long or too many is a problem.
+fn check_checklist(list: &mut [Check], what: &str, problems: &mut Vec<String>) {
+    check_count(list.len(), what, problems);
+    for item in list.iter_mut() {
+        item.text = item.text.trim().into();
     }
-    // Which fields the kind uses: title, body, done.
-    let (wants_title, wants_body, wants_done) = match step.kind {
-        Kind::Note => (false, true, false),
-        Kind::List => (true, true, step.list_style == ListStyle::Check),
-        Kind::Encounter | Kind::Map => (false, false, false),
-    };
-    if step.kind == Kind::Map {
-        step.items.clear();
-        check_pins(&step.pins, problems);
-        if step.pins.iter().any(|p| p.text.chars().count() > MAX_NOTE_LEN) {
-            problems.push(format!("{name} has a pin text over {MAX_NOTE_LEN} characters."));
-        }
-    } else {
-        step.pins.clear();
+    if list.iter().any(|c| c.text.is_empty() || c.text.chars().count() > MAX_LINE_LEN) {
+        problems.push(format!("Every item in {what} needs a text of at most {MAX_LINE_LEN} characters."));
     }
-    if step.kind != Kind::List {
-        step.list_style = ListStyle::Bulleted;
+}
+
+/// The ids, checked to be valid and unique.
+fn check_ids<'a>(ids: impl Iterator<Item = &'a String>, what: &str, problems: &mut Vec<String>) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    let mut bad = false;
+    for id in ids {
+        bad |= check_id(id, what).is_err() || !seen.insert(id.clone());
     }
-    if step.kind != Kind::Encounter {
-        step.encounter = None;
-    } else {
-        step.items.clear();
-        if step.encounter.as_deref().is_some_and(|id| check_id(id, "encounter").is_err()) {
-            problems.push(format!("{name} links an encounter with an invalid id."));
-        }
+    if bad {
+        problems.push(format!("A {what} has an invalid or repeated id."));
     }
-    for item in &mut step.items {
-        item.title = item.title.trim().into();
-        if !wants_title {
-            item.title.clear();
-        }
-        if !wants_body {
-            item.body.clear();
-        }
-        item.done &= wants_done;
-        if wants_title && item.title.is_empty() {
-            problems.push(format!("{name} has an item without a title."));
-        }
-        if item.title.chars().count() > MAX_TITLE_LEN {
-            problems.push(format!("{name} has an item title over {MAX_TITLE_LEN} characters."));
-        }
-        if item.body.chars().count() > MAX_NOTE_LEN {
-            problems.push(format!("{name} has a text over {MAX_NOTE_LEN} characters."));
-        }
-    }
-    if step.kind == Kind::Note && step.items.len() > 1 {
-        problems.push(format!("{name} is a note and holds one text."));
+    seen
+}
+
+/// Every link must point to something in the session, and once only.
+fn check_links(links: &[String], known: &HashSet<String>, what: &str, scene: &str, problems: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    if links.iter().any(|id| !known.contains(id) || !seen.insert(id)) {
+        problems.push(format!("{scene} links a {what} that isn't in the session, or links it twice."));
     }
 }
 
 fn check(session: &mut Session) -> Result<(), StorageError> {
-    session.title = session.title.trim().into();
     let mut problems = Vec::new();
     if session.number == 0 {
         problems.push("The number must be 1 or more.".to_string());
     }
+    check_text(&mut session.title, MAX_TITLE_LEN, "The title", &mut problems);
     if session.title.is_empty() {
         problems.push("A title is required.".to_string());
-    } else if session.title.chars().count() > MAX_TITLE_LEN {
-        problems.push(format!("The title must be at most {MAX_TITLE_LEN} characters."));
     }
     if session.date.as_deref().is_some_and(|d| !valid_date(d)) {
         problems.push("The date must be YYYY-MM-DD.".into());
@@ -235,19 +201,41 @@ fn check(session: &mut Session) -> Result<(), StorageError> {
     if session.time.as_deref().is_some_and(|t| !valid_time(t)) {
         problems.push("The time must be HH:MM.".into());
     }
-    if session.party_note.chars().count() > MAX_NOTE_LEN {
-        problems.push(format!("The party note must be at most {MAX_NOTE_LEN} characters."));
+    check_text(&mut session.party_note, MAX_NOTE_LEN, "The party note", &mut problems);
+    check_text(&mut session.previously, MAX_NOTE_LEN, "Previously", &mut problems);
+    check_text(&mut session.premise, MAX_NOTE_LEN, "The premise", &mut problems);
+    check_checklist(&mut session.checklist, "the checklist", &mut problems);
+
+    check_count(session.locations.len(), "Locations", &mut problems);
+    let locations = check_ids(session.locations.iter().map(|l| &l.id), "location", &mut problems);
+    for location in &mut session.locations {
+        check_text(&mut location.name, MAX_TITLE_LEN, "A location's name", &mut problems);
+        check_text(&mut location.description, MAX_NOTE_LEN, "A location's description", &mut problems);
     }
-    check_lines(&mut session.to_bring, "To bring", &mut problems);
-    if session.steps.len() > MAX_STEPS {
-        problems.push(format!("A session can have at most {MAX_STEPS} steps."));
+    check_count(session.npcs.len(), "NPCs", &mut problems);
+    let npcs = check_ids(session.npcs.iter().map(|n| &n.id), "NPC", &mut problems);
+    for npc in &mut session.npcs {
+        check_text(&mut npc.name, MAX_TITLE_LEN, "An NPC's name", &mut problems);
+        check_text(&mut npc.wants, MAX_LINE_LEN, "What an NPC wants", &mut problems);
+        check_text(&mut npc.voice, MAX_LINE_LEN, "An NPC's voice", &mut problems);
     }
-    let mut ids = HashSet::new();
-    for step in &mut session.steps {
-        if check_id(&step.id, "step").is_err() || !ids.insert(step.id.clone()) {
-            problems.push("A step has an invalid or repeated id.".into());
+
+    check_count(session.scenes.len(), "Scenes", &mut problems);
+    check_ids(session.scenes.iter().map(|s| &s.id), "scene", &mut problems);
+    for scene in &mut session.scenes {
+        // A scene gets its title after it's added, so an empty one is fine.
+        check_text(&mut scene.title, MAX_TITLE_LEN, "A scene's title", &mut problems);
+        let name = if scene.title.is_empty() { "A scene".to_string() } else { format!("Scene \"{}\"", scene.title) };
+        check_text(&mut scene.summary, MAX_NOTE_LEN, &format!("What happens in {name}"), &mut problems);
+        if scene.location_id.as_ref().is_some_and(|id| !locations.contains(id)) {
+            problems.push(format!("{name} is at a location that isn't in the session."));
         }
-        check_step(step, &mut problems);
+        check_links(&scene.npc_ids, &npcs, "NPC", &name, &mut problems);
+        let mut seen = HashSet::new();
+        if scene.encounter_ids.iter().any(|id| check_id(id, "encounter").is_err() || !seen.insert(id)) {
+            problems.push(format!("{name} links an encounter with an invalid id, or links it twice."));
+        }
+        check_checklist(&mut scene.checklist, &format!("the checklist of {name}"), &mut problems);
     }
     if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
 }
@@ -259,37 +247,7 @@ fn read(folder: &Path, id: &str) -> Result<Session, StorageError> {
     })?;
     let mut session: Session = serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?;
     session.id = id.into(); // the file name is the id
-    find_maps(folder, &mut session);
     Ok(session)
-}
-
-fn map_path(folder: &Path, session: &str, step: &str) -> PathBuf {
-    folder.join(format!("{session}.{step}.map.jpg"))
-}
-
-/// Sets each Map step's picture from what's beside the session.
-fn find_maps(folder: &Path, session: &mut Session) {
-    for step in &mut session.steps {
-        step.map = if step.kind == Kind::Map { picture_at(&map_path(folder, &session.id, &step.id)) } else { None };
-    }
-}
-
-/// Removes the session's map pictures, except those of the steps named in `keep`.
-fn remove_maps(folder: &Path, session: &str, keep: &[&str]) -> Result<(), StorageError> {
-    let prefix = format!("{session}.");
-    let entries = match fs::read_dir(folder) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(step) = name.strip_prefix(&prefix).and_then(|rest| rest.strip_suffix(".map.jpg")) else { continue };
-        if !keep.contains(&step) {
-            fs::remove_file(entry.path())?;
-        }
-    }
-    Ok(())
 }
 
 pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
@@ -306,8 +264,8 @@ pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
         match read(&folder, id) {
             Ok(s) => {
                 let row = SessionRow {
-                    ready: s.steps.iter().filter(|st| st.ready).count(),
-                    steps: s.steps.len(),
+                    ready: s.scenes.iter().filter(|sc| sc.ready).count(),
+                    scenes: s.scenes.len(),
                     id: s.id,
                     number: s.number,
                     title: s.title,
@@ -335,6 +293,16 @@ pub fn save(campaign_dir: &Path, mut session: Session, now: u64) -> Result<Sessi
     check(&mut session)?;
     let folder = campaign_dir.join(FOLDER);
     let _guard = lock_update();
+    let saved_number = if session.id.is_empty() {
+        None
+    } else {
+        check_id(&session.id, "session")?;
+        Some(read(&folder, &session.id)?.number) // replacing only what exists, and never a file that can't be read
+    };
+    // Only a new or changed number is checked, so sessions that already share one can still be saved.
+    if saved_number != Some(session.number) && list(campaign_dir)?.sessions.iter().any(|s| s.number == session.number) {
+        return Err(StorageError::Invalid(format!("Session {} already exists.", session.number)));
+    }
     if session.id.is_empty() {
         let base = format!("{now:x}");
         let (mut id, mut n) = (base.clone(), 1);
@@ -343,40 +311,10 @@ pub fn save(campaign_dir: &Path, mut session: Session, now: u64) -> Result<Sessi
             id = format!("{base}-{n}");
         }
         session.id = id;
-    } else {
-        check_id(&session.id, "session")?;
-        read(&folder, &session.id)?; // replacing only what exists, and never a file that can't be read
     }
     session.updated = now;
-    let mut stored = session.clone();
-    stored.steps.iter_mut().for_each(|s| s.map = None);
-    write_atomic(&folder.join(format!("{}.json", session.id)), &to_json(&stored)?)?;
-    // Pictures of Map steps that are gone (removed, or another kind now) go too.
-    let maps: Vec<&str> = session.steps.iter().filter(|s| s.kind == Kind::Map).map(|s| s.id.as_str()).collect();
-    remove_maps(&folder, &session.id, &maps)?;
-    find_maps(&folder, &mut session);
+    write_atomic(&folder.join(format!("{}.json", session.id)), &to_json(&session)?)?;
     Ok(session)
-}
-
-/// Sets a saved Map step's picture from a file (shrunk, stored as JPEG), or removes it (`None`).
-pub fn set_map(campaign_dir: &Path, session: &str, step: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
-    check_id(session, "session")?;
-    check_id(step, "step")?;
-    let folder = campaign_dir.join(FOLDER);
-    let _guard = lock_update();
-    let saved = read(&folder, session)?;
-    if !saved.steps.iter().any(|s| s.id == step && s.kind == Kind::Map) {
-        return Err(StorageError::NotFound("Save the session to add a map to this step.".into()));
-    }
-    let path = map_path(&folder, session, step);
-    match source {
-        Some(source) => store_picture(source, MAP_MAX_SIDE, &path)?,
-        None => match fs::remove_file(&path) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        },
-    }
-    Ok(picture_at(&path))
 }
 
 /// Deletes the session; its encounters stay.
@@ -386,30 +324,7 @@ pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
     let _guard = lock_update();
     read(&folder, id)?;
     fs::remove_file(folder.join(format!("{id}.json")))?;
-    remove_maps(&folder, id, &[])?;
     Ok(())
-}
-
-/// The campaign's open threads (shared by every session); none before the first save.
-pub fn get_threads(campaign_dir: &Path) -> Result<Vec<String>, StorageError> {
-    match fs::read_to_string(campaign_dir.join(THREADS_FILE)) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(vec![]),
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// Replaces the open threads; returns them trimmed.
-pub fn save_threads(campaign_dir: &Path, mut threads: Vec<String>) -> Result<Vec<String>, StorageError> {
-    let mut problems = Vec::new();
-    check_lines(&mut threads, "Open threads", &mut problems);
-    if !problems.is_empty() {
-        return Err(StorageError::Invalid(problems.join(" ")));
-    }
-    let _guard = lock_update();
-    get_threads(campaign_dir)?; // never over a file that can't be read
-    write_atomic(&campaign_dir.join(THREADS_FILE), &to_json(&threads)?)?;
-    Ok(threads)
 }
 
 #[tauri::command]
@@ -432,21 +347,6 @@ pub async fn delete_session(app: AppHandle, campaign: String, id: String) -> Res
     blocking(move || delete(&active_dir(&dirs(&app)?, &campaign)?, &id)).await
 }
 
-#[tauri::command]
-pub async fn set_session_map(app: AppHandle, campaign: String, session: String, step: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
-    blocking(move || set_map(&active_dir(&dirs(&app)?, &campaign)?, &session, &step, path.as_deref().map(Path::new))).await
-}
-
-#[tauri::command]
-pub async fn get_threads_cmd(app: AppHandle, campaign: String) -> Result<Vec<String>, StorageError> {
-    blocking(move || get_threads(&active_dir(&dirs(&app)?, &campaign)?)).await
-}
-
-#[tauri::command]
-pub async fn save_threads_cmd(app: AppHandle, campaign: String, threads: Vec<String>) -> Result<Vec<String>, StorageError> {
-    blocking(move || save_threads(&active_dir(&dirs(&app)?, &campaign)?, threads)).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,54 +360,87 @@ mod tests {
     }
 
     fn session(number: u32, title: &str) -> Session {
-        Session { id: String::new(), number, title: title.into(), date: None, time: None, steps: vec![], party_note: String::new(), to_bring: vec![], updated: 0 }
+        Session {
+            id: String::new(),
+            number,
+            title: title.into(),
+            date: None,
+            time: None,
+            party_note: String::new(),
+            previously: String::new(),
+            premise: String::new(),
+            scenes: vec![],
+            locations: vec![],
+            npcs: vec![],
+            checklist: vec![],
+            updated: 0,
+        }
     }
 
-    fn step(id: &str, kind: Kind, items: Vec<Item>) -> Step {
-        Step { id: id.into(), kind, title: format!("Step {id}"), ready: false, items, encounter: None, list_style: ListStyle::Bulleted, pins: vec![], map: None }
+    fn scene(id: &str) -> Scene {
+        Scene { id: id.into(), title: format!("Scene {id}"), ..Scene::default() }
     }
 
-    fn titled(title: &str) -> Item {
-        Item { title: title.into(), ..Item::default() }
+    fn check_item(text: &str) -> Check {
+        Check { text: text.into(), done: false }
     }
 
-    fn linked(id: &str) -> Step {
-        Step { encounter: Some(id.into()), ..step("e", Kind::Encounter, vec![]) }
-    }
-
-    fn all_kinds() -> Vec<Step> {
-        vec![
-            Step { ready: true, ..step("a", Kind::Note, vec![Item { body: "<p>Prep</p>".into(), ..Item::default() }]) },
-            step("b", Kind::List, vec![Item { title: "Chapel".into(), body: "Wet stone".into(), ..Item::default() }, titled("Vault")]),
-            Step { list_style: ListStyle::Check, ..step("c", Kind::List, vec![Item { done: true, ..titled("The ring") }, titled("The bell")]) },
-            Step { id: "d".into(), ..linked("y") },
-        ]
+    /// A session with one of everything, linked up.
+    fn full() -> Session {
+        Session {
+            date: Some("2026-11-10".into()),
+            time: Some("19:30".into()),
+            party_note: "Tobb is hurt".into(),
+            previously: "They reached the abbey.".into(),
+            premise: "Into the crypt.".into(),
+            locations: vec![Location { id: "ossuary".into(), name: "Ossuary".into(), description: "Skulls in rows".into() }],
+            npcs: vec![Npc { id: "abbot".into(), name: "The abbot's ghost".into(), wants: "Peace".into(), voice: "Scripture".into() }],
+            checklist: vec![Check { text: "Minis".into(), done: true }],
+            scenes: vec![
+                Scene {
+                    ready: true,
+                    location_id: Some("ossuary".into()),
+                    npc_ids: vec!["abbot".into()],
+                    encounter_ids: vec!["e1".into()],
+                    checklist: vec![check_item("The ghost appears")],
+                    ..scene("a")
+                },
+                scene("b"),
+            ],
+            ..session(1, " Into the Crypt ")
+        }
     }
 
     #[test]
     fn saves_reads_back_and_lists_the_highest_number_first() {
         let dir = temp_dir("save");
         assert!(list(&dir).unwrap().sessions.is_empty());
-        let full = Session {
-            date: Some("2026-11-10".into()),
-            time: Some("19:30".into()),
-            steps: all_kinds(),
-            party_note: "Tobb is hurt".into(),
-            to_bring: vec!["Minis".into(), "Handout".into()],
-            ..session(1, " Vault ")
-        };
-        let first = save(&dir, full, 10).unwrap();
-        assert_eq!((first.id.as_str(), first.title.as_str(), first.updated), ("a", "Vault", 10));
+        let first = save(&dir, full(), 10).unwrap();
+        assert_eq!((first.id.as_str(), first.title.as_str(), first.updated), ("a", "Into the Crypt", 10));
         assert_eq!(get(&dir, &first.id).unwrap(), first);
-        // The order of steps is kept, and an Encounter step keeps its encounter.
-        assert_eq!(first.steps.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["a", "b", "c", "d"]);
-        assert_eq!(first.steps[3].encounter.as_deref(), Some("y"));
         let second = save(&dir, session(2, "Bridge"), 11).unwrap();
-        save(&dir, Session { title: "Vault II".into(), ..first }, 20).unwrap();
+        save(&dir, Session { title: "Crypt II".into(), ..first }, 20).unwrap();
         let all = list(&dir).unwrap().sessions;
-        assert_eq!(all.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Bridge", "Vault II"]);
-        assert_eq!((all[1].ready, all[1].steps, all[1].time.as_deref()), (1, 4, Some("19:30")));
+        assert_eq!(all.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Bridge", "Crypt II"]);
+        assert_eq!((all[1].ready, all[1].scenes, all[1].time.as_deref()), (1, 2, Some("19:30")));
         assert_eq!(get(&dir, &second.id).unwrap(), second);
+    }
+
+    #[test]
+    fn rejects_a_number_another_session_has() {
+        let dir = temp_dir("number");
+        let first = save(&dir, session(1, "Vault"), 1).unwrap();
+        let second = save(&dir, session(2, "Bridge"), 2).unwrap();
+        let Err(StorageError::Invalid(why)) = save(&dir, session(1, "Again"), 3) else { panic!() };
+        assert!(why.contains("Session 1 already exists"), "{why}");
+        assert!(matches!(save(&dir, Session { number: 1, ..second.clone() }, 4), Err(StorageError::Invalid(_))));
+        save(&dir, Session { title: "Vault II".into(), ..first.clone() }, 5).unwrap(); // keeping its own number is fine
+        save(&dir, Session { number: 3, ..second }, 6).unwrap();
+        // Sessions that already share a number (saved before this rule) can still be saved.
+        let mut twin = first.clone();
+        twin.id = "twin".into();
+        fs::write(dir.join(FOLDER).join("twin.json"), to_json(&twin).unwrap()).unwrap();
+        save(&dir, Session { title: "Twin".into(), ..twin }, 7).unwrap();
     }
 
     #[test]
@@ -523,28 +456,29 @@ mod tests {
     #[test]
     fn rejects_bad_sessions_unknown_ids_and_keeps_damaged_files() {
         let dir = temp_dir("rules");
-        let all = Session { date: Some("2026-13-01".into()), time: Some("24:00".into()), to_bring: vec![" ".into()], ..session(0, " ") };
+        let all = Session { date: Some("2026-13-01".into()), time: Some("24:00".into()), checklist: vec![check_item(" ")], ..session(0, " ") };
         let Err(StorageError::Invalid(all)) = save(&dir, all, 1) else { panic!() };
-        for part in ["number must be 1", "title is required", "YYYY-MM-DD", "HH:MM", "To bring"] {
+        for part in ["number must be 1", "title is required", "YYYY-MM-DD", "HH:MM", "the checklist"] {
             assert!(all.contains(part), "{all}");
         }
-        let bad = |s: Session| matches!(save(&dir, s, 1), Err(StorageError::Invalid(_)));
-        let with = |steps: Vec<Step>| Session { steps, ..session(1, "A") };
+        let bad = |s: Session| matches!(check(&mut s.clone()), Err(StorageError::Invalid(_)));
+        let with_scene = |sc: Scene| Session { scenes: vec![sc], ..full() };
+        assert!(!bad(full()));
         assert!(bad(session(1, &"x".repeat(MAX_TITLE_LEN + 1))));
-        assert!(bad(Session { party_note: "x".repeat(MAX_NOTE_LEN + 1), ..session(1, "A") }));
-        assert!(!bad(with(vec![Step { title: " ".into(), ..step("a", Kind::Note, vec![]) }])));
-        assert!(bad(with(vec![step("a", Kind::Note, vec![]), step("a", Kind::List, vec![])]))); // repeated step id
-        assert!(bad(with(vec![step("../x", Kind::Note, vec![])])));
-        assert!(bad(with(vec![step("a", Kind::Note, vec![Item::default(), Item::default()])])));
-        assert!(bad(with(vec![step("a", Kind::Note, vec![Item { body: "x".repeat(MAX_NOTE_LEN + 1), ..Item::default() }])])));
-        assert!(bad(with(vec![step("a", Kind::List, vec![titled(" ")])])));
-        assert!(bad(with(vec![step("a", Kind::List, vec![titled(&"x".repeat(MAX_TITLE_LEN + 1))])])));
-        assert!(bad(with(vec![linked("../x")])));
-        assert!(!bad(with(vec![linked("x"), Step { id: "f".into(), ..linked("x") }]))); // the same encounter in two steps is fine
-        assert!(!bad(with(vec![step("g", Kind::Encounter, vec![])]))); // none picked yet
-        assert!(!bad(session(1, &"x".repeat(MAX_TITLE_LEN))));
+        assert!(bad(Session { premise: "x".repeat(MAX_NOTE_LEN + 1), ..full() }));
+        assert!(!bad(with_scene(Scene { title: " ".into(), ..scene("a") }))); // untitled is fine
+        assert!(bad(Session { scenes: vec![scene("a"), scene("a")], ..full() })); // repeated scene id
+        assert!(bad(with_scene(scene("../x"))));
+        assert!(bad(with_scene(Scene { location_id: Some("nowhere".into()), ..scene("a") })));
+        assert!(bad(with_scene(Scene { npc_ids: vec!["stranger".into()], ..scene("a") })));
+        assert!(bad(with_scene(Scene { npc_ids: vec!["abbot".into(), "abbot".into()], ..scene("a") }))); // linked twice
+        assert!(bad(with_scene(Scene { encounter_ids: vec!["e1".into(), "e1".into()], ..scene("a") }))); // linked twice
+        assert!(bad(with_scene(Scene { encounter_ids: vec!["../e".into()], ..scene("a") })));
+        assert!(bad(with_scene(Scene { checklist: vec![check_item("")], ..scene("a") })));
+        assert!(bad(Session { npcs: vec![Npc { id: "a".into(), ..Npc::default() }, Npc { id: "a".into(), ..Npc::default() }], ..session(1, "A") }));
         let ghost = Session { id: "nope".into(), ..session(1, "A") };
         assert!(matches!(save(&dir, ghost, 1), Err(StorageError::NotFound(_))));
+        fs::create_dir_all(dir.join(FOLDER)).unwrap();
         fs::write(dir.join(FOLDER).join("b.json"), "{ nope").unwrap();
         assert_eq!(list(&dir).unwrap().unreadable, ["b.json"]);
         let damaged = Session { id: "b".into(), ..session(1, "A") };
@@ -553,61 +487,13 @@ mod tests {
     }
 
     #[test]
-    fn clears_fields_a_kind_does_not_use() {
-        let dir = temp_dir("clear");
-        let stray = Item { title: "t".into(), body: "b".into(), done: true };
-        let mixed = Step { encounter: Some("e".into()), list_style: ListStyle::Check, ..step("a", Kind::List, vec![stray.clone()]) };
-        let bulleted = step("c", Kind::List, vec![stray.clone()]);
-        let note = Step { list_style: ListStyle::Numbered, ..step("d", Kind::Note, vec![]) };
-        let enc = Step { items: vec![stray.clone()], ..linked("e") };
-        let saved = save(&dir, Session { steps: vec![mixed, Step { id: "b".into(), ..enc }, bulleted, note], ..session(1, "A") }, 1).unwrap();
-        assert_eq!(saved.steps[0].encounter, None);
-        assert_eq!(saved.steps[0].items[0], Item { done: true, ..stray.clone() });
-        assert_eq!(saved.steps[2].items[0], Item { done: false, ..stray.clone() });
-        assert_eq!(saved.steps[3].list_style, ListStyle::Bulleted);
-        assert!(saved.steps[1].items.is_empty());
-        assert_eq!(saved.steps[1].encounter.as_deref(), Some("e"));
-    }
-
-    #[test]
-    fn threads_round_trip_and_are_validated() {
-        let dir = temp_dir("threads");
-        assert!(get_threads(&dir).unwrap().is_empty());
-        assert_eq!(save_threads(&dir, vec![" Who paid? ".into(), "The ring".into()]).unwrap(), ["Who paid?", "The ring"]);
-        assert_eq!(get_threads(&dir).unwrap(), ["Who paid?", "The ring"]);
-        for bad in [vec![String::new()], vec!["x".repeat(MAX_LINE_LEN + 1)], vec!["a".to_string(); MAX_LINES + 1]] {
-            assert!(matches!(save_threads(&dir, bad), Err(StorageError::Invalid(_))));
-        }
-        assert_eq!(get_threads(&dir).unwrap().len(), 2); // a refused save changes nothing
-        fs::write(dir.join(THREADS_FILE), "{ nope").unwrap();
-        assert!(matches!(save_threads(&dir, vec!["New".into()]), Err(StorageError::Corrupt(_))));
-        assert_eq!(fs::read_to_string(dir.join(THREADS_FILE)).unwrap(), "{ nope"); // a damaged file is kept
-    }
-
-    #[test]
-    fn a_map_step_keeps_its_pins_and_picture_until_the_step_or_session_goes() {
-        let dir = temp_dir("map");
-        let pin = Pin { x: 0.5, y: 0.5, title: "Door".into(), text: "Locked".into() };
-        let map_step = Step { pins: vec![pin.clone()], ..step("m", Kind::Map, vec![]) };
-        let saved = save(&dir, Session { steps: vec![map_step], ..session(1, "A") }, 1).unwrap();
-        assert_eq!(saved.steps[0].pins, std::slice::from_ref(&pin));
-        let off = Step { pins: vec![Pin { x: 2.0, ..pin.clone() }], ..step("m", Kind::Map, vec![]) };
-        assert!(matches!(save(&dir, Session { steps: vec![off], ..saved.clone() }, 2), Err(StorageError::Invalid(_))));
-
-        let png = dir.join("map.png");
-        image::RgbImage::new(64, 32).save(&png).unwrap();
-        assert!(matches!(set_map(&dir, &saved.id, "unsaved", Some(&png)), Err(StorageError::NotFound(_))));
-        let map = set_map(&dir, &saved.id, "m", Some(&png)).unwrap().unwrap();
-        assert_eq!(get(&dir, &saved.id).unwrap().steps[0].map.as_ref().map(|m| &m.path), Some(&map.path));
-        let file = dir.join(FOLDER).join(format!("{}.json", saved.id));
-        assert!(!fs::read_to_string(&file).unwrap().contains("map.jpg"));
-
-        // The step removed: its picture goes on save. The session deleted: all of its pictures go.
-        save(&dir, Session { steps: vec![], ..saved.clone() }, 3).unwrap();
-        assert!(!Path::new(&map.path).exists());
-        let again = save(&dir, saved.clone(), 4).unwrap();
-        let map = set_map(&dir, &again.id, "m", Some(&png)).unwrap().unwrap();
-        delete(&dir, &again.id).unwrap();
-        assert!(!Path::new(&map.path).exists());
+    fn trims_what_it_saves() {
+        let dir = temp_dir("trim");
+        let mut s = full();
+        s.locations[0].name = "  Ossuary ".into();
+        s.scenes[0].checklist[0].text = " The ghost appears ".into();
+        let saved = save(&dir, s, 1).unwrap();
+        assert_eq!(saved.locations[0].name, "Ossuary");
+        assert_eq!(saved.scenes[0].checklist[0].text, "The ghost appears");
     }
 }

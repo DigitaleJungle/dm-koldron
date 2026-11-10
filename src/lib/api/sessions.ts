@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Picture } from "$lib/api/campaigns";
+import type { Pin } from "$lib/api/encounters";
 
-export type StepKind = "note" | "list" | "encounter";
+export type StepKind = "note" | "list" | "encounter" | "map";
 
 export type ListStyle = "bulleted" | "numbered" | "check";
 
@@ -9,8 +11,18 @@ export type ListStyle = "bulleted" | "numbered" | "check";
 export type Item = { title: string; body: string; done: boolean };
 
 /** An Encounter step has no items; `encounter` is its encounter's id, or null until one is picked. `listStyle`
- *  counts for a List step only. */
-export type Step = { id: string; kind: StepKind; title: string; ready: boolean; items: Item[]; encounter: string | null; listStyle: ListStyle };
+ *  counts for a List step only; `pins` and `map` (its picture, found by Rust, never saved from here) for a Map step. */
+export type Step = {
+  id: string;
+  kind: StepKind;
+  title: string;
+  ready: boolean;
+  items: Item[];
+  encounter: string | null;
+  listStyle: ListStyle;
+  pins: Pin[];
+  map: Picture | null;
+};
 
 /** `date`: `YYYY-MM-DD`, `time`: `HH:MM`, or null; `updated`: ms, set by Rust. */
 export type Session = {
@@ -48,6 +60,11 @@ export function saveSession(campaign: string, session: Session): Promise<Session
 /** Deletes the session only; its encounters stay. */
 export function deleteSession(campaign: string, id: string): Promise<void> {
   return invoke("delete_session", { campaign, id });
+}
+
+/** Sets a saved Map step's picture from the file at `path`, or removes it (null). Returns the picture now there. */
+export function setSessionMap(campaign: string, session: string, step: string, path: string | null): Promise<Picture | null> {
+  return invoke("set_session_map", { campaign, session, step, path });
 }
 
 /** The campaign's open threads, shared by every session. */

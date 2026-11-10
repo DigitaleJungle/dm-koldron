@@ -502,6 +502,7 @@ export const strings = {
         note: { label: "Note" },
         list: { label: "List" },
         encounter: { label: "Encounter" },
+        map: { label: "Map" },
       },
       listStyle: "List style",
       styles: { bulleted: "Bulleted", numbered: "Numbered", check: "Checklist" },

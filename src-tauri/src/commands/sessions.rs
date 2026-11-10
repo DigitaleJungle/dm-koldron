@@ -1,14 +1,16 @@
 //! Sessions: one file per session in its campaign's folder, `sessions/<id>.json`, plus the campaign-wide open threads
 //! in `threads.json`. Only active campaigns are changed (an archived one is read-only). A session is a list of prep
-//! steps; an encounters step links encounters by id, the encounters themselves live in their own folder.
+//! steps; an encounters step links encounters by id, the encounters themselves live in their own folder. A Map step's
+//! picture is stored beside the session as `sessions/<session>.<step>.map.jpg`.
 
-use crate::commands::campaigns::{active_dir, dirs, now_ms};
+use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
+use crate::commands::encounters::{check_pins, Pin, MAP_MAX_SIDE};
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const FOLDER: &str = "sessions";
@@ -26,6 +28,7 @@ pub enum Kind {
     Note,
     List,
     Encounter,
+    Map,
 }
 
 /// How a List step shows its items.
@@ -66,6 +69,12 @@ pub struct Step {
     /// A List step's style; Bulleted for other kinds.
     #[serde(default)]
     pub list_style: ListStyle,
+    /// A Map step's pins.
+    #[serde(default)]
+    pub pins: Vec<Pin>,
+    /// A Map step's picture, found beside the session when it's read; never saved in the file or taken from the window.
+    #[serde(default, skip_deserializing)]
+    pub map: Option<Picture>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -163,8 +172,17 @@ fn check_step(step: &mut Step, problems: &mut Vec<String>) {
     let (wants_title, wants_body, wants_done) = match step.kind {
         Kind::Note => (false, true, false),
         Kind::List => (true, true, step.list_style == ListStyle::Check),
-        Kind::Encounter => (false, false, false),
+        Kind::Encounter | Kind::Map => (false, false, false),
     };
+    if step.kind == Kind::Map {
+        step.items.clear();
+        check_pins(&step.pins, problems);
+        if step.pins.iter().any(|p| p.text.chars().count() > MAX_NOTE_LEN) {
+            problems.push(format!("{name} has a pin text over {MAX_NOTE_LEN} characters."));
+        }
+    } else {
+        step.pins.clear();
+    }
     if step.kind != Kind::List {
         step.list_style = ListStyle::Bulleted;
     }
@@ -241,7 +259,37 @@ fn read(folder: &Path, id: &str) -> Result<Session, StorageError> {
     })?;
     let mut session: Session = serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?;
     session.id = id.into(); // the file name is the id
+    find_maps(folder, &mut session);
     Ok(session)
+}
+
+fn map_path(folder: &Path, session: &str, step: &str) -> PathBuf {
+    folder.join(format!("{session}.{step}.map.jpg"))
+}
+
+/// Sets each Map step's picture from what's beside the session.
+fn find_maps(folder: &Path, session: &mut Session) {
+    for step in &mut session.steps {
+        step.map = if step.kind == Kind::Map { picture_at(&map_path(folder, &session.id, &step.id)) } else { None };
+    }
+}
+
+/// Removes the session's map pictures, except those of the steps named in `keep`.
+fn remove_maps(folder: &Path, session: &str, keep: &[&str]) -> Result<(), StorageError> {
+    let prefix = format!("{session}.");
+    let entries = match fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(step) = name.strip_prefix(&prefix).and_then(|rest| rest.strip_suffix(".map.jpg")) else { continue };
+        if !keep.contains(&step) {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
@@ -300,8 +348,35 @@ pub fn save(campaign_dir: &Path, mut session: Session, now: u64) -> Result<Sessi
         read(&folder, &session.id)?; // replacing only what exists, and never a file that can't be read
     }
     session.updated = now;
-    write_atomic(&folder.join(format!("{}.json", session.id)), &to_json(&session)?)?;
+    let mut stored = session.clone();
+    stored.steps.iter_mut().for_each(|s| s.map = None);
+    write_atomic(&folder.join(format!("{}.json", session.id)), &to_json(&stored)?)?;
+    // Pictures of Map steps that are gone (removed, or another kind now) go too.
+    let maps: Vec<&str> = session.steps.iter().filter(|s| s.kind == Kind::Map).map(|s| s.id.as_str()).collect();
+    remove_maps(&folder, &session.id, &maps)?;
+    find_maps(&folder, &mut session);
     Ok(session)
+}
+
+/// Sets a saved Map step's picture from a file (shrunk, stored as JPEG), or removes it (`None`).
+pub fn set_map(campaign_dir: &Path, session: &str, step: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
+    check_id(session, "session")?;
+    check_id(step, "step")?;
+    let folder = campaign_dir.join(FOLDER);
+    let _guard = lock_update();
+    let saved = read(&folder, session)?;
+    if !saved.steps.iter().any(|s| s.id == step && s.kind == Kind::Map) {
+        return Err(StorageError::NotFound("Save the session to add a map to this step.".into()));
+    }
+    let path = map_path(&folder, session, step);
+    match source {
+        Some(source) => store_picture(source, MAP_MAX_SIDE, &path)?,
+        None => match fs::remove_file(&path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        },
+    }
+    Ok(picture_at(&path))
 }
 
 /// Deletes the session; its encounters stay.
@@ -311,6 +386,7 @@ pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
     let _guard = lock_update();
     read(&folder, id)?;
     fs::remove_file(folder.join(format!("{id}.json")))?;
+    remove_maps(&folder, id, &[])?;
     Ok(())
 }
 
@@ -357,6 +433,11 @@ pub async fn delete_session(app: AppHandle, campaign: String, id: String) -> Res
 }
 
 #[tauri::command]
+pub async fn set_session_map(app: AppHandle, campaign: String, session: String, step: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
+    blocking(move || set_map(&active_dir(&dirs(&app)?, &campaign)?, &session, &step, path.as_deref().map(Path::new))).await
+}
+
+#[tauri::command]
 pub async fn get_threads_cmd(app: AppHandle, campaign: String) -> Result<Vec<String>, StorageError> {
     blocking(move || get_threads(&active_dir(&dirs(&app)?, &campaign)?)).await
 }
@@ -383,7 +464,7 @@ mod tests {
     }
 
     fn step(id: &str, kind: Kind, items: Vec<Item>) -> Step {
-        Step { id: id.into(), kind, title: format!("Step {id}"), ready: false, items, encounter: None, list_style: ListStyle::Bulleted }
+        Step { id: id.into(), kind, title: format!("Step {id}"), ready: false, items, encounter: None, list_style: ListStyle::Bulleted, pins: vec![], map: None }
     }
 
     fn titled(title: &str) -> Item {
@@ -501,5 +582,32 @@ mod tests {
         fs::write(dir.join(THREADS_FILE), "{ nope").unwrap();
         assert!(matches!(save_threads(&dir, vec!["New".into()]), Err(StorageError::Corrupt(_))));
         assert_eq!(fs::read_to_string(dir.join(THREADS_FILE)).unwrap(), "{ nope"); // a damaged file is kept
+    }
+
+    #[test]
+    fn a_map_step_keeps_its_pins_and_picture_until_the_step_or_session_goes() {
+        let dir = temp_dir("map");
+        let pin = Pin { x: 0.5, y: 0.5, title: "Door".into(), text: "Locked".into() };
+        let map_step = Step { pins: vec![pin.clone()], ..step("m", Kind::Map, vec![]) };
+        let saved = save(&dir, Session { steps: vec![map_step], ..session(1, "A") }, 1).unwrap();
+        assert_eq!(saved.steps[0].pins, std::slice::from_ref(&pin));
+        let off = Step { pins: vec![Pin { x: 2.0, ..pin.clone() }], ..step("m", Kind::Map, vec![]) };
+        assert!(matches!(save(&dir, Session { steps: vec![off], ..saved.clone() }, 2), Err(StorageError::Invalid(_))));
+
+        let png = dir.join("map.png");
+        image::RgbImage::new(64, 32).save(&png).unwrap();
+        assert!(matches!(set_map(&dir, &saved.id, "unsaved", Some(&png)), Err(StorageError::NotFound(_))));
+        let map = set_map(&dir, &saved.id, "m", Some(&png)).unwrap().unwrap();
+        assert_eq!(get(&dir, &saved.id).unwrap().steps[0].map.as_ref().map(|m| &m.path), Some(&map.path));
+        let file = dir.join(FOLDER).join(format!("{}.json", saved.id));
+        assert!(!fs::read_to_string(&file).unwrap().contains("map.jpg"));
+
+        // The step removed: its picture goes on save. The session deleted: all of its pictures go.
+        save(&dir, Session { steps: vec![], ..saved.clone() }, 3).unwrap();
+        assert!(!Path::new(&map.path).exists());
+        let again = save(&dir, saved.clone(), 4).unwrap();
+        let map = set_map(&dir, &again.id, "m", Some(&png)).unwrap().unwrap();
+        delete(&dir, &again.id).unwrap();
+        assert!(!Path::new(&map.path).exists());
     }
 }

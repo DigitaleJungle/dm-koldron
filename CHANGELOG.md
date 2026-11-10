@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.2] - 2026-11-10
+
+### Added
+
+- Sessions: a Map step, the same map as in encounters (a picture with numbered pins, each with a title and text; zoom and pan). Choosing a picture for an unsaved step saves the session first; the picture is removed with its step or session.
+
 ## [0.5.1] - 2026-11-10
 
 ### Changed

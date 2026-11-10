@@ -32,6 +32,8 @@ describe("sessions", () => {
   it("knows when an encounter step has its encounter", () => {
     expect(hasItems(step("encounter"))).toBe(false);
     expect(hasItems({ ...step("encounter"), encounter: "a" })).toBe(true);
+    expect(hasItems(step("map"))).toBe(false);
+    expect(hasItems({ ...step("map"), pins: [{ x: 0.5, y: 0.5, title: "", text: "" }] })).toBe(true);
   });
 
   it("offers the encounters by name", () => {

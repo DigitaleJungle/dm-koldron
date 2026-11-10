@@ -767,7 +767,7 @@
       <aside class="panel notes" aria-labelledby="notes-title">
         <h2 id="notes-title" class="notes-title">{t.dmNotes}</h2>
         <div class="notes-text">
-          <NotesPanel topic="description" notes={encounter.notes} map={encounter.map ?? null} locked {campaign} encounterId={encounter.id} onmap={() => {}} />
+          <NotesPanel topic="description" notes={encounter.notes} map={encounter.map ?? null} locked setMap={null} />
         </div>
         <div class="log">
           <label for="log-note" class="label">{t.log}</label>
@@ -799,7 +799,7 @@
   {#if mapOpen && encounter}
     <div class="map-body">
       <div class="map-view">
-        <NotesPanel topic="map" notes={encounter.notes} map={encounter.map ?? null} locked {campaign} encounterId={encounter.id} onmap={() => {}} />
+        <NotesPanel topic="map" notes={encounter.notes} map={encounter.map ?? null} locked setMap={null} />
       </div>
       {#if encounter.notes.pins.length > 0}
         <div class="legend">

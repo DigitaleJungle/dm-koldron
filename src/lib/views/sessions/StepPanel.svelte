@@ -3,6 +3,7 @@
   import { untrack } from "svelte";
   import Menu from "$lib/components/Menu.svelte";
   import RichText from "$lib/components/RichText.svelte";
+  import NotesPanel from "$lib/views/encounters/NotesPanel.svelte";
   import type { Encounter } from "$lib/api/encounters";
   import type { Step } from "$lib/api/sessions";
   import { strings } from "$lib/strings";
@@ -17,6 +18,7 @@
     rate,
     busy,
     oncreate,
+    setMap,
   }: {
     step: Step;
     encountersBase: string;
@@ -27,6 +29,8 @@
     /** A new encounter is being made (or the session saved). */
     busy: boolean;
     oncreate: () => void;
+    /** Sets a Map step's picture (saving the session first when the step isn't saved yet). */
+    setMap: (path: string | null) => Promise<void>;
   } = $props();
 
   const t = strings.sessions.steps;
@@ -89,7 +93,15 @@
     </button>
   </div>
 
-  {#if step.kind === "note"}
+  {#if step.kind === "map"}
+    <!-- The encounter map, as is; its pins are the step's (changed in place). -->
+    <div class="map-step">
+      <!-- Keyed: another Map step starts with no open pin, zoom or error of this one. -->
+      {#key step.id}
+        <NotesPanel topic="map" notes={{ description: "", pins: step.pins }} map={step.map} locked={false} {setMap} />
+      {/key}
+    </div>
+  {:else if step.kind === "note"}
     <!-- Keyed: the field fills itself once, so another step needs a fresh one. -->
     {#key step.id}
       <RichText
@@ -185,6 +197,20 @@
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
+  }
+
+  /* A Map step fills its column, as the map fills Prepare's details card. */
+  .panel:has(.map-step) {
+    box-sizing: border-box;
+    min-height: 100%;
+  }
+
+  .map-step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-height: var(--map-empty-height);
   }
 
   .head {

@@ -10,21 +10,27 @@ export function filterSessions<T extends { title: string }>(sessions: T[], query
   return q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
 }
 
-export const KINDS: StepKind[] = ["note", "list", "encounter"];
+export const KINDS: StepKind[] = ["note", "list", "encounter", "map"];
 
 export const LIST_STYLES: ListStyle[] = ["bulleted", "numbered", "check"];
 
 export const blankItem = (): Item => ({ title: "", body: "", done: false });
 
 /** A new, empty step of a kind. */
-export const newStep = (kind: StepKind): Step => ({ id: crypto.randomUUID(), kind, title: "", ready: false, items: [], encounter: null, listStyle: "bulleted" });
+export const newStep = (kind: StepKind): Step => ({ id: crypto.randomUUID(), kind, title: "", ready: false, items: [], encounter: null, listStyle: "bulleted", pins: [], map: null });
 
 /** How many steps are ready. */
 export const readyCount = (steps: Pick<Step, "ready">[]): number => steps.filter((s) => s.ready).length;
 
 /** Whether the step has anything in it: a note with text, an encounter, or any item. */
 export const hasItems = (step: Step): boolean =>
-  step.kind === "note" ? step.items.some((i) => i.body !== "") : step.kind === "encounter" ? step.encounter !== null : step.items.length > 0;
+  step.kind === "note"
+    ? step.items.some((i) => i.body !== "")
+    : step.kind === "encounter"
+      ? step.encounter !== null
+      : step.kind === "map"
+        ? step.map !== null || step.pins.length > 0
+        : step.items.length > 0;
 
 /** The campaign's encounters, by name. */
 export const choices = (encounters: Encounter[]): Encounter[] => encounters.toSorted((a, b) => a.name.localeCompare(b.name));

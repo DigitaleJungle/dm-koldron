@@ -18,7 +18,7 @@ const MAX_QUANTITY: u32 = 999;
 const MAX_NOTE_LEN: usize = 20_000;
 const MAX_PINS: usize = 100;
 /// The map is stored shrunk so its longest side is at most this many pixels.
-const MAP_MAX_SIDE: u32 = 2048;
+pub const MAP_MAX_SIDE: u32 = 2048;
 
 /// One roster row: a pack's monster and how many. The name and source are kept so the row still reads when its pack
 /// is switched off or gone.
@@ -133,16 +133,21 @@ fn check(encounter: &mut Encounter) -> Result<(), StorageError> {
     if texts.any(|t| t.chars().count() > MAX_NOTE_LEN) {
         problems.push(format!("A note must be at most {MAX_NOTE_LEN} characters."));
     }
-    if notes.pins.iter().any(|p| p.title.chars().count() > MAX_NAME_LEN) {
+    check_pins(&notes.pins, &mut problems);
+    if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
+}
+
+/// A map's pins: titles not too long, not too many, all on the picture. (Their texts are checked with the notes.)
+pub fn check_pins(pins: &[Pin], problems: &mut Vec<String>) {
+    if pins.iter().any(|p| p.title.chars().count() > MAX_NAME_LEN) {
         problems.push(format!("A pin's title must be at most {MAX_NAME_LEN} characters."));
     }
-    if notes.pins.len() > MAX_PINS {
+    if pins.len() > MAX_PINS {
         problems.push(format!("A map can have at most {MAX_PINS} pins."));
     }
-    if notes.pins.iter().any(|p| !(0.0..=1.0).contains(&p.x) || !(0.0..=1.0).contains(&p.y)) {
+    if pins.iter().any(|p| !(0.0..=1.0).contains(&p.x) || !(0.0..=1.0).contains(&p.y)) {
         problems.push("A pin must be on the map.".into());
     }
-    if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
 }
 
 fn read(folder: &Path, id: &str) -> Result<Encounter, StorageError> {

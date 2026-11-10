@@ -64,6 +64,7 @@ pub fn run() {
             commands::sessions::get_session,
             commands::sessions::save_session,
             commands::sessions::delete_session,
+            commands::sessions::set_session_map,
             commands::sessions::get_threads_cmd,
             commands::sessions::save_threads_cmd,
             commands::images::list_pack_images,

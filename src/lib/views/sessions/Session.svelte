@@ -9,7 +9,7 @@
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, listEncounters, saveEncounter, type Budget, type Encounter } from "$lib/api/encounters";
-  import { deleteSession, getSession, listSessions, saveSession, type Session, type StepKind } from "$lib/api/sessions";
+  import { deleteSession, getSession, listSessions, saveSession, setSessionMap, type Session, type Step, type StepKind } from "$lib/api/sessions";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
@@ -39,14 +39,36 @@
   /** What was last saved (or loaded), to tell whether there are changes. Null until it has loaded. */
   let baseline = $state<string | null>(null);
 
-  const snapshot = () => JSON.stringify({ ...draft, title: draft.title.trim(), updated: 0 });
+  // A Map step's picture is stored at once, not with Save, so it isn't a change.
+  const snapshot = () => JSON.stringify({ ...draft, title: draft.title.trim(), updated: 0, steps: draft.steps.map((s) => ({ ...s, map: null })) });
+  /** The Map steps as last saved (or loaded): only those can be given a picture. */
+  let savedMaps = $state(new Set<string>());
+  const mapsOf = (s: Session) => new Set(s.steps.filter((st) => st.kind === "map").map((st) => st.id));
+
+  /** Sets a Map step's picture. A step not saved yet (or a new session) is saved first, as New encounter does. */
+  function mapSetter(step: Step) {
+    return async (path: string | null) => {
+      if (!draft.id || !savedMaps.has(step.id)) {
+        if (!(await save(false))) throw new Error(saveError ?? t.saveError(""));
+      }
+      step.map = await setSessionMap(campaign, draft.id, step.id, path);
+      // A new session gets its own address once it has its map.
+      if (!id) {
+        leaving = true;
+        await gotoReplacing(`${base}/${draft.id}`);
+      }
+    };
+  }
 
   // svelte-ignore state_referenced_locally
   const opening = id ? getSession(campaign, id) : listSessions(campaign).then((l) => nextNumber(l.sessions));
   opening.then(
     (opened) => {
       if (typeof opened === "number") draft.number = opened;
-      else draft = opened;
+      else {
+        draft = opened;
+        savedMaps = mapsOf(opened);
+      }
       selected = draft.steps[0]?.id ?? null;
       baseline = snapshot();
     },
@@ -140,6 +162,7 @@
       const saved = await saveSession(campaign, { ...draft, title: draft.title.trim() || t.newTitle });
       draft.id = saved.id;
       draft.updated = saved.updated;
+      savedMaps = mapsOf(saved);
       if (sent === snapshot()) {
         draft.title = saved.title; // a blank title was saved as "New session"
         baseline = snapshot();
@@ -361,6 +384,7 @@
             {rate}
             busy={creating || saving}
             oncreate={createEncounter}
+            setMap={mapSetter(draft.steps[index])}
           />
         {/if}
       </div>

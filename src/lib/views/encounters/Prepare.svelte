@@ -9,7 +9,7 @@
   import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
+  import { encounterBudgets, getEncounter, saveEncounter, setEncounterMap, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
@@ -36,6 +36,12 @@
   // ---- Loading -----------------------------------------------------------------------------------
   let loadError = $state<string | null>(null);
   let encounter = $state<Encounter | null>(null);
+  /** Sets or removes the saved encounter's map. */
+  async function setMap(path: string | null) {
+    if (!encounter) return;
+    const map = await setEncounterMap(campaign, encounter.id, path);
+    encounter = { ...encounter, map };
+  }
   let characters = $state<Character[] | null>(null);
   let partyError = $state<string | null>(null);
   let monsters = $state<CatalogRow[] | null>(null);
@@ -641,9 +647,7 @@
                   bind:notes
                   map={encounter?.map ?? null}
                   {locked}
-                  {campaign}
-                  encounterId={encounter?.id ?? null}
-                  onmap={(map) => encounter && (encounter = { ...encounter, map })}
+                  setMap={encounter?.id ? setMap : null}
                 />
               {/if}
             </section>

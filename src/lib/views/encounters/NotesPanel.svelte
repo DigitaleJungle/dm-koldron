@@ -6,9 +6,10 @@
 
 <script lang="ts">
   // One of the encounter's notes, inside Prepare's details card (in the stat block's place): the Notes text, or
-  // the map: a picture with numbered pins, each with its own text. A Ready encounter's notes are read-only.
+  // the map: a picture with numbered pins, each with its own text. A Ready encounter's notes are read-only. A session's
+  // Map step uses the map the same way, with its own `setMap`.
   import { choosePictureFile, pictureSrc, type Picture } from "$lib/api/campaigns";
-  import { setEncounterMap, type Notes } from "$lib/api/encounters";
+  import type { Notes } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { untrack } from "svelte";
   import RichText from "$lib/components/RichText.svelte";
@@ -21,18 +22,17 @@
     notes = $bindable(),
     map,
     locked,
-    campaign,
-    encounterId,
-    onmap,
+    setMap,
+    saveFirst = strings.encounters.notes.saveFirst,
   }: {
     topic: Topic;
     notes: Notes;
     map: Picture | null;
     locked: boolean;
-    campaign: string;
-    /** Null until the encounter is saved: only a saved one can have a map. */
-    encounterId: string | null;
-    onmap: (map: Picture | null) => void;
+    /** Stores the picture file at `path` as the map, or removes it (null), and shows the result. Null until what the
+     *  map belongs to is saved: only then can it have one (`saveFirst` says so). */
+    setMap: ((path: string | null) => Promise<void>) | null;
+    saveFirst?: string;
   } = $props();
 
   const t = strings.encounters.notes;
@@ -45,13 +45,13 @@
   let storing = $state(false);
   let mapError = $state<string | null>(null);
   async function changeMap(choose: boolean) {
-    if (!encounterId || mapBusy) return;
+    if (!setMap || mapBusy) return;
     [mapBusy, mapError] = [true, null];
     try {
       const path = choose ? await choosePictureFile() : null;
       if (choose && !path) return; // the DM cancelled the dialog
       storing = choose;
-      onmap(await setEncounterMap(campaign, encounterId, path));
+      await setMap(path);
     } catch (e) {
       mapError = t.mapError(errorMessage(e));
     } finally {
@@ -351,8 +351,8 @@
     {#if !locked && notes.pins.length === 0}<p class="muted">{t.addPin}</p>{/if}
   {:else if locked}
     <p class="muted">{t.noMap}</p>
-  {:else if !encounterId}
-    <p class="muted">{t.saveFirst}</p>
+  {:else if !setMap}
+    <p class="muted">{saveFirst}</p>
   {:else}
     <button class="add-map" disabled={mapBusy} onclick={() => changeMap(true)}>
       <i class="ti ti-plus" aria-hidden="true"></i>

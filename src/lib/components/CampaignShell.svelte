@@ -1,9 +1,10 @@
 <script lang="ts">
   // The campaign screens' frame: a sidebar (app name and collapse button, campaign switcher, the screens, the
   // Settings gear) and the search bar above the screen. In a wide window the sidebar collapses to an icon strip
-  // (remembered on this device); in a narrow one it's a drawer behind a menu button.
+  // (remembered on this device); in a narrow one it's a drawer behind a menu button. While open, each screen's grip
+  // (on hover or focus) moves it, by dragging or the arrow keys; one order for all campaigns, on this device.
   import type { Snippet } from "svelte";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Campaign } from "$lib/api/campaigns";
@@ -12,6 +13,7 @@
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
+  import { moveTo, ordered } from "./sidebarOrder";
 
   let { campaign, children }: { campaign: Campaign; children: Snippet } = $props();
 
@@ -32,6 +34,25 @@
       localStorage.setItem(COLLAPSED_KEY, value ? "1" : "0");
     } catch {
       // not remembered; the sidebar still collapses
+    }
+  }
+
+  const ORDER_KEY = "campaign.sidebarOrder";
+  let order = $state<string[]>(readOrder());
+  function readOrder(): string[] {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
+      return Array.isArray(saved) ? saved.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return []; // storage unavailable or damaged: the default order
+    }
+  }
+  function setOrder(ids: string[]) {
+    order = ids;
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+    } catch {
+      // not remembered; the order still changes until the app closes
     }
   }
 
@@ -60,13 +81,37 @@
   );
 
   const base = $derived(`/campaign/${campaign.id}`);
-  const links = $derived([
-    { href: base, label: t.home, icon: "ti-home", current: page.url.pathname === base },
-    { href: `${base}/library`, label: t.library, icon: "ti-book", current: page.url.pathname.startsWith(`${base}/library`) },
-    { href: `${base}/characters`, label: t.characters, icon: "ti-users", current: page.url.pathname.startsWith(`${base}/characters`) },
-    { href: `${base}/encounters`, label: t.encounters, icon: "ti-swords", current: page.url.pathname.startsWith(`${base}/encounters`) },
-    { href: `${base}/sessions`, label: t.sessions, icon: "ti-notebook", current: page.url.pathname.startsWith(`${base}/sessions`) },
-  ]);
+  const links = $derived(
+    ordered(
+      [
+        { id: "home", href: base, label: t.home, icon: "ti-home", current: page.url.pathname === base },
+        { id: "library", href: `${base}/library`, label: t.library, icon: "ti-book", current: page.url.pathname.startsWith(`${base}/library`) },
+        { id: "characters", href: `${base}/characters`, label: t.characters, icon: "ti-users", current: page.url.pathname.startsWith(`${base}/characters`) },
+        { id: "encounters", href: `${base}/encounters`, label: t.encounters, icon: "ti-swords", current: page.url.pathname.startsWith(`${base}/encounters`) },
+        { id: "sessions", href: `${base}/sessions`, label: t.sessions, icon: "ti-notebook", current: page.url.pathname.startsWith(`${base}/sessions`) },
+      ],
+      order,
+    ),
+  );
+
+  function move(from: number, to: number) {
+    const ids = links.map((l) => l.id);
+    const next = moveTo(ids, from, to);
+    if (next !== ids) setOrder(next);
+  }
+
+  // Dragging: a grip starts it, each row is a drop place.
+  let dragging = $state<number | null>(null);
+  let over = $state<number | null>(null);
+
+  async function onGripKey(event: KeyboardEvent, i: number, id: string) {
+    const to = event.key === "ArrowUp" ? i - 1 : event.key === "ArrowDown" ? i + 1 : null;
+    if (to === null) return;
+    event.preventDefault();
+    move(i, to);
+    await tick();
+    document.querySelector<HTMLElement>(`[data-grip="${id}"]`)?.focus();
+  }
 </script>
 
 <svelte:window {onkeydown} />
@@ -110,12 +155,40 @@
     <div class="items">
       <nav aria-label={t.navigation}>
         <ul>
-          {#each links as link (link.href)}
-            <li>
+          {#each links as link, i (link.id)}
+            <li
+              class:dragging={dragging === i}
+              class:over={over === i && dragging !== null && dragging !== i}
+              ondragover={(ev) => {
+                if (dragging === null) return;
+                ev.preventDefault();
+                over = i;
+              }}
+              ondrop={(ev) => {
+                ev.preventDefault();
+                if (dragging !== null) move(dragging, i);
+                dragging = over = null;
+              }}
+            >
               <a href={link.href} aria-current={link.current ? "page" : undefined} aria-label={link.label}>
                 <i class="ti {link.icon}" aria-hidden="true"></i>
                 <span class="text">{link.label}</span>
               </a>
+              <button
+                  class="icon-btn grip"
+                  data-grip={link.id}
+                  draggable="true"
+                  aria-label={t.move(link.label)}
+                  onkeydown={(ev) => onGripKey(ev, i, link.id)}
+                  ondragstart={(ev) => {
+                    dragging = i;
+                    ev.dataTransfer?.setData("text/plain", link.id);
+                    if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+                  }}
+                  ondragend={() => (dragging = over = null)}
+                >
+                  <i class="ti ti-grip-vertical" aria-hidden="true"></i>
+                </button>
             </li>
           {/each}
         </ul>
@@ -243,7 +316,43 @@
     gap: var(--space-1);
   }
 
+  nav li {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-md);
+  }
+
+  nav li.dragging {
+    opacity: 0.5;
+  }
+
+  /* Where a dragged screen will land. */
+  nav li.over {
+    outline: var(--border-width) solid var(--color-accent);
+  }
+
+  /* The grip shows on the row's hover or focus. */
+  .grip {
+    position: absolute;
+    right: var(--space-1);
+    opacity: 0;
+    cursor: grab;
+  }
+
+  nav li:hover .grip,
+  nav li:focus-within .grip {
+    opacity: 1;
+  }
+
+  /* Not in the icon strip (the drawer shows it again, below). */
+  .collapsed .grip {
+    display: none;
+  }
+
   nav a {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -399,7 +508,8 @@
       transition: none;
     }
 
-    .collapsed aside .text {
+    .collapsed aside .text,
+    .collapsed .grip {
       display: revert;
     }
 

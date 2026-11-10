@@ -30,6 +30,7 @@ export const strings = {
     characters: "Characters",
     encounters: "Encounters",
     sessions: "Sessions",
+    move: (label: string) => `Move ${label}. Drag, or use the up and down arrow keys`,
     switchCampaign: (name: string) => `Campaign: ${name}. Switch campaign`,
     collapse: "Collapse sidebar",
     expand: "Expand sidebar",

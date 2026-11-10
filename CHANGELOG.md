@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.1] - 2026-11-10
+
+### Changed
+
+- Campaign sidebar: each screen can be moved with a grip shown on hover or focus (drag it, or use the up and down arrow keys); the order is the same for every campaign, remembered on this device, and the icon strip follows it.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added

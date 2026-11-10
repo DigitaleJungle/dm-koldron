@@ -13,6 +13,7 @@
   // + Combatant: a monster from the packs, a campaign character not yet in the fight, or a custom one.
   import { strings } from "$lib/strings";
   import { crText } from "$lib/views/library/catalog";
+  import { MAX_NUMBER } from "./run";
 
   let { monsters, characters, onpick }: { monsters: CatalogRow[]; characters: Character[]; onpick: (pick: Pick) => void } = $props();
   const t = strings.encounters.run.add;
@@ -59,7 +60,7 @@
   }
 </script>
 
-<dialog bind:this={dialog} class="add" aria-labelledby="add-title">
+<dialog bind:this={dialog} class="dialog" aria-labelledby="add-title">
   <h2 id="add-title">{t.title}</h2>
   <div class="kinds" role="group" aria-label={t.kind}>
     {#each KINDS as k (k)}
@@ -105,13 +106,13 @@
           <input class="text-field" maxlength="100" autocomplete="off" required bind:value={name} />
         </label>
         <div class="numbers">
-          <label><span class="label">{t.maxHp}</span><input class="text-field dice" type="number" min="0" bind:value={maxHp} /></label>
-          <label><span class="label">{t.ac}</span><input class="text-field dice" type="number" bind:value={ac} /></label>
+          <label><span class="label">{t.maxHp}</span><input class="text-field dice" type="number" min="0" max={MAX_NUMBER} step="1" bind:value={maxHp} /></label>
+          <label><span class="label">{t.ac}</span><input class="text-field dice" type="number" min="0" max={MAX_NUMBER} step="1" bind:value={ac} /></label>
         </div>
       {/if}
       <label class="init">
         <span class="label">{t.initiative}</span>
-        <input class="text-field dice" type="number" bind:value={initiative} />
+        <input class="text-field dice" type="number" min={-MAX_NUMBER} max={MAX_NUMBER} step="1" bind:value={initiative} />
       </label>
       <div class="actions">
         <button type="button" class="btn" onclick={() => dialog?.close()}>{t.cancel}</button>
@@ -122,28 +123,10 @@
 </dialog>
 
 <style>
-  .add {
-    width: min(100% - 2 * var(--space-4), var(--dialog-width));
-    padding: var(--space-5);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
-  }
-
-  .add[open],
   form {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-  }
-
-  .add::backdrop {
-    background: var(--color-backdrop);
-  }
-
-  h2 {
-    font-size: var(--text-lg);
   }
 
   .kinds,

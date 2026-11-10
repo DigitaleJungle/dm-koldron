@@ -10,7 +10,6 @@
   import { endRun, getEncounter, getRun, saveRun, type Combatant, type Encounter, type Run } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { pictureSrc } from "$lib/api/campaigns";
-  import { entryImage } from "$lib/api/images";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
@@ -21,6 +20,7 @@
   import { modifier, signed } from "$lib/views/library/entries/format";
   import AddCombatant, { type Pick } from "./AddCombatant.svelte";
   import NotesPanel from "./NotesPanel.svelte";
+  import { monsterPicture } from "$lib/stores/monsterPictures";
   import MonsterBlock from "$lib/views/library/entries/MonsterBlock.svelte";
   import { encounterParty, entryKey, rowsByKey } from "./roster";
   import * as R from "./run";
@@ -198,7 +198,7 @@
 
   const typed = (event: Event) => {
     const n = (event.currentTarget as HTMLInputElement).valueAsNumber;
-    return Number.isInteger(n) ? n : null;
+    return Number.isInteger(n) && Math.abs(n) <= R.MAX_NUMBER ? n : null;
   };
 
   /** "Goblin", or for a group "Goblin 1–3 ×3" (the numbers tell split groups of the same monster apart). */
@@ -273,17 +273,11 @@
 
   // Monster pictures, asked once per pack entry, when its pack's images are on; characters use their own picture.
   let pictures = $state<Record<string, string | null>>({});
-  const askedPictures = new Set<string>();
   $effect(() => {
     for (const c of run?.combatants ?? []) {
       const key = entryKey(c);
       const image = rowByKey.get(key)?.fields.image;
-      if (c.kind !== "monster" || askedPictures.has(key) || typeof image !== "string") continue;
-      askedPictures.add(key);
-      entryImage(c.pack, image).then(
-        (src) => (pictures[key] = src),
-        () => (pictures[key] = null), // no picture: the initial shows
-      );
+      if (c.kind === "monster" && typeof image === "string") monsterPicture(c.pack, image).then((src) => (pictures[key] = src));
     }
   });
 
@@ -336,7 +330,7 @@
 
   function applyHp(kind: "damage" | "heal" | "temp") {
     const n = amount;
-    if (!selected || typeof n !== "number" || !Number.isInteger(n) || n < 0) return;
+    if (!selected || typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > R.MAX_NUMBER) return;
     const c = selected;
     const shown = fmt.format(n);
     if (kind === "damage") {
@@ -558,7 +552,7 @@
             {#each g.members as m (m.id)}
               <li class="setup-row sub">
                 <span class="setup-name">{m.name}</span>
-                <input class="text-field dice init-field" type="number" aria-label={t.initiativeOf(m.name)} value={m.initiative ?? ""} oninput={(e) => setInitiative([m.id], typed(e))} />
+                <input class="text-field dice init-field" type="number" min={-R.MAX_NUMBER} max={R.MAX_NUMBER} aria-label={t.initiativeOf(m.name)} value={m.initiative ?? ""} oninput={(e) => setInitiative([m.id], typed(e))} />
                 <button class="icon-btn icon-btn-lg" aria-label={t.rerollOne(m.name)} onclick={async () => setInitiative([m.id], await roll(m.initiativeBonus))}>
                   <i class="ti ti-dice-5" aria-hidden="true"></i>
                 </button>
@@ -573,7 +567,7 @@
               <strong>{c.name}</strong>
               <span class="muted small">{subLine(c)}</span>
             </span>
-            <input class="text-field dice init-field" type="number" aria-label={t.initiativeOf(c.name)} value={c.initiative ?? ""} oninput={(e) => setInitiative([c.id], typed(e))} />
+            <input class="text-field dice init-field" type="number" min={-R.MAX_NUMBER} max={R.MAX_NUMBER} aria-label={t.initiativeOf(c.name)} value={c.initiative ?? ""} oninput={(e) => setInitiative([c.id], typed(e))} />
             <span class="icon-btn-lg" aria-hidden="true"></span>
           </li>
         {/each}
@@ -705,7 +699,7 @@
               <div class="hp-controls">
                 <label class="amount">
                   <span class="label">{t.amount}</span>
-                  <input class="text-field dice amount-field" type="number" min="0" inputmode="numeric" bind:value={amount} />
+                  <input class="text-field dice amount-field" type="number" min="0" max={R.MAX_NUMBER} inputmode="numeric" bind:value={amount} />
                 </label>
                 <button class="btn btn-lg hp-damage" onclick={() => applyHp("damage")}>{t.damage}</button>
                 <button class="btn btn-lg hp-heal" onclick={() => applyHp("heal")}>{t.heal}</button>
@@ -1525,25 +1519,6 @@
   }
 
   /* ---- Dialogs ---- */
-  .dialog {
-    width: min(100% - 2 * var(--space-4), var(--dialog-width));
-    padding: var(--space-5);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
-  }
-
-  .dialog[open] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .dialog::backdrop {
-    background: var(--color-backdrop);
-  }
-
   .map-dialog {
     width: min(100% - 2 * var(--space-4), var(--run-map-width));
     max-height: calc(100% - 2 * var(--space-4));
@@ -1635,14 +1610,6 @@
     .notes {
       overflow: visible;
     }
-  }
-
-  .end h2 {
-    font-size: var(--text-lg);
-  }
-
-  .end p {
-    margin: 0;
   }
 
   .end-actions {

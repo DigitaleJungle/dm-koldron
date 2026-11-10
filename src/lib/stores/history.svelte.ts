@@ -7,14 +7,25 @@ let replacing = false;
 // Whether the current screen was reached with Back (or Forward), and a number per navigation.
 let cameBack = false;
 let navigation = 0;
-// Scroll positions of the scrolling panes, per address, saved when leaving it.
+// Scroll positions of the scrolling panes, per address, saved when leaving it; the oldest go past MAX_SAVED.
 const saved = new Map<string, number>();
+const MAX_SAVED = 500;
 const panes = new Map<HTMLElement, string>();
 
 /** Call once, from the root layout. */
 export function trackHistory() {
   beforeNavigate(({ from }) => {
-    if (from) for (const [pane, id] of panes) saved.set(`${from.url.href} ${id}`, pane.scrollTop);
+    if (!from) return;
+    for (const [pane, id] of panes) {
+      const key = `${from.url.href} ${id}`;
+      saved.delete(key); // set again below, so it counts as the newest
+      saved.set(key, pane.scrollTop);
+    }
+    // Every visited address adds positions; keep the most recent ones (Back rarely goes further).
+    for (const key of saved.keys()) {
+      if (saved.size <= MAX_SAVED) break;
+      saved.delete(key);
+    }
   });
   onNavigate((nav) => {
     cameBack = nav.type === "popstate";

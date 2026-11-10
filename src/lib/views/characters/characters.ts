@@ -2,6 +2,9 @@
 import type { Character } from "$lib/api/characters";
 
 /** "Fighter 3 / Wizard 2". */
+/** The largest stat (HP, AC, passive scores) a character form takes: far above any real one, and safe for Rust's numbers. */
+export const MAX_STAT = 99999;
+
 export const classLine = (c: Pick<Character, "classes">) => c.classes.map((k) => `${k.name} ${k.level}`).join(" / ");
 
 export const totalLevel = (c: Pick<Character, "classes">) => c.classes.reduce((sum, k) => sum + (Number(k.level) || 0), 0);

@@ -70,8 +70,12 @@ pub fn load(path: &Path) -> Result<AppSettings, StorageError> {
         Err(e) => return Err(e.into()),
     };
     serde_json::from_str(&text).or_else(|e| {
-        // Keep the bad file, so the next save never destroys something we couldn't read.
-        fs::copy(path, path.with_extension("corrupt.json"))?;
+        // Keep the bad file, so the next save never destroys something we couldn't read; once is enough (every
+        // command that reads the settings comes here while it stays damaged).
+        let copy = path.with_extension("corrupt.json");
+        if fs::read(&copy).ok().as_deref() != Some(text.as_bytes()) {
+            fs::copy(path, &copy)?;
+        }
         Err(StorageError::Corrupt(e.to_string()))
     })
 }
@@ -133,6 +137,11 @@ mod tests {
         fs::write(&path, "{ nope").unwrap();
         assert!(matches!(load(&path), Err(StorageError::Corrupt(_))));
         assert_eq!(fs::read_to_string(path.with_extension("corrupt.json")).unwrap(), "{ nope");
+        // Reading it again doesn't copy it again (the copy keeps its time).
+        let before = fs::metadata(path.with_extension("corrupt.json")).unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert!(matches!(load(&path), Err(StorageError::Corrupt(_))));
+        assert_eq!(fs::metadata(path.with_extension("corrupt.json")).unwrap().modified().unwrap(), before);
     }
 
     #[test]

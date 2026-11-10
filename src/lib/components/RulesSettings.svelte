@@ -6,6 +6,7 @@
   import { errorMessage } from "$lib/api/storage";
   import Switch from "$lib/components/Switch.svelte";
   import { imageDownloads, startImageDownload } from "$lib/stores/imageDownloads.svelte";
+  import { forgetPictures } from "$lib/stores/monsterPictures";
 
   const t = strings.settings.rules;
   const ti = t.images;
@@ -81,6 +82,7 @@
       // From the saved list, so packs not loaded right now keep their setting.
       const saved = (await getSettings()).imagePacks;
       imagePacks = (await setSettings({ imagePacks: turningOn ? [...new Set([...saved, pack.id])] : saved.filter((id) => id !== pack.id) })).imagePacks;
+      forgetPictures(); // the encounter screens ask again: pictures on, or gone
       if (choice === "now") startImageDownload(pack.id, pack.name);
       if (!turningOn) await (choice === "delete" ? deleteImages(pack.id) : cancelImageDownload(pack.id));
       if (choice === "delete") recount();
@@ -148,7 +150,7 @@
   </ul>
 {/if}
 
-<dialog bind:this={dialog} class="ask" aria-labelledby="images-title" aria-describedby="images-question" onclose={() => asking && answer("cancel")}>
+<dialog bind:this={dialog} class="dialog ask" aria-labelledby="images-title" aria-describedby="images-question" onclose={() => asking && answer("cancel")}>
   {#if asking?.turningOn}
     {@const info = packImages[asking.pack.id]}
     <h2 id="images-title">{ti.enable}</h2>
@@ -256,31 +258,7 @@
     color: var(--color-danger);
   }
 
-  .ask {
-    width: min(100% - 2 * var(--space-4), var(--dialog-width));
-    padding: var(--space-5);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
-  }
-
-  .ask[open] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .ask::backdrop {
-    background: var(--color-backdrop);
-  }
-
-  .ask h2 {
-    font-size: var(--text-lg);
-  }
-
   .ask p {
-    margin: 0;
     font-size: var(--text-md);
   }
 

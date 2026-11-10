@@ -7,7 +7,7 @@
   import { deleteCharacter, saveCharacter, setCharacterPicture, type Character } from "$lib/api/characters";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
-  import { clamp01, cropPicture, defaultCrop, loadPicture, totalLevel, type Crop } from "./characters";
+  import { clamp01, cropPicture, defaultCrop, loadPicture, MAX_STAT, totalLevel, type Crop } from "./characters";
 
   let {
     campaign,
@@ -186,6 +186,7 @@
 
 <dialog
   bind:this={dialog}
+  class="dialog"
   aria-labelledby="{id}-title"
   onclose={onclose}
   onpointerdown={(e) => (pressedBackdrop = e.target === dialog)}
@@ -279,7 +280,7 @@
           {#each stats as s (s.key)}
             <label class="field">
               <span>{s.label}</span>
-              <input type="number" min="0" step="1" bind:value={draft[s.key]} />
+              <input type="number" min="0" max={MAX_STAT} step="1" bind:value={draft[s.key]} />
             </label>
           {/each}
         </div>
@@ -317,15 +318,7 @@
     width: min(var(--character-form-width), calc(100vw - 2 * var(--space-4)));
     max-height: calc(100vh - 2 * var(--space-4));
     padding: 0;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
     box-shadow: var(--shadow-drawer);
-  }
-
-  dialog::backdrop {
-    background: var(--color-backdrop);
   }
 
   form {

@@ -145,7 +145,7 @@ fn read_images(folder: &Path) -> Result<Option<Images>, String> {
         Err(e) => return Err(format!("{IMAGES}: {e}")),
     };
     let images: Images = serde_json::from_str(&text).map_err(|e| format!("{IMAGES}: {e}"))?;
-    if !images.host.starts_with("https://") || images.host[8..].contains(['/', '?', '#', '@']) {
+    if !images.host.starts_with("https://") || images.host.len() == 8 || images.host[8..].contains(['/', '?', '#', '@']) {
         return Err(format!("{IMAGES}: \"host\" must be https:// and a host name only."));
     }
     if let Some(bad) = images.images.keys().find(|p| !p.starts_with('/')) {
@@ -331,6 +331,7 @@ mod tests {
         for (folder, images, ok) in [
             ("good", serde_json::json!({ "host": "https://img.example", "images": { "/a.png": 1 } }), true),
             ("http", serde_json::json!({ "host": "http://img.example", "images": {} }), false),
+            ("no-host", serde_json::json!({ "host": "https://", "images": {} }), false),
             ("path-in-host", serde_json::json!({ "host": "https://img.example/x", "images": {} }), false),
             ("relative", serde_json::json!({ "host": "https://img.example", "images": { "a.png": 1 } }), false),
             ("not-png", serde_json::json!({ "host": "https://img.example", "images": { "/a.jpg": 1 } }), false),

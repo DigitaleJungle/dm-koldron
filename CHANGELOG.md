@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.17] - 2026-11-10
+
+### Changed
+
+- All dialogs share one look.
+
+### Fixed
+
+- A copied campaign folder is its own campaign: deleting or changing the copy no longer acts on the original. A folder renamed by hand to a name that can't be a campaign id is listed as unreadable.
+- Number fields (HP, AC, initiative, damage amounts and character stats) stop at 99,999, so very large numbers no longer show a technical error.
+- Monster pictures load once per session on the encounter screens; offline or with an unsaved picture, the encounter no longer retries on every change, and a picture that can't be kept is reported once (Run no longer hides it).
+- A damaged settings file is copied aside once instead of on every read; a pack whose image list names an empty host is rejected.
+
 ## [0.4.16] - 2026-11-10
 
 ### Added

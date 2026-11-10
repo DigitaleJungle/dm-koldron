@@ -67,7 +67,7 @@
   }
 </script>
 
-<dialog bind:this={dialog} aria-labelledby="settings-title" onclose={() => {
+<dialog bind:this={dialog} class="dialog" aria-labelledby="settings-title" onclose={() => {
     open = false;
     settingsClosed.count++;
   }} onclick={onBackdropClick}>
@@ -136,23 +136,14 @@
   dialog {
     width: min(var(--settings-width), calc(100vw - 2 * var(--space-4)));
     padding: 0;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
     box-shadow: var(--shadow-drawer);
     overflow: hidden;
   }
 
   /* Fixed size, so switching sections doesn't make the dialog jump; only the section content scrolls. */
   dialog[open] {
-    display: flex;
-    flex-direction: column;
+    gap: 0;
     height: min(var(--settings-height), calc(100vh - 2 * var(--space-4)));
-  }
-
-  dialog::backdrop {
-    background: var(--color-backdrop);
   }
 
   header {

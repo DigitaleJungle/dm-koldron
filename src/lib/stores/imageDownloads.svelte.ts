@@ -1,5 +1,6 @@
 import { downloadImages, type ImageProgress } from "$lib/api/images";
 import { errorMessage } from "$lib/api/storage";
+import { forgetPictures } from "$lib/stores/monsterPictures";
 import { notify } from "$lib/stores/notifications.svelte";
 import { strings } from "$lib/strings";
 
@@ -14,5 +15,8 @@ export function startImageDownload(pack: string, name: string) {
   downloadImages(pack, (p) => imageDownloads[pack] && (imageDownloads[pack] = p))
     .then((p) => notify(p.cancelled ? t.cancelled(name) : p.failed ? t.doneWithFailures(name, p.done, p.failed) : t.done(name, p.done)))
     .catch((e) => notify(t.downloadError(name, errorMessage(e))))
-    .finally(() => delete imageDownloads[pack]);
+    .finally(() => {
+      delete imageDownloads[pack];
+      forgetPictures(); // pictures that weren't kept before may be now
+    });
 }

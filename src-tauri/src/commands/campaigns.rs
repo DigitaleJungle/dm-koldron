@@ -63,6 +63,9 @@ fn read(dir: &Path) -> Result<Campaign, StorageError> {
         _ => e.into(),
     })?;
     let mut campaign: Campaign = serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?;
+    // The folder name is the id (as a file name is for characters and encounters), so a copied folder is its own
+    // campaign and never acts on the original.
+    campaign.id = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     campaign.picture = picture(dir);
     Ok(campaign)
 }
@@ -112,6 +115,11 @@ fn read_all(root: &Path) -> Result<(Vec<Campaign>, Vec<String>), StorageError> {
     for entry in entries {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        // A folder whose name can't be an id (renamed by hand) can't be opened, so it's reported, not listed.
+        if check_id(&entry.file_name().to_string_lossy(), "campaign").is_err() {
+            unreadable.push(entry.file_name().to_string_lossy().into_owned());
             continue;
         }
         match read(&entry.path()) {
@@ -485,5 +493,24 @@ mod tests {
         assert!(matches!(open(&dirs, "broken", 2), Err(StorageError::Corrupt(_))));
         assert!(matches!(archive(&dirs, "broken"), Err(StorageError::Corrupt(_))));
         assert_eq!(fs::read_to_string(dirs.active.join("broken").join(FILE_NAME)).unwrap(), "{ nope");
+    }
+
+    #[test]
+    fn a_copied_folder_is_its_own_campaign_and_deleting_it_keeps_the_original() {
+        let dirs = temp_dirs("copy");
+        let original = create(&dirs, "Thornwood", 1).unwrap();
+        let copy = dirs.active.join("backup");
+        fs::create_dir_all(&copy).unwrap();
+        fs::copy(dirs.active.join(&original.id).join(FILE_NAME), copy.join(FILE_NAME)).unwrap();
+        fs::create_dir_all(dirs.active.join("Not An Id")).unwrap();
+        fs::copy(dirs.active.join(&original.id).join(FILE_NAME), dirs.active.join("Not An Id").join(FILE_NAME)).unwrap();
+
+        let all = list(&dirs).unwrap();
+        let mut ids: Vec<_> = all.campaigns.iter().map(|c| c.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["1", "backup"]);
+        assert_eq!(all.unreadable, vec!["Not An Id".to_string()]);
+        delete(&dirs, "backup").unwrap();
+        assert_eq!(list(&dirs).unwrap().campaigns[0].id, original.id);
     }
 }

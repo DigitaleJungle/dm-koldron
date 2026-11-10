@@ -149,5 +149,8 @@ export function addLog(run: Run, text: string): Run {
   return { ...run, log: [entry, ...run.log].slice(0, MAX_LOG) };
 }
 
+/** The largest HP, AC, initiative or amount typed in a run: far above any real one, and safe for Rust's numbers. */
+export const MAX_NUMBER = 99999;
+
 /** A d20 initiative roll in dice notation, e.g. `1d20+2`, `1d20-1`. */
 export const initiativeNotation = (bonus: number) => (bonus < 0 ? `1d20${bonus}` : `1d20+${bonus}`);

@@ -9,15 +9,14 @@
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, listEncounters, type Budget, type Encounter, type EncounterList, type RosterEntry } from "$lib/api/encounters";
-  import { entryImage } from "$lib/api/images";
   import { errorMessage } from "$lib/api/storage";
   import HexCollage from "$lib/components/HexCollage.svelte";
   import { enterMotion, moveMotion } from "$lib/motion";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
-  import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { BANDS, difficulty, monsterXp, type Band } from "./difficulty";
+  import { monsterPicture } from "$lib/stores/monsterPictures";
   import { characterLevel, encounterParty, entryKey, rowKeys, rowsByKey } from "./roster";
 
   const t = strings.encounters;
@@ -54,19 +53,13 @@
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
 
-  // Pictures, asked once per monster, when its pack's images are on.
+  // Pictures, when its pack's images are on.
   let pictures = $state<Record<string, string | null>>({});
-  const askedPictures = new Set<string>();
   $effect(() => {
     for (const row of list?.encounters.flatMap((e) => e.monsters) ?? []) {
       const key = entryKey(row);
       const image = byKey.get(key)?.fields.image;
-      if (askedPictures.has(key) || typeof image !== "string") continue;
-      askedPictures.add(key);
-      entryImage(row.pack, image).then(
-        (src) => (pictures[key] = src),
-        (e) => notify(errorMessage(e)),
-      );
+      if (typeof image === "string") monsterPicture(row.pack, image).then((src) => (pictures[key] = src));
     }
   });
 

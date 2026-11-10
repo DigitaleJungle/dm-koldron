@@ -8,7 +8,6 @@
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
-  import { entryImage } from "$lib/api/images";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, getEncounter, saveEncounter, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
@@ -24,6 +23,7 @@
   import NotesPanel, { TOPICS, TOPIC_ICONS, type Topic } from "./NotesPanel.svelte";
   import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
+  import { monsterPicture } from "$lib/stores/monsterPictures";
   import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowKeys, rowsByKey, splitRow } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
@@ -271,10 +271,7 @@
         previewEntry = e;
         if (typeof e.entry.image !== "string") return;
         // A picture that can't be kept is reported, but the stat block still shows.
-        entryImage(row.pack, e.entry.image).then(
-          (src) => preview?.row === row && (previewImage = src),
-          (err) => notify(errorMessage(err)),
-        );
+        monsterPicture(row.pack, e.entry.image).then((src) => preview?.row === row && (previewImage = src));
       },
       (e) => {
         loadedEntries.delete(key); // try again next time
@@ -351,19 +348,13 @@
   // Appearing and disappearing parts (stat block, popup, notes) fade.
   const fadeMotion = () => ({ duration: reduceMotion() ? 0 : 150 });
 
-  // A small picture on each roster card, when its pack's images are on (Settings → Rules); asked once per monster.
+  // A small picture on each roster card, when its pack's images are on (Settings → Rules).
   let pictures = $state<Record<string, string | null>>({});
-  const askedPictures = new Set<string>();
   $effect(() => {
     for (const row of roster) {
       const key = entryKey(row);
       const image = byKey.get(key)?.fields.image;
-      if (askedPictures.has(key) || typeof image !== "string") continue;
-      askedPictures.add(key);
-      entryImage(row.pack, image).then(
-        (src) => (pictures[key] = src),
-        (e) => notify(errorMessage(e)),
-      );
+      if (typeof image === "string") monsterPicture(row.pack, image).then((src) => (pictures[key] = src));
     }
   });
   const rosterXp = $derived(roster.map((r) => monsterXp(byKey.get(entryKey(r))?.fields.xp)));
@@ -695,7 +686,7 @@
   {/if}
 {/if}
 
-<dialog bind:this={leaveDialog} class="leave" aria-labelledby="leave-title" aria-describedby="leave-question" onclose={() => answerLeave("cancel")}>
+<dialog bind:this={leaveDialog} class="dialog leave" aria-labelledby="leave-title" aria-describedby="leave-question" onclose={() => answerLeave("cancel")}>
   <h2 id="leave-title">{t.leave.title}</h2>
   <p id="leave-question">{t.leave.question(name.trim() || t.newTitle)}</p>
   <div class="actions">
@@ -1399,33 +1390,6 @@
   .preview h3 {
     margin: 0 0 var(--space-1);
     font-size: var(--text-md);
-  }
-
-  .leave {
-    width: min(100% - 2 * var(--space-4), var(--dialog-width));
-    padding: var(--space-5);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
-  }
-
-  .leave[open] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .leave::backdrop {
-    background: var(--color-backdrop);
-  }
-
-  .leave h2 {
-    font-size: var(--text-lg);
-  }
-
-  .leave p {
-    margin: 0;
   }
 
   .leave .actions {

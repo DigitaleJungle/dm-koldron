@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.4] - 2026-11-11
+
+### Added
+
+- Sessions: What happens is a rich text field (headings, bold, italic, underline, lists, @ tags) with a highlighted section and tables (add or remove rows and columns).
+
+### Changed
+
+- Sessions: scenes are reordered by dragging them in the list, or with their grip and the arrow keys; the up and down buttons are gone.
+- Sessions: Ready is a check icon beside the scene title, Remove scene moved to the bottom of the scene, and the Scene x of y label is gone.
+- Sessions: a scene's location, NPCs and encounters share one compact block; the location's description shows under it and is edited in Locations (+ New location opens Locations to name it).
+- Sessions: the party note moved from the header to the Across session column.
+
+### Fixed
+
+- Sessions: the selected scene's highlight runs to the end of its row, under the grip.
+
 ## [0.5.3] - 2026-11-11
 
 ### Changed

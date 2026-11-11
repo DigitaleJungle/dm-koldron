@@ -1,7 +1,8 @@
 <script lang="ts">
   // A rich text field: headings in three sizes, bold, italic, underline and lists, typed in place (the window's own editing) with a small
   // toolbar; Ctrl/Cmd+B, I and U work as usual. `value` is HTML, always cleaned to the allowed tags. Pasting keeps
-  // only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list).
+  // only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list). `extended`
+  // adds a highlighted section and a table (with tools to add and remove rows and columns while the cursor is in one).
   // Typing @ tags a Catalog entry or one of the campaign's characters: a list of matches follows the text after the
   // @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when shown.
   import { onMount } from "svelte";
@@ -12,7 +13,12 @@
   import { hitMeta } from "$lib/views/search/search";
   import { cleanHtml, isEmpty } from "./richtext";
 
-  let { value = $bindable(""), label, compact = false }: { value: string; label: string; compact?: boolean } = $props();
+  let {
+    value = $bindable(""),
+    label,
+    compact = false,
+    extended = false,
+  }: { value: string; label: string; compact?: boolean; extended?: boolean } = $props();
 
   const t = strings.richText;
   const id = $props.id();
@@ -21,7 +27,8 @@
 
   // A tool with a `block` turns the line into that block (again: back to a paragraph). Headings 1 to 3 are h2 to h4,
   // under the page's own headings; h4 is what the single heading of older notes was, so those read as Heading 3.
-  const TOOLS: { command: string; icon: string; label: string; block?: string }[] = [
+  type Tool = { command: string; icon: string; label: string; block?: string };
+  const BASIC: Tool[] = [
     { command: "h2", icon: "ti-h-1", label: t.heading(1), block: "h2" },
     { command: "h3", icon: "ti-h-2", label: t.heading(2), block: "h3" },
     { command: "h4", icon: "ti-h-3", label: t.heading(3), block: "h4" },
@@ -31,6 +38,20 @@
     { command: "insertUnorderedList", icon: "ti-list", label: t.bullets },
     { command: "insertOrderedList", icon: "ti-list-numbers", label: t.numbers },
   ];
+  const EXTRA: Tool[] = [
+    { command: "highlight", icon: "ti-highlight", label: t.highlight, block: "blockquote" },
+    { command: "table", icon: "ti-table-plus", label: t.table },
+  ];
+  // svelte-ignore state_referenced_locally
+  const TOOLS = extended ? [...BASIC, ...EXTRA] : BASIC;
+  /** Shown while the cursor is in a table. */
+  const TABLE_TOOLS = [
+    { id: "row", icon: "ti-row-insert-bottom", label: t.addRow },
+    { id: "column", icon: "ti-column-insert-right", label: t.addColumn },
+    { id: "removeRow", icon: "ti-row-remove", label: t.removeRow },
+    { id: "removeColumn", icon: "ti-column-remove", label: t.removeColumn },
+  ] as const;
+  let cell = $state<HTMLTableCellElement | null>(null);
 
   // Tags can't be edited letter by letter: they're one piece, removed as a whole.
   const lockTags = () => editor?.querySelectorAll("a[data-kind]").forEach((a) => ((a as HTMLElement).contentEditable = "false"));
@@ -52,18 +73,61 @@
   }
 
   // shortcut: document.execCommand is deprecated but the only built-in rich editing; WebView2 and WebKit both support it.
-  function run(tool: (typeof TOOLS)[number]) {
+  function run(tool: Tool) {
     editor?.focus();
-    if (tool.block) document.execCommand("formatBlock", false, active[tool.command] ? "p" : tool.block);
+    if (tool.command === "table") {
+      // A header row and one row of two columns, then a line to go on typing after it.
+      document.execCommand("insertHTML", false, "<table><tbody><tr><th><br></th><th><br></th></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>");
+    } else if (tool.block) document.execCommand("formatBlock", false, active[tool.command] ? "p" : tool.block);
     else document.execCommand(tool.command);
     changed();
+  }
+
+  /** The table cell the cursor is in, if any. */
+  function cellAtCursor(): HTMLTableCellElement | null {
+    const node = document.getSelection()?.anchorNode ?? null;
+    const found = (node instanceof Element ? node : node?.parentElement)?.closest("td, th");
+    return found && editor?.contains(found) ? (found as HTMLTableCellElement) : null;
+  }
+
+  const blankCell = (tag: "td" | "th") => Object.assign(document.createElement(tag), { innerHTML: "<br>" });
+
+  function tableTool(id: (typeof TABLE_TOOLS)[number]["id"]) {
+    const at = cell;
+    const row = at?.parentElement as HTMLTableRowElement | null;
+    const table = at?.closest("table");
+    if (!at || !row || !table) return;
+    const rows = [...table.rows];
+    if (id === "row") row.after(newRow(row));
+    else if (id === "column") rows.forEach((r) => r.insertBefore(blankCell(r.cells[0]?.tagName === "TH" ? "th" : "td"), r.cells[at.cellIndex + 1] ?? null));
+    else if (id === "removeRow") row.remove();
+    else rows.forEach((r) => r.cells[at.cellIndex]?.remove());
+    // A table with no rows or no columns left goes.
+    if (!table.rows.length || ![...table.rows].some((r) => r.cells.length)) table.remove();
+    editor?.focus();
+    changed();
+  }
+
+  /** An empty row like `row` (body cells, also under the header row). */
+  function newRow(row: HTMLTableRowElement): HTMLTableRowElement {
+    const next = document.createElement("tr");
+    for (let i = 0; i < row.cells.length; i++) next.appendChild(blankCell("td"));
+    return next;
   }
 
   // Which tools are on where the cursor is.
   function update() {
     if (!editor || !editor.contains(document.getSelection()?.anchorNode ?? null)) return;
     const block = String(document.queryCommandValue("formatBlock")).toLowerCase();
-    active = Object.fromEntries(TOOLS.map((tool) => [tool.command, tool.block ? block === tool.block : document.queryCommandState(tool.command)]));
+    const anchor = document.getSelection()?.anchorNode ?? null;
+    const inQuote = !!(anchor instanceof Element ? anchor : anchor?.parentElement)?.closest("blockquote");
+    active = Object.fromEntries(
+      TOOLS.map((tool) => [
+        tool.command,
+        tool.command === "highlight" ? inQuote : tool.command === "table" ? false : tool.block ? block === tool.block : document.queryCommandState(tool.command),
+      ]),
+    );
+    cell = extended ? cellAtCursor() : null;
   }
 
   function paste(e: ClipboardEvent) {
@@ -153,10 +217,18 @@
   <div class="toolbar" role="toolbar" aria-label={t.toolbar(label)}>
     {#each TOOLS as tool (tool.command)}
       <!-- mousedown is cancelled so the field keeps its selection -->
-      <button class="icon-btn tool" aria-label={tool.label} aria-pressed={!!active[tool.command]} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
+      <button class="icon-btn tool" aria-label={tool.label} aria-pressed={tool.command === "table" ? undefined : !!active[tool.command]} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
         <i class="ti {tool.icon}" aria-hidden="true"></i>
       </button>
     {/each}
+    {#if cell}
+      <span class="divider" aria-hidden="true"></span>
+      {#each TABLE_TOOLS as tool (tool.id)}
+        <button class="icon-btn tool" aria-label={tool.label} onmousedown={(e) => e.preventDefault()} onclick={() => tableTool(tool.id)}>
+          <i class="ti {tool.icon}" aria-hidden="true"></i>
+        </button>
+      {/each}
+    {/if}
   </div>
   <div
     bind:this={editor}
@@ -214,9 +286,30 @@
 
   .toolbar {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-1);
     padding: var(--space-1);
     border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  .divider {
+    align-self: stretch;
+    width: var(--border-width);
+    margin: var(--space-1);
+    background: var(--color-border);
+  }
+
+  /* A highlighted section stands out from the field it's in (.prose gives it the field's own colour). */
+  .editor :global(blockquote) {
+    background: var(--color-accent-soft);
+  }
+
+  /* Every cell outlined while editing, so an empty table can be seen and clicked into. */
+  .editor :global(th),
+  .editor :global(td) {
+    min-width: var(--space-8);
+    border: var(--border-width) solid var(--color-border);
   }
 
   /* Short notes in a list show their toolbar only while being written. */

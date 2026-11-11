@@ -140,6 +140,7 @@
   --search-width: 360px;
   --session-steps-width: 280px;
   --session-aside-width: 320px;
+  --scene-label-width: 120px; /* the label column of a scene's location, NPCs and encounters */
   --session-hex-width: 40px; /* the party collage in a session's header */
   --character-form-width: 640px;
   --level-input-width: 80px;

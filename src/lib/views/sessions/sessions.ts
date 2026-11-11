@@ -11,7 +11,7 @@ export function filterSessions<T extends { title: string }>(sessions: T[], query
 }
 
 /** The right column's sections; locations, NPCs and the checklist also have a full view in the editor. */
-export type Section = "previously" | "premise" | "locations" | "npcs" | "encounters" | "checklist";
+export type Section = "previously" | "premise" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
 export type Pane = "locations" | "npcs" | "checklist";
 
 /** What can be dragged onto a scene. */
@@ -50,14 +50,6 @@ export function removeLocation(session: Session, id: string) {
 export function removeNpc(session: Session, id: string) {
   session.npcs = session.npcs.filter((n) => n.id !== id);
   for (const scene of session.scenes) unlink(scene.npcIds, id);
-}
-
-/** Moves the scene at `from` one place up (-1) or down (1); nothing past either end. */
-export function moveScene(session: Session, from: number, by: -1 | 1) {
-  const to = from + by;
-  if (from < 0 || to < 0 || to >= session.scenes.length) return;
-  const [scene] = session.scenes.splice(from, 1);
-  session.scenes.splice(to, 0, scene);
 }
 
 /** The scenes that use the location, NPC or encounter. */

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Across session: Previously, Premise, Locations, NPCs, Encounters and Checklist, one open at a time (opening one
+  // Across session: Previously, Premise, Party note, Locations, NPCs, Encounters and Checklist, one open at a time (opening one
   // closes the other; the open one closes again). Location, NPC and encounter cards (the campaign's encounters that are
   // ready to run) can be dragged onto a scene. Locations, NPCs and the checklist open their full view in the editor;
   // Manage encounters opens the Encounters screen.
@@ -55,12 +55,13 @@
   const metas = $derived<Record<Section, string>>({
     previously: written(session.previously),
     premise: written(session.premise),
+    partyNote: written(session.partyNote),
     locations: t.inSession(session.locations.length),
     npcs: t.inSession(session.npcs.length),
     encounters: ready === null ? "" : t.readyToRun(ready.length),
     checklist: t.doneOf(done, session.checklist.length),
   });
-  const SECTIONS: Section[] = ["previously", "premise", "locations", "npcs", "encounters", "checklist"];
+  const SECTIONS: Section[] = ["previously", "premise", "partyNote", "locations", "npcs", "encounters", "checklist"];
 </script>
 
 <aside aria-labelledby="across-session">
@@ -80,7 +81,7 @@
       </button>
       {#if open === key}
         <div id="section-{key}" class="body">
-          {#if key === "previously" || key === "premise"}
+          {#if key === "previously" || key === "premise" || key === "partyNote"}
             <label for="text-{key}" class="sr-only">{t[key]}</label>
             <textarea id="text-{key}" class="text-field" rows="6" maxlength="20000" bind:value={session[key]}></textarea>
           {:else if key === "checklist"}

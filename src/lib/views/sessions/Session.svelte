@@ -8,6 +8,7 @@
   import { tick } from "svelte";
   import BackButton from "$lib/components/BackButton.svelte";
   import HexCollage from "$lib/components/HexCollage.svelte";
+  import { moveTo } from "$lib/components/sidebarOrder";
   import { pictureSrc } from "$lib/api/campaigns";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
@@ -138,6 +139,15 @@
     const scene = newScene();
     draft.scenes.push(scene);
     openScene(scene.id);
+  }
+
+  /** Opens Locations with the cursor in the new location's name. */
+  async function nameLocation(lid: string) {
+    pane = "locations";
+    await tick();
+    const field = document.getElementById(`loc-name-${lid}`) as HTMLInputElement | null;
+    field?.focus();
+    field?.select();
   }
 
   function removeScene() {
@@ -315,15 +325,6 @@
     leaving = true; // nothing left to save
     await gotoReplacing(base);
   }
-
-  // ---- Party note --------------------------------------------------------------------------------
-  let noteOpen = $state(false);
-  let noteField: HTMLTextAreaElement | undefined = $state();
-  async function toggleNote() {
-    noteOpen = !noteOpen;
-    await tick();
-    noteField?.focus();
-  }
 </script>
 
 <svelte:head><title>{draft.title.trim() || t.newTitle}</title></svelte:head>
@@ -404,15 +405,7 @@
             <input class="inline" type="time" bind:value={() => draft.time ?? "", (v) => (draft.time = v || null)} />
           </label>
           <span>{t.players(party.length)}</span>
-          <button class="icon-btn" aria-label={t.partyNote} aria-expanded={noteOpen} aria-controls="party-note" onclick={toggleNote}>
-            <i class="ti ti-notes" aria-hidden="true"></i>
-          </button>
         </div>
-        {#if noteOpen}
-          <textarea id="party-note" bind:this={noteField} class="text-field note" rows="2" maxlength="20000" aria-label={t.partyNote} placeholder={t.partyNote} bind:value={draft.partyNote}></textarea>
-        {:else if draft.partyNote.trim()}
-          <p class="note-text">{draft.partyNote}</p>
-        {/if}
       </div>
       <dl class="counts">
         <div>
@@ -437,7 +430,7 @@
 
     <div class="columns">
       <div class="col" use:keepScroll={{ id: "session-scenes", url: page.url.href, ready: true }}>
-        <SceneList session={draft} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} />
+        <SceneList session={draft} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} onmove={(from, to) => (draft.scenes = moveTo(draft.scenes, from, to))} />
       </div>
       <main
         class="col editor"
@@ -471,7 +464,7 @@
           {#if dragged}
             <div class="drop" class:over={overEditor}>{t.scenes.dropHere(dragged.name)}</div>
           {/if}
-          <SceneEditor bind:session={draft} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onremove={removeScene} />
+          <SceneEditor bind:session={draft} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={nameLocation} onremove={removeScene} />
         {:else}
           <p class="muted">{t.scenes.empty}</p>
         {/if}
@@ -626,19 +619,6 @@
     font-size: var(--text-sm);
   }
 
-  .note {
-    resize: vertical;
-    font: inherit;
-  }
-
-  .note-text {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
-  }
 
   .counts {
     display: flex;

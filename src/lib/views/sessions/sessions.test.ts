@@ -5,7 +5,6 @@ import {
   checkCounts,
   filterSessions,
   linkTo,
-  moveScene,
   newLocation,
   newNpc,
   newScene,
@@ -99,15 +98,6 @@ describe("sessions", () => {
     removeNpc(s, "abbot");
     expect(s.npcs.map((n) => n.id)).toEqual(["wenna"]);
     expect(s.scenes.map((sc) => sc.npcIds)).toEqual([[], ["wenna"], []]);
-  });
-
-  it("moves a scene up or down, never past either end", () => {
-    const s = session();
-    moveScene(s, 0, 1);
-    expect(s.scenes.map((sc) => sc.id)).toEqual(["b", "a", "c"]);
-    moveScene(s, 2, 1);
-    moveScene(s, 0, -1);
-    expect(s.scenes.map((sc) => sc.id)).toEqual(["b", "a", "c"]);
   });
 
   it("counts the checklist across the session and its scenes, and the ready scenes", () => {

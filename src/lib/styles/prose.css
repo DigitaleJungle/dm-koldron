@@ -91,6 +91,11 @@
   margin: 0;
 }
 
+/* Column widths as set in the editor (which lays tables out fixed too). */
+.prose.notes table {
+  table-layout: fixed;
+}
+
 .prose table {
   width: 100%;
   margin: 0 0 var(--space-4);

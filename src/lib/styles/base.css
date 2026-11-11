@@ -94,6 +94,46 @@ a[data-kind][href]:hover {
   outline-offset: 2px;
 }
 
+/* A preview card over the page (a popover: RefLink.svelte, TagPreview.svelte): a header, then a body that scrolls. */
+.preview-card {
+  position: fixed;
+  inset: auto;
+  width: min(var(--preview-width), calc(100vw - 2 * var(--space-4)));
+  max-height: min(60vh, calc(100vh - 2 * var(--space-4)));
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-drawer);
+  font-size: var(--text-sm);
+}
+
+.preview-card:popover-open {
+  display: flex;
+}
+
+.preview-card h3 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.preview-card .preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-width: none;
+  padding: var(--space-3) var(--space-4);
+}
+
+/* After a click or tap, no focus ring anywhere (every ring uses --color-focus); Tab shows them again (+layout.svelte). */
+:root[data-input="pointer"] {
+  --color-focus: transparent;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

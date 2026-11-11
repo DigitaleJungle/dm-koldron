@@ -39,14 +39,14 @@
 
 {#if kind}
   <button bind:this={button} class="ref" popovertarget="ref-{id}">{ref.name}</button>
-  <div bind:this={card} id="ref-{id}" popover="auto" class="card" role="dialog" aria-label={ref.name} {ontoggle}>
+  <div bind:this={card} id="ref-{id}" popover="auto" class="preview-card" role="dialog" aria-label={ref.name} {ontoggle}>
     <header>
       <h3>{ref.name}</h3>
       <button class="icon-btn" popovertarget="ref-{id}" popovertargetaction="hide" aria-label={t.close}>
         <i class="ti ti-x" aria-hidden="true"></i>
       </button>
     </header>
-    <div class="body prose">
+    <div class="preview-body prose">
       {#if error}
         <p class="error">{error}</p>
       {:else if !loaded}
@@ -81,26 +81,6 @@
     cursor: pointer;
   }
 
-  .card {
-    position: fixed;
-    inset: auto;
-    width: min(var(--preview-width), calc(100vw - 2 * var(--space-4)));
-    max-height: min(60vh, calc(100vh - 2 * var(--space-4)));
-    margin: 0;
-    padding: 0;
-    flex-direction: column;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    color: var(--color-text);
-    box-shadow: var(--shadow-drawer);
-    font-size: var(--text-sm);
-  }
-
-  .card:popover-open {
-    display: flex;
-  }
-
   header {
     display: flex;
     align-items: center;
@@ -108,20 +88,6 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
     border-bottom: var(--border-width) solid var(--color-border);
-  }
-
-  h3 {
-    margin: 0;
-    font-size: var(--text-md);
-    font-weight: var(--weight-semibold);
-  }
-
-  .body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    max-width: none;
-    padding: var(--space-3) var(--space-4);
   }
 
   footer {

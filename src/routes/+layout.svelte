@@ -15,5 +15,12 @@
   onMount(loadTheme);
 </script>
 
+<!-- How the user last moved around: a click or tap hides focus rings, Tab brings them back (base.css). Only Tab, not
+     typing, so writing in a field just clicked doesn't show its ring. -->
+<svelte:document
+  onpointerdowncapture={() => (document.documentElement.dataset.input = "pointer")}
+  onkeydowncapture={(e) => e.key === "Tab" && (document.documentElement.dataset.input = "keyboard")}
+/>
+
 {@render children()}
 <Notification />

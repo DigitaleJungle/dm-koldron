@@ -30,6 +30,14 @@ describe("cleanHtml", () => {
     expect(cleanHtml('<table><tr><td colwidth="0">a</td></tr></table>', { links: true })).not.toContain("style");
   });
 
+  it("makes a shown table as wide as its columns only when every column has a width", () => {
+    expect(cleanHtml('<table><tr><td colwidth="80">a</td><td colspan="2" colwidth="40,60">b</td></tr></table>', { links: true })).toContain(
+      '<table style="width: 180px">',
+    );
+    expect(cleanHtml(table, { links: true })).toContain("<table>"); // its merged cell has a column without a width
+    expect(cleanHtml('<table><tr><td colwidth="80">a</td></tr></table>')).toContain("<table>"); // stored: no style
+  });
+
   it("keeps a centre or right alignment on paragraphs and headings, and no other style", () => {
     expect(cleanHtml('<p style="text-align: center; color: red">a</p><h2 style="text-align: right">b</h2><p style="text-align: left">c</p>')).toBe(
       '<p style="text-align: center">a</p><h2 style="text-align: right">b</h2><p>c</p>',

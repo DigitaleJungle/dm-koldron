@@ -86,6 +86,7 @@ Koldron is a focused, professional desktop tool for Dungeon Masters, not a marke
 - Use tokens from `src/lib/styles/tokens.css`; do not hard-code colors, spacing, or font sizes.
 - Every view must handle meaningful empty, loading, and error states, without verbose placeholder copy.
 - Ensure keyboard accessibility, visible focus states, sensible accessible names, and WCAG AA contrast.
+- Focus rings show only while moving with Tab: a click or tap hides them (`data-input` on `<html>`, set in `src/routes/+layout.svelte`). Draw every focus ring with `var(--color-focus)`, so the switch reaches it.
 - Light/dark themes use `<html data-theme="light|dark">`. Settings → UI selects Light, Dark, or System. Do not query `prefers-color-scheme` inside components.
 - Motion follows Settings → UI → Animations through `data-motion`; use `reduceMotion()` in code. Do not query `prefers-reduced-motion` directly.
 - Use platform-correct shortcuts (Cmd on macOS, Ctrl on Windows). No application-wide global shortcuts unless specifically approved. `Space` advances to the next turn only when focus is not inside a text-entry or other interactive control that uses Space.

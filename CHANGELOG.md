@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.8] - 2026-11-11
+
+### Changed
+
+- A Ready scene shows What happens as rendered text instead of a locked field; its tables keep their column widths and have banded rows, a shaded header row and no borders, and boxed text has its own background.
+- Hovering or focusing a tag in a Ready scene's text shows a preview card of the entry or character.
+- The open scene is split into three tabs (What happens; location, NPCs and encounters; checklist), stacked as hexagons along the panel's left edge, with Remove scene as a trash can at the bottom.
+- What happens fills the panel's height.
+- Dragging a card shows a dashed outline around the open scene and the scenes in the list, easing in and out, instead of a banner.
+- Focus rings show only when moving with Tab, not after a click or tap.
+- Shown notes lay tables out with the column widths set in the editor.
+
+### Fixed
+
+- A wide table in a Ready scene scrolls on its own instead of moving the whole panel.
+
 ## [0.5.7] - 2026-11-11
 
 ### Changed

@@ -2,10 +2,13 @@
   // The open scene: its title and Ready (an icon); what happens; one block with its location (and that location's
   // description), linked NPCs and linked encounters (chips and a dropdown each, so dragging is never the only way); its
   // checklist; and Remove scene at the bottom. A new location opens Locations to name it.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { Session } from "$lib/api/sessions";
   import { strings } from "$lib/strings";
   import RichText from "$lib/components/RichText.svelte";
+  import TagPreview from "$lib/components/TagPreview.svelte";
+  import { cleanHtml, isEmpty } from "$lib/components/richtext";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import Checklist from "./Checklist.svelte";
   import { link, newLocation, unlink } from "./sessions";
 
@@ -44,7 +47,32 @@
     if (!untrack(() => scene.title)) titleInput?.focus();
   });
 
+  // The scene's parts, a tab each (kept when another scene opens).
+  const TABS = [
+    { id: "text", icon: "ti-message-2-check", label: t.whatHappens },
+    { id: "links", icon: "ti-link", label: t.links },
+    { id: "checklist", icon: "ti-list", label: t.checklist },
+  ] as const;
+  let current = $state<(typeof TABS)[number]["id"]>("text");
+
+  /** Up and down move to the previous or next tab (round), Home and End to the first or last. */
+  function tabKey(ev: KeyboardEvent, i: number) {
+    const n = TABS.length;
+    const to = { ArrowUp: (i + n - 1) % n, ArrowDown: (i + 1) % n, Home: 0, End: n - 1 }[ev.key];
+    if (to === undefined) return;
+    ev.preventDefault();
+    current = TABS[to].id;
+    document.getElementById(`scene-tab-${current}`)?.focus();
+  }
+
   let confirming = $state(false);
+  let cancelButton: HTMLButtonElement | undefined = $state();
+  /** Asks first, with the focus on Cancel: the question is under the open part, after everything in it. */
+  async function askRemove() {
+    confirming = true;
+    await tick();
+    cancelButton?.focus();
+  }
   $effect(() => {
     void scene.id;
     confirming = false;
@@ -78,10 +106,51 @@
   </button>
 </div>
 
-<!-- Keyed: the field fills itself once, so another scene needs a fresh one. Its name is for screen readers only. -->
-{#key scene.id}
-  <RichText label={t.whatHappens} extended readonly={scene.ready} bind:value={scene.summary} />
-{/key}
+<div class="tabbed">
+<div class="side">
+<div class="tabs" role="tablist" aria-orientation="vertical" aria-label={t.parts}>
+  {#each TABS as tab, i (tab.id)}
+    <button
+      id="scene-tab-{tab.id}"
+      class="tab"
+      role="tab"
+      aria-selected={current === tab.id}
+      aria-controls="scene-panel"
+      aria-label={tab.label}
+      tabindex={current === tab.id ? 0 : -1}
+      onclick={() => (current = tab.id)}
+      onkeydown={(ev) => tabKey(ev, i)}
+    >
+      <span class="hex"><i class="ti {tab.icon}" aria-hidden="true"></i></span>
+    </button>
+  {/each}
+</div>
+<!-- At the bottom of the tab column; asks first, under the open part. -->
+<button class="tab trash" aria-label={t.remove} onclick={askRemove}>
+  <span class="hex"><i class="ti ti-trash" aria-hidden="true"></i></span>
+</button>
+</div>
+
+<div class="panel" id="scene-panel" role="tabpanel" aria-labelledby="scene-tab-{current}">
+{#if current === "text"}
+<!-- Ready: the text shown, as locked encounter notes are. Otherwise the field, keyed: it fills itself once, so another
+     scene needs a fresh one. Its name is for screen readers only. -->
+{#if scene.ready}
+  <section class="what-happens" aria-label={t.whatHappens}>
+    {#if isEmpty(scene.summary)}
+      <p class="note">{strings.sessions.sections.notWritten}</p>
+    {:else}
+      <TagPreview>
+        <div class="prose notes">{@html cleanHtml(scene.summary, { links: true, base: libraryHome() })}</div>
+      </TagPreview>
+    {/if}
+  </section>
+{:else}
+  {#key scene.id}
+    <RichText label={t.whatHappens} extended bind:value={scene.summary} />
+  {/key}
+{/if}
+{:else if current === "links"}
 
 <!-- One block, a row each: the label on the left, its controls on the right. -->
 <section class="block links" aria-label={t.links}>
@@ -139,7 +208,7 @@
     </div>
   </div>
 </section>
-
+{:else}
 <section class="block" aria-labelledby="scene-checklist">
   <div class="row">
     <h3 id="scene-checklist" class="label"><i class="ti ti-list-check" aria-hidden="true"></i>{t.checklist}</h3>
@@ -147,17 +216,89 @@
   </div>
   <Checklist bind:items={scene.checklist} placeholder={strings.sessions.checklist.short} locked={scene.ready} />
 </section>
-
-<div class="remove">
-  {#if confirming}
-    <button class="btn" onclick={() => (confirming = false)}>{strings.sessions.cancel}</button>
-    <button class="btn btn-danger" onclick={onremove}>{t.remove}</button>
-  {:else}
-    <button class="btn danger" onclick={() => (confirming = true)}>{t.remove}</button>
-  {/if}
+{/if}
+</div>
 </div>
 
+{#if confirming}
+  <div class="remove">
+    <button class="btn" bind:this={cancelButton} onclick={() => (confirming = false)}>{strings.sessions.cancel}</button>
+    <button class="btn btn-danger" onclick={onremove}>{t.remove}</button>
+  </div>
+{/if}
+
 <style>
+  /* The tabs down the left, the open part beside them. */
+  /* Fills the rest of the panel (Session.svelte, .editor): the trash at its bottom, the text field as tall as it. */
+  .tabbed {
+    flex: 1;
+    display: flex;
+    gap: var(--space-4);
+  }
+
+  /* The tabs, and the trash at the bottom. Flush with the panel's left edge: out over the editor's padding
+     (Session.svelte, .editor). */
+  .side {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-left: calc(-1 * var(--space-5));
+  }
+
+  .tabs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .trash .hex,
+  .tab.trash:hover .hex {
+    color: var(--color-danger);
+  }
+
+  /* The button keeps the focus ring; the hexagon inside is clipped: flat top and bottom, its left corner cut off. */
+  .tab {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .tab .hex {
+    display: grid;
+    place-items: center;
+    width: var(--control-height-lg);
+    height: var(--control-height-lg);
+    background: var(--color-surface-sunken);
+    color: var(--color-text-muted);
+    font-size: var(--icon-size);
+    clip-path: polygon(0 0, 75% 0, 100% 50%, 75% 100%, 0 100%);
+  }
+
+  /* Inside the button: at the panel's edge, a ring outside it would be cut off by the scrolling column. */
+  .tab:focus-visible {
+    outline-offset: calc(-1 * var(--focus-ring));
+  }
+
+  .tab:hover .hex {
+    color: var(--color-text);
+  }
+
+  .tab[aria-selected="true"] .hex {
+    background: var(--color-accent);
+    color: var(--on-fill);
+  }
+
+  .panel {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
   /* The title and the Ready icon on one line, centred on each other. */
   .head {
     display: flex;
@@ -190,6 +331,48 @@
     color: var(--color-text-muted);
   }
 
+  /* Without .prose's reading width and centring, as in the encounter notes. */
+  /* A table wider than the panel scrolls sideways here, not the whole column. */
+  .what-happens .prose {
+    max-width: none;
+    margin: 0;
+    overflow-wrap: anywhere;
+    overflow-x: auto;
+  }
+
+  .what-happens .prose > :global(:first-child) {
+    margin-top: 0;
+  }
+
+  .what-happens .prose > :global(:last-child) {
+    margin-bottom: 0;
+  }
+
+  /* Boxed text as in the editor (RichText.svelte): on the page colour, so it stands out from the panel. */
+  .what-happens :global(blockquote) {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    border-left: var(--border-width-thick) solid var(--color-border-strong);
+    border-radius: 0;
+    background: var(--color-bg);
+  }
+
+  /* Tables: no borders; a header row (only header cells) shaded, then banded rows starting plain. */
+  .what-happens :global(th),
+  .what-happens :global(td) {
+    border: 0;
+    background: none;
+  }
+
+  .what-happens :global(tr:not(:has(> td)) > th) {
+    background: var(--color-border);
+  }
+
+  .what-happens :global(tr:nth-child(even of :has(> td)) > *) {
+    background: var(--color-surface-sunken);
+  }
+
   .remove {
     display: flex;
     justify-content: flex-end;
@@ -206,11 +389,6 @@
     padding: 0;
     width: var(--control-height);
     justify-content: center;
-  }
-
-  .danger {
-    border-color: var(--color-danger);
-    color: var(--color-danger);
   }
 
   .label {

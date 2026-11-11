@@ -6,18 +6,13 @@
   import BackButton from "$lib/components/BackButton.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { settingsClosed } from "$lib/components/SettingsDialog.svelte";
-  import { catalogEntry } from "$lib/api/catalog";
-  import { listCharacters } from "$lib/api/characters";
-  import { rulesSection } from "$lib/api/rules";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
   import { campaigns, libraryHome, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
-  import { entryCategory, entryFacts } from "$lib/views/library/catalog";
-  import { signed } from "$lib/views/library/entries/format";
-  import { classLine, totalLevel } from "$lib/views/characters/characters";
   import "$lib/styles/prose.css";
+  import { loadPreview, type Preview as Loaded } from "./preview";
   import { groupByKind, hitAddress, hitMeta, kindLabel } from "./search";
 
   const t = strings.search;
@@ -60,7 +55,7 @@
   let chosen = $state<string | null>(null);
   const selected = $derived(shown.flatMap((g) => g.hits).find((h) => key(h) === chosen) ?? shown[0]?.hits[0]);
 
-  type Preview = { label: string; facts: { label: string; value: string }[]; html: string };
+  type Preview = Loaded & { label: string };
   let preview = $state<Preview | null>(null);
   let previewError = $state<string | null>(null);
   // Keyed, not by object: each keystroke's search returns new objects for the same results.
@@ -73,27 +68,7 @@
     if (hit) load(hit).then((p) => current() && (preview = p), (e) => current() && (previewError = errorMessage(e)));
   });
 
-  async function load(hit: SearchHit): Promise<Preview> {
-    const label = hitMeta(hit);
-    if (hit.kind === "characters") {
-      const found = (await listCharacters(hit.campaign ?? "")).characters.find((c) => c.id === hit.index);
-      if (!found) throw new Error(strings.characters.gone);
-      const c = strings.characters.form;
-      const stats: [string, number | null][] = [[c.maxHp, found.maxHp], [c.currentHp, found.currentHp], [c.tempHp, found.tempHp], [c.ac, found.ac], [c.initiative, found.initiative], [c.passivePerception, found.passivePerception], [c.passiveInsight, found.passiveInsight], [c.passiveInvestigation, found.passiveInvestigation]];
-      const facts = [
-        { label: c.player, value: found.player },
-        { label: c.classes, value: classLine(found) },
-        { label: strings.characters.byLevel, value: String(totalLevel(found)) },
-        ...stats.filter(([, v]) => v !== null).map(([label, v]) => ({ label, value: label === c.initiative ? signed(v!) : String(v) })),
-      ].filter((f) => f.value);
-      return { label, facts, html: "" };
-    }
-    if (hit.kind === "rule-sections") {
-      return { label, facts: [], html: (await rulesSection(hit.pack, hit.index)).html };
-    }
-    const entry = await catalogEntry(hit.kind, hit.pack, hit.index);
-    return { label, facts: entryFacts(entryCategory(hit.kind), entry).filter((f) => f.value !== "—"), html: entry.html };
-  }
+  const load = async (hit: SearchHit): Promise<Preview> => ({ ...(await loadPreview(hit)), label: hitMeta(hit) });
 
   // Typing and the chips refine the results in place (no Back step).
   function address(changes: Record<string, string | null>) {

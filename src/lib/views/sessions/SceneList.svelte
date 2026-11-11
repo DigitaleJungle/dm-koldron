@@ -173,9 +173,21 @@
     color: var(--charcoal);
   }
 
+  /* While a card is dragged, every scene is outlined (dashed, easing in and out). */
+  li:not(.empty) {
+    outline: var(--focus-ring) dashed transparent;
+    outline-offset: calc(-1 * var(--focus-ring));
+    transition:
+      outline-color var(--duration-hover) var(--ease-hover),
+      background-color var(--duration-hover) var(--ease-hover);
+  }
+
+  :global([data-motion="reduce"]) li {
+    transition: none;
+  }
+
   li.target {
-    outline: var(--border-width) dashed var(--color-accent);
-    outline-offset: calc(-1 * var(--border-width));
+    outline-color: var(--color-accent);
   }
 
   li.over {

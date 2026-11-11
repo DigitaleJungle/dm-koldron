@@ -72,6 +72,11 @@ export function cleanHtml(value: string, { links = false, base }: { links?: bool
         const width = colwidth.split(",").reduce((sum, w) => sum + Number(w), 0);
         if (links && width > 0) child.setAttribute("style", `width: ${width}px`);
       }
+      if (links && child.tagName === "TABLE") {
+        // Shown: every column sized makes the table as wide as its columns, as in the editor; else it fills the width.
+        const widths = [...(child.querySelector("tr")?.children ?? [])].flatMap((c) => (c.getAttribute("colwidth") ?? "0").split(",").map(Number));
+        if (widths.length && widths.every((w) => w > 0)) child.setAttribute("style", `width: ${widths.reduce((a, b) => a + b, 0)}px`);
+      }
       if (tag) {
         TAG_FIELDS.forEach((f) => tag[f] && child.setAttribute(`data-${f}`, tag[f]!));
         if (links) child.setAttribute("href", tagAddress(tag, base));

@@ -434,6 +434,8 @@
       </div>
       <main
         class="col editor"
+        class:target={dragged !== null && !pane && index >= 0}
+        class:over={overEditor}
         aria-label={draft.title || t.newTitle}
         use:keepScroll={{ id: "session-editor", url: page.url.href, ready: true }}
         ondragover={(ev) => {
@@ -461,9 +463,6 @@
             {/if}
           </div>
         {:else if index >= 0}
-          {#if dragged}
-            <div class="drop" class:over={overEditor}>{t.scenes.dropHere(dragged.name)}</div>
-          {/if}
           <SceneEditor bind:session={draft} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={nameLocation} onremove={removeScene} />
         {:else}
           <p class="muted">{t.scenes.empty}</p>
@@ -684,19 +683,25 @@
     background: var(--color-surface);
   }
 
-  .drop {
-    padding: var(--space-4);
-    border: var(--focus-ring) dashed var(--color-accent);
-    border-radius: var(--radius-md);
-    color: var(--color-accent);
-    text-align: center;
+  /* While a card is dragged, the open scene is outlined (dashed, easing in and out), and tinted under the pointer. */
+  .editor {
+    outline: var(--focus-ring) dashed transparent;
+    outline-offset: calc(-1 * var(--focus-ring));
+    transition:
+      outline-color var(--duration-hover) var(--ease-hover),
+      background-color var(--duration-hover) var(--ease-hover);
   }
 
-  .drop.over {
-    border-style: solid;
-    border-color: var(--potion-glow);
-    background: var(--potion-glow);
-    color: var(--charcoal);
+  .editor.target {
+    outline-color: var(--color-accent);
+  }
+
+  .editor.over {
+    background: var(--color-accent-soft);
+  }
+
+  :global([data-motion="reduce"]) .editor {
+    transition: none;
   }
 
   /* What the full views (locations, NPCs, checklist) share; the scene editor is outside, so none of it reaches there. */

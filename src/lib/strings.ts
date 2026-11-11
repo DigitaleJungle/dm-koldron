@@ -524,12 +524,12 @@ export const strings = {
       newLocationName: "New location",
       description: "What they see, hear and smell",
       links: "Location, NPCs and encounters",
+      parts: "Scene parts",
       npcs: "NPCs",
       encounters: "Encounters",
       link: "+ Link",
       unlink: (name: string) => `Unlink ${name}`,
       checklist: "Checklist",
-      dropHere: (name: string) => `Drop here to add ${name} to this scene`,
       added: (what: string, scene: string) => `${what} added to ${scene}`,
     },
     sections: {

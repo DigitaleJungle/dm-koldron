@@ -28,8 +28,7 @@
     label,
     compact = false,
     extended = false,
-    readonly = false,
-  }: { value: string; label: string; compact?: boolean; extended?: boolean; readonly?: boolean } = $props();
+  }: { value: string; label: string; compact?: boolean; extended?: boolean } = $props();
 
   const t = strings.richText;
   const id = $props.id();
@@ -218,13 +217,6 @@
 
   onDestroy(() => editor?.destroy());
 
-  $effect(() => {
-    if (!editor) return;
-    // false: locking isn't an edit, so no update (it would rewrite the value and trigger a save)
-    if (editor.isEditable === readonly) editor.setEditable(!readonly, false);
-    editor.view.dom.setAttribute("aria-readonly", String(readonly));
-  });
-
   // The highlighted match, for screen readers.
   $effect(() => {
     const dom = editor?.view.dom;
@@ -235,7 +227,6 @@
 </script>
 
 <div class="rich" class:compact>
-  {#if !readonly}
   <div class="toolbar" role="toolbar" aria-label={t.toolbar(label)}>
     {#if extended}
       <Menu id="{id}-style" label={t.textStyle} items={styleItems} align="start" triggerClass="icon-btn tool dropdown">
@@ -264,7 +255,6 @@
       {/if}
     {/each}
   </div>
-  {/if}
   <div class="host" bind:this={host}></div>
 </div>
 

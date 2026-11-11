@@ -1,6 +1,6 @@
 import type { Encounter } from "$lib/api/encounters";
 import type { Scene, Session, Status } from "$lib/api/sessions";
-import type { Location, Npc, World } from "$lib/api/world";
+import type { Location, Npc, NpcGroup, World } from "$lib/api/world";
 
 /** The number a new session gets: the highest + 1, 1 for the first. */
 export const nextNumber = (sessions: { number: number }[]): number => sessions.reduce((n, s) => Math.max(n, s.number), 0) + 1;
@@ -40,7 +40,45 @@ export const newLocation = (name = "", parent: string | null = null): Location =
   pins: [],
   images: [],
 });
-export const newNpc = (name = "", parent: string | null = null): Npc => ({ id: crypto.randomUUID(), parent, name, wants: "", voice: "" });
+export const newNpc = (name = "", parent: string | null = null): Npc => ({
+  id: crypto.randomUUID(),
+  parent,
+  name,
+  race: "",
+  gender: "",
+  age: "",
+  job: "",
+  alignment: "",
+  summary: "",
+  motivation: "",
+  traits: "",
+  backstory: "",
+  stats: { ac: "", hp: "", speed: "", cr: "", str: "", dex: "", con: "", int: "", wis: "", cha: "" },
+});
+
+export const newGroup = (name = "", parent: string | null = null): NpcGroup => ({ id: crypto.randomUUID(), parent, name });
+
+/** Earlier states to go back to (Ctrl+Z), latest first; past `max`, the oldest is dropped. */
+export class UndoHistory<T> {
+  #items: T[] = [];
+  constructor(private max = 50) {}
+
+  push(item: T) {
+    this.#items.push(item);
+    if (this.#items.length > this.max) this.#items.shift();
+  }
+
+  pop(): T | undefined {
+    return this.#items.pop();
+  }
+
+  clear() {
+    this.#items = [];
+  }
+}
+
+/** An NPC's race, gender, age, job and alignment, those filled in, as one line ("Half-elf · Woman · Smith"). */
+export const npcSpecs = (n: Npc) => [n.race, n.gender, n.age, n.job, n.alignment].map((s) => s.trim()).filter(Boolean).join(" · ");
 
 // ---- Trees: the campaign's locations and NPCs -----------------------------------------------------
 type Entry = { id: string; parent: string | null; name: string };
@@ -89,12 +127,6 @@ export function treeRows<T extends Entry>(entries: T[], open: Set<string>, query
 /** Every entry in tree order, with its depth: for dropdowns. */
 export const treeOrder = <T extends Entry>(entries: T[]): TreeRow<T>[] => treeRows(entries, new Set(entries.map((e) => e.id)));
 
-/** The sessions the entry, or anything under it, appears in, lowest number first. */
-export function sessionsWith<T extends { number: number; locationIds: string[]; npcIds: string[] }>(rows: T[], entries: Entry[], kind: "location" | "npc", id: string): T[] {
-  const ids = descendants(entries, id);
-  return rows.filter((s) => (kind === "location" ? s.locationIds : s.npcIds).some((x) => ids.includes(x))).toSorted((a, b) => a.number - b.number);
-}
-
 /** Removes the entry; what was under it moves up to its parent. */
 export function removeEntry<T extends Entry>(entries: T[], id: string): T[] {
   const parent = entries.find((e) => e.id === id)?.parent ?? null;
@@ -124,8 +156,14 @@ export function removeLocation(world: World, session: Session | null, id: string
   for (const scene of session?.scenes ?? []) if (scene.locationId === id) scene.locationId = null;
 }
 
-/** Removes the NPC from the campaign (what was under it moves up), and unlinks it from its locations and the open
- *  session's scenes. */
+/** Removes the group; what was in it moves up to its parent. */
+export function removeGroup(world: World, id: string) {
+  const parent = world.npcGroups.find((g) => g.id === id)?.parent ?? null;
+  world.npcGroups = removeEntry(world.npcGroups, id);
+  for (const n of world.npcs) if (n.parent === id) n.parent = parent;
+}
+
+/** Removes the NPC from the campaign, and unlinks it from its locations and the open session's scenes. */
 export function removeNpc(world: World, session: Session | null, id: string) {
   world.npcs = removeEntry(world.npcs, id);
   for (const l of world.locations) unlink(l.npcIds, id);

@@ -17,7 +17,7 @@
   import { tick } from "svelte";
   import WorldEntry from "./WorldEntry.svelte";
   import WorldTree from "./WorldTree.svelte";
-  import { ancestors, averageLevel, descendants, overview, parseDate, parseTime, removeLocation, removeNpc, sessionsWith } from "./sessions";
+  import { ancestors, averageLevel, descendants, overview, parseDate, parseTime, removeLocation, removeNpc } from "./sessions";
   import { WorldDraft } from "./worldDraft.svelte";
 
   const t = strings.sessions;
@@ -50,14 +50,13 @@
 
   // ---- Editing a location or NPC: in place of the sessions -----------------------------------------
   let editing = $state<{ kind: "location" | "npc"; id: string } | null>(null);
+  /** A tree's entries; the NPCs' with their groups. */
+  const treeOf = (kind: "location" | "npc"): { id: string; parent: string | null; name: string }[] =>
+    !world.world ? [] : kind === "location" ? world.world.locations : [...world.world.npcGroups, ...world.world.npcs];
   const editEntries = $derived<(Location | Npc)[]>(!editing || !world.world ? [] : editing.kind === "location" ? world.world.locations : world.world.npcs);
+  const editTree = $derived(editing ? treeOf(editing.kind) : []);
   const editEntry = $derived(editing ? editEntries.find((e) => e.id === editing!.id) : undefined);
-  const editPath = $derived(editEntry ? ancestors(editEntries, editEntry.id).map((a) => a.name || unnamedOf(editing!.kind)) : []);
-  const editNote = $derived.by(() => {
-    if (!editing || !editEntry) return "";
-    const numbers = sessionsWith(list?.sessions ?? [], editEntries, editing.kind, editEntry.id).map((s) => fmt.format(s.number));
-    return numbers.length ? t.world.appearsIn(numbers.join(", ")) : t.world.notInSession;
-  });
+  const editPath = $derived(editEntry ? ancestors(editTree, editEntry.id).map((a) => a.name || unnamedOf(editing!.kind)) : []);
   const unnamedOf = (kind: "location" | "npc") => (kind === "location" ? t.manage.unnamedLocation : t.manage.unnamedNpc);
 
   /** Opens the entry in the editor, with the cursor in its name. */
@@ -87,7 +86,7 @@
   let selected = $state<{ kind: "location" | "npc"; id: string } | null>(null);
   const selectedEntry = $derived.by(() => {
     if (!selected || !world.world) return null;
-    const entries = selected.kind === "location" ? world.world.locations : world.world.npcs;
+    const entries = treeOf(selected.kind);
     const entry = entries.find((e) => e.id === selected!.id);
     return entry ? { name: entry.name || (selected.kind === "location" ? t.manage.unnamedLocation : t.manage.unnamedNpc), ids: descendants(entries, entry.id) } : null;
   });
@@ -210,7 +209,7 @@
     {#if editing && editEntry}
       <section class="editor" aria-label={t.world.edit(editEntry.name || unnamedOf(editing.kind))}>
         {#if editPath.length}<span class="muted">{editPath.join(" › ")}</span>{/if}
-        <WorldEntry kind={editing.kind} bind:world={() => world.world!, (v) => (world.world = v)} id={editEntry.id} note={editNote} onremove={removeEdited}>
+        <WorldEntry kind={editing.kind} bind:world={() => world.world!, (v) => (world.world = v)} id={editEntry.id} onremove={removeEdited}>
           {#snippet end()}
             <button class="icon-btn icon-btn-lg" aria-label={t.world.close} onclick={closeEditor}>
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -317,7 +316,6 @@
           <WorldTree
             {kind}
             bind:world={() => world.world!, (v) => (world.world = v)}
-            sessions={list?.sessions ?? []}
             selected={selected?.kind === kind ? selected.id : null}
             onselect={(id) => (selected = id ? { kind, id } : null)}
             onedit={(id) => edit(kind, id)}

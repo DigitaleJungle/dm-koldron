@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.12] - 2026-11-12
+
+### Added
+
+- NPC fields in tabs: Profile (race, gender, age, job and alignment in a table, a portrait, stats and a summary), Motivation and traits, and Backstory
+- NPC stats in a stat-block box (AC, HP, speed, CR and ability scores), copied from a catalog creature (Commoner by default) or rolled with dice, with Ctrl+Z to undo
+- NPC groups: folders in the NPCs tree that nest, added and renamed in the tree
+
+### Changed
+
+- NPCs no longer sit inside each other; NPCs saved inside another NPC move to the top level, and Wants and Voice become Motivation and Traits
+- Manage NPCs is a list that opens the NPC editor, with groups as headings
+- The overview's hover card and editor no longer show which sessions an entry appears in
+
 ## [0.5.11] - 2026-11-11
 
 ### Added

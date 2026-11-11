@@ -1,11 +1,10 @@
 <script lang="ts">
   // Manage locations / Manage NPCs: the campaign's, in tree order, with where this session uses each; a new one by name,
-  // at the top. NPCs are edited in place, one card each. Locations are a list: one opens in the full location editor
-  // (as on the Sessions overview), with a cross back to the list. Removing one unlinks it from this session's scenes
-  // (what was under it moves up).
+  // at the top, opened at once. Both are a list: one opens in the full editor (as on the Sessions overview), with a
+  // cross back to the list. Removing one unlinks it from this session's scenes (what was under it moves up).
   import { tick } from "svelte";
   import type { Session } from "$lib/api/sessions";
-  import type { World } from "$lib/api/world";
+  import type { Location, Npc, World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import WorldEntry from "./WorldEntry.svelte";
   import { newLocation, newNpc, removeLocation, removeNpc, scenesWith, treeOrder } from "./sessions";
@@ -19,13 +18,15 @@
     kind: "location" | "npc";
     session: Session;
     world: World;
-    /** The location open in the editor, if any. */
+    /** The location or NPC open in the editor, if any. */
     editing?: string | null;
   } = $props();
 
   const t = strings.sessions.manage;
-  const rows = $derived(kind === "location" ? treeOrder(world.locations) : treeOrder(world.npcs));
-  const open = $derived(kind === "location" && editing && world.locations.some((l) => l.id === editing) ? editing : null);
+  /** The NPCs with their groups, which show as headings. */
+  const rows = $derived(treeOrder<{ id: string; parent: string | null; name: string }>(kind === "location" ? world.locations : [...world.npcGroups, ...world.npcs]));
+  const groups = $derived(new Set(world.npcGroups.map((g) => g.id)));
+  const open = $derived(editing && rows.some((r) => r.entry.id === editing && !groups.has(editing)) ? editing : null);
   let draft = $state("");
 
   async function add(ev: SubmitEvent) {
@@ -33,16 +34,16 @@
     const name = draft.trim();
     if (!name) return;
     draft = "";
-    if (kind === "npc") return void world.npcs.push(newNpc(name));
-    const created = newLocation(name);
-    world.locations.push(created);
+    const created = kind === "location" ? newLocation(name) : newNpc(name);
+    if (kind === "location") world.locations.push(created as Location);
+    else world.npcs.push(created as Npc);
     await edit(created.id);
   }
 
   async function edit(id: string) {
     editing = id;
     await tick();
-    document.getElementById(`loc-name-${id}`)?.focus();
+    document.getElementById(`${kind === "location" ? "loc" : "npc"}-name-${id}`)?.focus();
   }
 
   async function back() {
@@ -65,7 +66,7 @@
 </script>
 
 {#if open}
-  <WorldEntry kind="location" bind:world id={open} note={note(open)} onremove={remove}>
+  <WorldEntry {kind} bind:world id={open} note={note(open)} onremove={remove}>
     {#snippet end()}
       <button class="icon-btn icon-btn-lg" aria-label={strings.sessions.world.close} onclick={back}>
         <i class="ti ti-x" aria-hidden="true"></i>
@@ -74,25 +75,23 @@
   </WorldEntry>
 {:else}
   <h2>{kind === "location" ? strings.sessions.sections.locations : strings.sessions.sections.npcs}</h2>
-  {#if kind === "location" && rows.length}
+  {#if rows.length}
     <ul class="locations">
       {#each rows as r (r.entry.id)}
         <li style:margin-left="calc({r.depth} * var(--space-5))">
+          {#if groups.has(r.entry.id)}
+            <h3 class="group"><i class="ti ti-folder" aria-hidden="true"></i>{r.entry.name || strings.sessions.world.unnamedGroup}</h3>
+          {:else}
           <button class="location" data-location-row={r.entry.id} onclick={() => edit(r.entry.id)}>
-            <strong>{r.entry.name || t.unnamedLocation}</strong>
+            <strong>{r.entry.name || (kind === "location" ? t.unnamedLocation : t.unnamedNpc)}</strong>
             <span class="note">{note(r.entry.id)}</span>
           </button>
+          {/if}
         </li>
       {/each}
     </ul>
   {:else}
-    {#each rows as r (r.entry.id)}
-      <div class="card" style:margin-left="calc({r.depth} * var(--space-5))">
-        <WorldEntry {kind} bind:world id={r.entry.id} note={note(r.entry.id)} onremove={remove} />
-      </div>
-    {:else}
-      <p class="note">{kind === "location" ? t.noLocations : t.noNpcs}</p>
-    {/each}
+    <p class="note">{kind === "location" ? t.noLocations : t.noNpcs}</p>
   {/if}
   <form class="add" onsubmit={add}>
     <input class="text-field" bind:value={draft} maxlength="100" autocomplete="off" placeholder={kind === "location" ? t.newLocation : t.newNpc} aria-label={kind === "location" ? t.newLocation : t.newNpc} />
@@ -123,6 +122,15 @@
     color: var(--color-text);
     text-align: left;
     cursor: pointer;
+  }
+
+  .group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-2) 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
   }
 
   .location:hover {

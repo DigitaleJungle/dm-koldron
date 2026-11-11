@@ -1,6 +1,8 @@
-//! The campaign's locations and NPCs, as two trees, in `world.json` in its folder. Sessions link them by id from their
+//! The campaign's locations and NPCs, as two trees, in `world.json` in its folder. Locations nest in each other; NPCs
+//! don't: they sit in groups, which nest. Sessions link them by id from their
 //! scenes. Sessions saved before this held their own lists; `migrate` moves those here once (see docs/SPEC.md).
-//! A location's pictures (its images and its map) are files in `locations/<id>/`, stored as soon as they're chosen.
+//! A location's pictures (its images and its map) are files in `locations/<id>/`, an NPC's portrait is
+//! `npcs/<id>/portrait.jpg`, each stored as soon as it's chosen.
 
 use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
 use crate::commands::encounters::{check_pins, Pin, MAP_MAX_SIDE};
@@ -25,6 +27,8 @@ const MAX_ENTRIES: usize = 2000;
 const MAX_IMAGES: usize = 50; // the editor stops adding at this many (LocationFields.svelte)
 const PICTURES: &str = "locations";
 const MAP_FILE: &str = "map.jpg";
+const NPC_PICTURES: &str = "npcs";
+const PORTRAIT_FILE: &str = "portrait.jpg";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -61,24 +65,67 @@ pub struct StoredImage {
     pub picture: Picture,
 }
 
+/// An NPC's basic stats, as the DM writes them (or copies them from a catalog creature): each a short text.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct Npc {
+pub struct NpcStats {
+    pub ac: String,
+    pub hp: String,
+    pub speed: String,
+    pub cr: String,
+    pub str: String,
+    pub dex: String,
+    pub con: String,
+    pub int: String,
+    pub wis: String,
+    pub cha: String,
+}
+
+/// A folder of NPCs (and of other groups) in the NPCs tree: just a name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NpcGroup {
     pub id: String,
-    /// The NPC (or group) it's under; none at the top.
+    /// The group it's in; none at the top.
     pub parent: Option<String>,
     pub name: String,
-    pub wants: String,
-    /// How they talk.
-    pub voice: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+pub struct Npc {
+    pub id: String,
+    /// The group it's in; none at the top.
+    pub parent: Option<String>,
+    pub name: String,
+    pub race: String,
+    pub gender: String,
+    pub age: String,
+    pub job: String,
+    pub alignment: String,
+    /// Who they are, in short (rich text).
+    pub summary: String,
+    /// What they want (rich text). Saved as `wants`, a line, before there were more fields.
+    #[serde(alias = "wants")]
+    pub motivation: String,
+    /// How they come across: manner, voice, habits (rich text). Saved as `voice`, a line, before.
+    #[serde(alias = "voice")]
+    pub traits: String,
+    /// Their past (rich text).
+    pub backstory: String,
+    pub stats: NpcStats,
+    /// Their portrait; set by Rust, never saved.
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub portrait: Option<Picture>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct World {
     /// Set by `save` and `migrate`; 0 (or no file) until the sessions' own lists have moved here.
     pub version: u32,
     pub locations: Vec<Location>,
+    pub npc_groups: Vec<NpcGroup>,
     pub npcs: Vec<Npc>,
 }
 
@@ -99,24 +146,39 @@ fn with_pictures(campaign_dir: &Path, mut world: World) -> World {
         (l.images, l.pictures) = found.into_iter().unzip();
         l.map = picture_at(&dir.join(MAP_FILE));
     }
+    for n in &mut world.npcs {
+        n.portrait = picture_at(&portrait_path(campaign_dir, &n.id));
+    }
     world
 }
 
-/// Removes picture files no location refers to: a removed location's folder, a removed image. Run when the world is
-/// loaded, never while it's being edited (an image just added isn't in the saved world yet).
+fn portrait_path(campaign_dir: &Path, npc: &str) -> PathBuf {
+    campaign_dir.join(NPC_PICTURES).join(npc).join(PORTRAIT_FILE)
+}
+
+/// The folders in `dir` (none when it isn't there), by name.
+fn folders(dir: &Path) -> Result<Vec<(String, PathBuf)>, StorageError> {
+    match fs::read_dir(dir) {
+        Ok(entries) => Ok(entries.filter_map(Result::ok).map(|e| (e.file_name().to_string_lossy().into_owned(), e.path())).collect()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Removes picture files nothing refers to: a removed location's or NPC's folder, a removed image. Run when the world
+/// is loaded, never while it's being edited (an image just added isn't in the saved world yet).
 fn clean_pictures(campaign_dir: &Path, world: &World) -> Result<(), StorageError> {
-    let entries = match fs::read_dir(campaign_dir.join(PICTURES)) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let id = entry.file_name().to_string_lossy().into_owned();
+    for (id, path) in folders(&campaign_dir.join(NPC_PICTURES))? {
+        if !world.npcs.iter().any(|n| n.id == id) {
+            fs::remove_dir_all(path)?;
+        }
+    }
+    for (id, path) in folders(&campaign_dir.join(PICTURES))? {
         let Some(location) = world.locations.iter().find(|l| l.id == id) else {
-            fs::remove_dir_all(entry.path())?;
+            fs::remove_dir_all(path)?;
             continue;
         };
-        for file in fs::read_dir(entry.path())?.filter_map(Result::ok) {
+        for file in fs::read_dir(path)?.filter_map(Result::ok) {
             let name = file.file_name().to_string_lossy().into_owned();
             if name != MAP_FILE && !location.images.contains(&name) {
                 fs::remove_file(file.path())?;
@@ -143,24 +205,39 @@ pub fn add_image(campaign_dir: &Path, location: &str, source: &Path, now: u64) -
 /// Makes the picture file at `source` the location's map, or removes it (none).
 pub fn set_map(campaign_dir: &Path, location: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
     check_id(location, "location")?;
-    let path = pictures_dir(campaign_dir, location).join(MAP_FILE);
+    set_picture(&pictures_dir(campaign_dir, location).join(MAP_FILE), source)
+}
+
+/// Makes the picture file at `source` the NPC's portrait, or removes it (none).
+pub fn set_portrait(campaign_dir: &Path, npc: &str, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
+    check_id(npc, "NPC")?;
+    set_picture(&portrait_path(campaign_dir, npc), source)
+}
+
+fn set_picture(path: &Path, source: Option<&Path>) -> Result<Option<Picture>, StorageError> {
     match source {
-        Some(source) => store_picture(source, MAP_MAX_SIDE, &path)?,
-        None => match fs::remove_file(&path) {
+        Some(source) => store_picture(source, MAP_MAX_SIDE, path)?,
+        None => match fs::remove_file(path) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
             _ => {}
         },
     }
-    Ok(picture_at(&path))
+    Ok(picture_at(path))
 }
 
-/// The saved world; an empty one (version 0) when there's no file yet.
+/// The saved world; an empty one (version 0) when there's no file yet. An NPC that isn't in a group (one saved inside
+/// another NPC, before there were groups) is at the top.
 pub fn read(campaign_dir: &Path) -> Result<World, StorageError> {
-    match fs::read_to_string(campaign_dir.join(FILE)) {
-        Ok(text) => serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(World::default()),
-        Err(e) => Err(e.into()),
+    let mut world: World = match fs::read_to_string(campaign_dir.join(FILE)) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => World::default(),
+        Err(e) => return Err(e.into()),
+    };
+    let groups: HashSet<String> = world.npc_groups.iter().map(|g| g.id.clone()).collect();
+    for n in &mut world.npcs {
+        n.parent = n.parent.take().filter(|p| groups.contains(p));
     }
+    Ok(world)
 }
 
 /// Trims the text; one over `max` characters is a problem.
@@ -198,13 +275,21 @@ fn check_tree<'a>(entries: impl Iterator<Item = (&'a String, &'a Option<String>)
 
 fn check(world: &mut World) -> Result<(), StorageError> {
     let mut problems = Vec::new();
-    for (len, what) in [(world.locations.len(), "Locations"), (world.npcs.len(), "NPCs")] {
+    for (len, what) in [(world.locations.len(), "Locations"), (world.npc_groups.len(), "NPC groups"), (world.npcs.len(), "NPCs")] {
         if len > MAX_ENTRIES {
             problems.push(format!("{what} can hold at most {MAX_ENTRIES} entries."));
         }
     }
     check_tree(world.locations.iter().map(|l| (&l.id, &l.parent)), "location", &mut problems);
-    check_tree(world.npcs.iter().map(|n| (&n.id, &n.parent)), "NPC", &mut problems);
+    // One tree: the groups and the NPCs in them (an id once in both); an NPC is only ever in a group.
+    check_tree(world.npc_groups.iter().map(|g| (&g.id, &g.parent)).chain(world.npcs.iter().map(|n| (&n.id, &n.parent))), "group or NPC", &mut problems);
+    let groups: HashSet<&str> = world.npc_groups.iter().map(|g| g.id.as_str()).collect();
+    if world.npcs.iter().any(|n| n.parent.as_deref().is_some_and(|p| !groups.contains(p))) {
+        problems.push("An NPC can only be inside a group.".into());
+    }
+    for g in &mut world.npc_groups {
+        check_text(&mut g.name, MAX_NAME_LEN, "A group's name", &mut problems);
+    }
     let npcs: HashSet<String> = world.npcs.iter().map(|n| n.id.clone()).collect();
     for l in &mut world.locations {
         check_text(&mut l.name, MAX_NAME_LEN, "A location's name", &mut problems);
@@ -225,8 +310,19 @@ fn check(world: &mut World) -> Result<(), StorageError> {
     }
     for n in &mut world.npcs {
         check_text(&mut n.name, MAX_NAME_LEN, "An NPC's name", &mut problems);
-        check_text(&mut n.wants, MAX_LINE_LEN, "What an NPC wants", &mut problems);
-        check_text(&mut n.voice, MAX_LINE_LEN, "An NPC's voice", &mut problems);
+        check_text(&mut n.race, MAX_LINE_LEN, "An NPC's race", &mut problems);
+        check_text(&mut n.gender, MAX_LINE_LEN, "An NPC's gender", &mut problems);
+        check_text(&mut n.age, MAX_LINE_LEN, "An NPC's age", &mut problems);
+        check_text(&mut n.job, MAX_LINE_LEN, "An NPC's job", &mut problems);
+        check_text(&mut n.alignment, MAX_LINE_LEN, "An NPC's alignment", &mut problems);
+        check_text(&mut n.summary, MAX_NOTE_LEN, "An NPC's summary", &mut problems);
+        check_text(&mut n.motivation, MAX_NOTE_LEN, "An NPC's motivation", &mut problems);
+        check_text(&mut n.traits, MAX_NOTE_LEN, "An NPC's traits", &mut problems);
+        check_text(&mut n.backstory, MAX_NOTE_LEN, "An NPC's backstory", &mut problems);
+        let s = &mut n.stats;
+        for text in [&mut s.ac, &mut s.hp, &mut s.speed, &mut s.cr, &mut s.str, &mut s.dex, &mut s.con, &mut s.int, &mut s.wis, &mut s.cha] {
+            check_text(text, MAX_LINE_LEN, "An NPC's stat", &mut problems);
+        }
     }
     if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
 }
@@ -241,6 +337,9 @@ pub fn save(campaign_dir: &Path, mut world: World) -> Result<World, StorageError
         // What the window sent back; filled in again from the files.
         l.pictures.clear();
         l.map = None;
+    }
+    for n in &mut world.npcs {
+        n.portrait = None;
     }
     write_atomic(&campaign_dir.join(FILE), &to_json(&world)?)?;
     Ok(with_pictures(campaign_dir, world))
@@ -313,8 +412,8 @@ pub fn migrate(campaign_dir: &Path, now: u64) -> Result<(), StorageError> {
                     if into.name.is_empty() {
                         into.name = from.name.clone();
                     }
-                    join(&mut into.wants, &from.wants, " / ", MAX_LINE_LEN);
-                    join(&mut into.voice, &from.voice, " / ", MAX_LINE_LEN);
+                    join(&mut into.motivation, &from.motivation, " / ", MAX_NOTE_LEN);
+                    join(&mut into.traits, &from.traits, " / ", MAX_NOTE_LEN);
                 });
                 (n.id.clone(), id)
             });
@@ -356,6 +455,12 @@ pub async fn add_location_image(app: AppHandle, campaign: String, location: Stri
     blocking(move || add_image(&active_dir(&dirs(&app)?, &campaign)?, &location, Path::new(&path), now_ms())).await
 }
 
+/// `path`: the picture the DM chose, or none to remove the portrait.
+#[tauri::command]
+pub async fn set_npc_portrait(app: AppHandle, campaign: String, npc: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
+    blocking(move || set_portrait(&active_dir(&dirs(&app)?, &campaign)?, &npc, path.as_deref().map(Path::new))).await
+}
+
 /// `path`: the picture the DM chose, or none to remove the map.
 #[tauri::command]
 pub async fn set_location_map(app: AppHandle, campaign: String, location: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
@@ -390,14 +495,36 @@ mod tests {
     }
 
     fn npc(id: &str, name: &str, wants: &str) -> Npc {
-        Npc { id: id.into(), name: name.into(), wants: wants.into(), ..Npc::default() }
+        Npc { id: id.into(), name: name.into(), motivation: wants.into(), ..Npc::default() }
+    }
+
+    #[test]
+    fn npcs_sit_in_groups_never_in_each_other() {
+        let dir = temp_dir("groups");
+        let group = |id: &str, parent: Option<&str>| NpcGroup { id: id.into(), parent: parent.map(Into::into), name: id.into() };
+        let inside = |id: &str, parent: &str| Npc { parent: Some(parent.into()), ..npc(id, id, "") };
+        let ok = World { npc_groups: vec![group("harbour", None), group("smugglers", Some("harbour"))], npcs: vec![inside("wenna", "smugglers")], ..World::default() };
+        assert_eq!(save(&dir, ok.clone()).unwrap().npcs[0].parent.as_deref(), Some("smugglers"));
+        let bad = World { npcs: vec![npc("abbot", "Abbot", ""), inside("wenna", "abbot")], ..ok.clone() };
+        assert!(matches!(save(&dir, bad), Err(StorageError::Invalid(_))));
+
+        // Saved inside another NPC before there were groups: at the top.
+        let old = r#"{"version":1,"npcs":[{"id":"abbot","name":"Abbot"},{"id":"wenna","parent":"abbot","name":"Wenna"}]}"#;
+        fs::write(dir.join(FILE), old).unwrap();
+        assert_eq!(read(&dir).unwrap().npcs[1].parent, None);
+    }
+
+    #[test]
+    fn reads_an_npc_saved_with_wants_and_voice() {
+        let n: Npc = serde_json::from_str(r#"{"id":"w","name":"Wenna","wants":"Coin","voice":"Hoarse"}"#).unwrap();
+        assert_eq!((n.motivation.as_str(), n.traits.as_str()), ("Coin", "Hoarse"));
     }
 
     #[test]
     fn saves_and_reads_back_a_tree() {
         let dir = temp_dir("save");
         assert_eq!(read(&dir).unwrap(), World::default());
-        let world = World { locations: vec![loc("coast", None), loc("abbey", Some("coast"))], npcs: vec![npc("wenna", " Wenna ", "")], version: 0 };
+        let world = World { locations: vec![loc("coast", None), loc("abbey", Some("coast"))], npcs: vec![npc("wenna", " Wenna ", "")], ..World::default() };
         let saved = save(&dir, world).unwrap();
         assert_eq!((saved.version, saved.npcs[0].name.as_str()), (MIGRATED, "Wenna"));
         assert_eq!(read(&dir).unwrap(), saved);
@@ -435,7 +562,7 @@ mod tests {
         let world = read(&dir).unwrap();
         assert_eq!(world.version, MIGRATED);
         assert_eq!(world.locations, vec![chapel("c1", "Stained glass\n\nRotten pews")]);
-        assert_eq!((world.npcs.len(), world.npcs[0].id.as_str(), world.npcs[0].wants.as_str()), (1, "w1", "Coin / Ale"));
+        assert_eq!((world.npcs.len(), world.npcs[0].id.as_str(), world.npcs[0].motivation.as_str()), (1, "w1", "Coin / Ale"));
         let two = sessions::get(&dir, "two").unwrap();
         assert!(two.locations.is_empty() && two.npcs.is_empty());
         assert_eq!((two.scenes[0].location_id.as_deref(), two.scenes[0].npc_ids.clone()), (Some("c1"), vec!["w1".to_string()]));
@@ -455,7 +582,7 @@ mod tests {
         legacy(&dir, "one", 1, vec![], vec![npc("w1", "Wenna", "Coin")], vec![]);
         legacy(&dir, "two", 2, vec![], vec![npc("w2", "Wenna", "Ale")], vec![]);
         // Stopped after writing the world (version 0) and rewriting session one only.
-        let half = World { version: 0, locations: vec![], npcs: vec![npc("w1", "Wenna", "Coin / Ale")] };
+        let half = World { npcs: vec![npc("w1", "Wenna", "Coin / Ale")], ..World::default() };
         fs::write(dir.join(FILE), to_json(&half).unwrap()).unwrap();
         let mut one = sessions::get(&dir, "one").unwrap();
         one.npcs.clear();
@@ -463,7 +590,7 @@ mod tests {
 
         migrate(&dir, 9).unwrap();
         let world = read(&dir).unwrap();
-        assert_eq!((world.version, world.npcs.len(), world.npcs[0].wants.as_str()), (MIGRATED, 1, "Coin / Ale"));
+        assert_eq!((world.version, world.npcs.len(), world.npcs[0].motivation.as_str()), (MIGRATED, 1, "Coin / Ale"));
     }
 
     #[test]
@@ -502,7 +629,7 @@ mod tests {
         let dir = temp_dir("fields");
         let pin = Pin { x: 0.5, y: 0.5, title: "Trapdoor".into(), text: "To the crypt".into() };
         let inn = Location { npc_ids: vec!["wenna".into(), "gone".into(), "wenna".into()], pins: vec![pin.clone()], purpose: " Rest ".into(), ..loc("inn", None) };
-        let world = World { locations: vec![inn], npcs: vec![npc("wenna", "Wenna", "")], version: 0 };
+        let world = World { locations: vec![inn], npcs: vec![npc("wenna", "Wenna", "")], ..World::default() };
         let saved = save(&dir, world.clone()).unwrap();
         assert_eq!((saved.locations[0].npc_ids.clone(), saved.locations[0].purpose.as_str()), (vec!["wenna".to_string()], "Rest"));
         assert_eq!(read(&dir).unwrap().locations[0].pins, vec![pin.clone()]);
@@ -524,17 +651,22 @@ mod tests {
         let stored = image::open(&first.picture.path).unwrap();
         assert_eq!((stored.width(), stored.height()), (MAP_MAX_SIDE, 512));
         assert!(set_map(&dir, "inn", Some(&png)).unwrap().is_some());
+        assert!(set_portrait(&dir, "wenna", Some(&png)).unwrap().is_some());
+        set_portrait(&dir, "gone", Some(&png)).unwrap();
         add_image(&dir, "gone", &png, 11).unwrap();
         assert!(matches!(add_image(&dir, "../x", &png, 12), Err(StorageError::Invalid(_))));
 
         // Only the first image was kept; the "gone" location never saved.
-        let saved = save(&dir, World { locations: vec![Location { images: vec![first.name.clone()], ..loc("inn", None) }], ..World::default() }).unwrap();
-        assert_eq!((saved.locations[0].pictures.len(), saved.locations[0].map.is_some()), (1, true));
-        assert!(!fs::read_to_string(dir.join(FILE)).unwrap().contains("pictures"));
+        let world = World { locations: vec![Location { images: vec![first.name.clone()], ..loc("inn", None) }], npcs: vec![npc("wenna", "Wenna", "")], ..World::default() };
+        let saved = save(&dir, world).unwrap();
+        assert_eq!((saved.locations[0].pictures.len(), saved.locations[0].map.is_some(), saved.npcs[0].portrait.is_some()), (1, true, true));
+        let file = fs::read_to_string(dir.join(FILE)).unwrap();
+        assert!(!file.contains("pictures") && !file.contains("portrait"), "{file}");
         clean_pictures(&dir, &read(&dir).unwrap()).unwrap();
         let inn = pictures_dir(&dir, "inn");
         assert!(inn.join(&first.name).exists() && inn.join(MAP_FILE).exists() && !inn.join(&second.name).exists());
         assert!(!pictures_dir(&dir, "gone").exists());
+        assert!(portrait_path(&dir, "wenna").exists() && !dir.join(NPC_PICTURES).join("gone").exists());
 
         fs::remove_file(inn.join(&first.name)).unwrap(); // a file gone from under it
         assert!(with_pictures(&dir, read(&dir).unwrap()).locations[0].images.is_empty());

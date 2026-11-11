@@ -131,8 +131,8 @@
   /** The open scene, unless a full view (`pane`) is open instead. */
   let selected = $state<string | null>(null);
   let pane = $state<Pane | null>(null);
-  /** The location open in Manage locations' editor. */
-  let locationEditing = $state<string | null>(null);
+  /** The location or NPC open in Manage locations' or Manage NPCs' editor. */
+  let worldEditing = $state<string | null>(null);
   let section = $state<Section | null>(null);
   const index = $derived(pane ? -1 : draft.scenes.findIndex((s) => s.id === selected));
   const counts = $derived(checkCounts(draft));
@@ -151,7 +151,7 @@
   /** Opens the new location in Manage locations' editor, with the cursor in its name. */
   async function nameLocation(lid: string) {
     pane = "locations";
-    locationEditing = lid;
+    worldEditing = lid;
     await tick();
     const field = document.getElementById(`loc-name-${lid}`) as HTMLInputElement | null;
     field?.focus();
@@ -473,7 +473,7 @@
         {#if pane}
           <div class="pane">
             {#if pane === "locations" || pane === "npcs"}
-              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:editing={locationEditing} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
+              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:editing={worldEditing} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
             {:else}
               <h2>{t.sections.checklist}</h2>
               <Checklist bind:items={draft.checklist} placeholder={t.checklist.placeholder} />
@@ -495,7 +495,7 @@
           {encounterError}
           encountersHref={encountersBase}
           {encounterMeta}
-          onmanage={(p) => ([pane, locationEditing] = [p, null])}
+          onmanage={(p) => ([pane, worldEditing] = [p, null])}
           ondragstart={startDrag}
           ondragend={endDrag}
         />

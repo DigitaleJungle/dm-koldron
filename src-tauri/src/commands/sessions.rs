@@ -462,9 +462,9 @@ mod tests {
     /// The campaign's ossuary and abbot, which `full` links.
     fn world_with_links(dir: &Path) {
         let world = World {
-            version: 0,
             locations: vec![Location { id: "ossuary".into(), name: "Ossuary".into(), ..Location::default() }],
             npcs: vec![Npc { id: "abbot".into(), name: "The abbot's ghost".into(), ..Npc::default() }],
+            ..World::default()
         };
         world::save(dir, world).unwrap();
     }

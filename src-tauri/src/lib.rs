@@ -68,6 +68,7 @@ pub fn run() {
             commands::world::save_world,
             commands::world::add_location_image,
             commands::world::set_location_map,
+            commands::world::set_npc_portrait,
             commands::images::list_pack_images,
             commands::images::entry_image,
             commands::images::download_images,

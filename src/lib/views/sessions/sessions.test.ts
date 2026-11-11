@@ -19,10 +19,11 @@ import {
   readyToRun,
   readyCount,
   removeEntry,
+  removeGroup,
+  UndoHistory,
   removeLocation,
   removeNpc,
   scenesWith,
-  sessionsWith,
   toggleSection,
   treeOrder,
   treeRows,
@@ -35,6 +36,7 @@ const scene = (id: string, more: Partial<Scene> = {}): Scene => ({ ...newScene()
 function world(): World {
   return {
     locations: [{ ...newLocation("Crypt"), id: "crypt" }, { ...newLocation("Ossuary", "crypt"), id: "oss" }, { ...newLocation("Vault", "crypt"), id: "vault" }],
+    npcGroups: [],
     npcs: [{ ...newNpc("Abbot"), id: "abbot" }, { ...newNpc("Wenna"), id: "wenna" }],
   };
 }
@@ -104,18 +106,6 @@ describe("sessions", () => {
     expect(removeEntry(deeper, "crypt").filter((l) => l.parent === null).map((l) => l.id)).toEqual(["oss", "vault"]);
   });
 
-  it("finds the sessions an entry, or anything under it, appears in, lowest first", () => {
-    const rows = [
-      { number: 3, locationIds: ["vault"], npcIds: [] },
-      { number: 1, locationIds: ["oss"], npcIds: ["abbot"] },
-      { number: 2, locationIds: [], npcIds: [] },
-    ];
-    const w = world();
-    expect(sessionsWith(rows, w.locations, "location", "crypt").map((r) => r.number)).toEqual([1, 3]);
-    expect(sessionsWith(rows, w.locations, "location", "vault").map((r) => r.number)).toEqual([3]);
-    expect(sessionsWith(rows, w.npcs, "npc", "wenna")).toEqual([]);
-  });
-
   it("lists what a session's scenes link, each once", () => {
     expect(linkedIn(session(), "location")).toEqual(["oss", "vault"]);
     expect(linkedIn(session(), "npc")).toEqual(["abbot", "wenna"]);
@@ -166,6 +156,24 @@ describe("sessions", () => {
     expect(w.npcs.map((n) => n.id)).toEqual(["wenna"]);
     expect(w.locations[0].npcIds).toEqual(["wenna"]); // unlinked from its locations too
     expect(s.scenes.map((sc) => sc.npcIds)).toEqual([[], ["wenna"], []]);
+  });
+
+  it("goes back through the undo history latest first, keeping only the newest", () => {
+    const undo = new UndoHistory<number>(2);
+    [1, 2, 3].forEach((n) => undo.push(n));
+    expect([undo.pop(), undo.pop(), undo.pop()]).toEqual([3, 2, undefined]); // 1 was dropped
+    undo.push(4);
+    undo.clear();
+    expect(undo.pop()).toBeUndefined();
+  });
+
+  it("moves what was in a removed group up to its parent", () => {
+    const w = world();
+    w.npcGroups = [{ id: "harbour", parent: null, name: "Harbour" }, { id: "smugglers", parent: "harbour", name: "Smugglers" }];
+    w.npcs[1].parent = "smugglers";
+    removeGroup(w, "smugglers");
+    expect(w.npcGroups.map((g) => g.id)).toEqual(["harbour"]);
+    expect(w.npcs[1].parent).toBe("harbour");
   });
 
   it("counts the checklist across the session and its scenes, and the ready scenes", () => {

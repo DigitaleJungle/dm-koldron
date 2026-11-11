@@ -8,7 +8,7 @@
   import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import Checklist from "./Checklist.svelte";
-  import { linkedIn, NPC_DRAG, scenesWith, toggleSection, treeOrder, type Linkable, type Pane, type Section } from "./sessions";
+  import { linkedIn, NPC_DRAG, npcSpecs, scenesWith, toggleSection, treeOrder, type Linkable, type Pane, type Section } from "./sessions";
 
   let {
     session = $bindable(),
@@ -41,7 +41,6 @@
   const t = strings.sessions.sections;
   const m = strings.sessions.manage;
   const written = (text: string) => (text.trim() ? t.written : t.notWritten);
-  const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
   /** `depth`: how far under the top of its tree. */
   type Card = { item: Linkable; name: string; sub: string; depth: number };
@@ -55,7 +54,7 @@
     npcs: treeOrder(world.npcs).map(({ entry: n, depth }) => ({
       item: { kind: "npc", id: n.id },
       name: n.name || m.unnamedNpc,
-      sub: n.wants ? t.wants(lowerFirst(n.wants)) : t.noMotive,
+      sub: npcSpecs(n) || t.noSpecs,
       depth,
     })),
     encounters: (ready ?? []).map((x) => ({ item: { kind: "encounter", id: x.id }, name: x.name, sub: encounterMeta(x.id) ?? "", depth: 0 })),

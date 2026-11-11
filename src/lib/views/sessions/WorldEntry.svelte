@@ -1,12 +1,13 @@
 <script lang="ts">
   // One of the campaign's locations or NPCs, edited in place: name, Inside (its parent: never itself or one under it),
-  // a location's own fields (LocationFields) or an NPC's wants and voice, a note on where it's used, and remove, which
+  // a location's own fields (LocationFields) or an NPC's (NpcFields), a note on where it's used (Manage locations / NPCs), and remove, which
   // asks first.
   // Manage locations / Manage NPCs show one per entry; the Sessions overview shows the one being edited, in place of the sessions.
   import { tick, type Snippet } from "svelte";
   import type { Location, Npc, World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import LocationFields from "./LocationFields.svelte";
+  import NpcFields from "./NpcFields.svelte";
   import { descendants, treeOrder } from "./sessions";
 
   let {
@@ -21,7 +22,7 @@
     world: World;
     id: string;
     /** Where it's used. */
-    note: string;
+    note?: string;
     /** Remove it (the caller unlinks it where it must). */
     onremove: (id: string) => void;
     /** More at the end of the first row (the overview's Close). */
@@ -35,7 +36,8 @@
   const entry = $derived(list.find((e) => e.id === id));
   const unnamed = $derived(kind === "location" ? t.unnamedLocation : t.unnamedNpc);
   const under = $derived(new Set(descendants(list, id)));
-  const parents = $derived(treeOrder(list).filter((r) => !under.has(r.entry.id)));
+  /** A location is inside another location; an NPC inside a group. */
+  const parents = $derived(treeOrder<{ id: string; parent: string | null; name: string }>(kind === "location" ? world.locations : world.npcGroups).filter((r) => !under.has(r.entry.id)));
   const indent = (depth: number, name: string) => "  ".repeat(depth) + name;
 
   let confirming = $state(false);
@@ -61,7 +63,7 @@
         <select id="{prefix}-parent-{id}" class="text-field" value={entry.parent ?? ""} onchange={(ev) => (entry.parent = ev.currentTarget.value || null)}>
           <option value="">{w.topLevel}</option>
           {#each parents as r (r.entry.id)}
-            <option value={r.entry.id}>{indent(r.depth, r.entry.name || unnamed)}</option>
+            <option value={r.entry.id}>{indent(r.depth, r.entry.name || (kind === "location" ? unnamed : w.unnamedGroup))}</option>
           {/each}
         </select>
       </div>
@@ -75,18 +77,9 @@
     {#if "atmosphere" in entry}
       <LocationFields bind:location={() => entry as Location, (v) => Object.assign(entry!, v)} {world} />
     {:else}
-      <div class="pair">
-        <div class="field">
-          <label for="{prefix}-wants-{id}" class="small-label">{t.wants}</label>
-          <input id="{prefix}-wants-{id}" class="text-field" bind:value={entry.wants} maxlength="200" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="{prefix}-voice-{id}" class="small-label">{t.voice}</label>
-          <input id="{prefix}-voice-{id}" class="text-field" bind:value={entry.voice} maxlength="200" autocomplete="off" />
-        </div>
-      </div>
+      <NpcFields bind:npc={() => entry as Npc, (v) => Object.assign(entry!, v)} />
     {/if}
-    <p class="note">{note}</p>
+    {#if note}<p class="note">{note}</p>{/if}
     {#if confirming}
       <div class="confirm" role="alert">
         <span>{w.confirmRemove(entry.name || unnamed)}</span>
@@ -98,7 +91,7 @@
 {/if}
 
 <style>
-  /* Fills its panel, so a location's tabs (LocationFields) are as tall as it. */
+  /* Fills its panel, so the tabs (LocationFields, NpcFields) are as tall as it. */
   .entry {
     flex: 1;
     display: flex;
@@ -123,12 +116,6 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
-  }
-
-  .pair {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
   }
 
   .small-label {

@@ -22,6 +22,7 @@ import {
   removeLocation,
   removeNpc,
   scenesWith,
+  sessionsWith,
   toggleSection,
   treeOrder,
   treeRows,
@@ -101,6 +102,18 @@ describe("sessions", () => {
     const deeper = [...world().locations, { ...newLocation("Niche", "oss"), id: "niche" }];
     expect(removeEntry(deeper, "oss").find((l) => l.id === "niche")?.parent).toBe("crypt");
     expect(removeEntry(deeper, "crypt").filter((l) => l.parent === null).map((l) => l.id)).toEqual(["oss", "vault"]);
+  });
+
+  it("finds the sessions an entry, or anything under it, appears in, lowest first", () => {
+    const rows = [
+      { number: 3, locationIds: ["vault"], npcIds: [] },
+      { number: 1, locationIds: ["oss"], npcIds: ["abbot"] },
+      { number: 2, locationIds: [], npcIds: [] },
+    ];
+    const w = world();
+    expect(sessionsWith(rows, w.locations, "location", "crypt").map((r) => r.number)).toEqual([1, 3]);
+    expect(sessionsWith(rows, w.locations, "location", "vault").map((r) => r.number)).toEqual([3]);
+    expect(sessionsWith(rows, w.npcs, "npc", "wenna")).toEqual([]);
   });
 
   it("lists what a session's scenes link, each once", () => {

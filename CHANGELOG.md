@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.10] - 2026-11-11
+
+### Changed
+
+- Locations and NPCs on the Sessions overview are no longer edited in their column: an eye on each row shows a card with its details (on hover, focus or click), and a pencil opens it in an editor in place of the sessions, closed with a cross.
+- The card sits beside the eye, never over the rows above or below, and fades in and out.
+- Adding a location or NPC on the overview opens it in the editor.
+- The rows of the Locations and NPCs columns start at the panel's left edge; the counts beside them are gone.
+- The other unplayed sessions follow Up next without a Later heading.
+
+### Fixed
+
+- Link buttons on the Sessions overview (Continue prep, Open, New session) are no longer underlined.
+
 ## [0.5.9] - 2026-11-11
 
 ### Added

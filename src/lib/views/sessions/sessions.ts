@@ -76,6 +76,12 @@ export function treeRows<T extends Entry>(entries: T[], open: Set<string>, query
 /** Every entry in tree order, with its depth: for dropdowns. */
 export const treeOrder = <T extends Entry>(entries: T[]): TreeRow<T>[] => treeRows(entries, new Set(entries.map((e) => e.id)));
 
+/** The sessions the entry, or anything under it, appears in, lowest number first. */
+export function sessionsWith<T extends { number: number; locationIds: string[]; npcIds: string[] }>(rows: T[], entries: Entry[], kind: "location" | "npc", id: string): T[] {
+  const ids = descendants(entries, id);
+  return rows.filter((s) => (kind === "location" ? s.locationIds : s.npcIds).some((x) => ids.includes(x))).toSorted((a, b) => a.number - b.number);
+}
+
 /** Removes the entry; what was under it moves up to its parent. */
 export function removeEntry<T extends Entry>(entries: T[], id: string): T[] {
   const parent = entries.find((e) => e.id === id)?.parent ?? null;

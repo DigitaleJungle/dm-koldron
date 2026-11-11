@@ -1,8 +1,8 @@
 <script lang="ts">
   // One of the campaign's locations or NPCs, edited in place: name, Inside (its parent: never itself or one under it),
   // description (a location) or wants and voice (an NPC), a note on where it's used, and remove, which asks first.
-  // Manage locations / Manage NPCs show one per entry; the Sessions overview shows the selected one.
-  import { tick } from "svelte";
+  // Manage locations / Manage NPCs show one per entry; the Sessions overview shows the one being edited, in place of the sessions.
+  import { tick, type Snippet } from "svelte";
   import type { Location, Npc, World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import { descendants, treeOrder } from "./sessions";
@@ -13,6 +13,7 @@
     id,
     note,
     onremove,
+    end,
   }: {
     kind: "location" | "npc";
     world: World;
@@ -21,6 +22,8 @@
     note: string;
     /** Remove it (the caller unlinks it where it must). */
     onremove: (id: string) => void;
+    /** More at the end of the first row (the overview's Close). */
+    end?: Snippet;
   } = $props();
 
   const t = strings.sessions.manage;
@@ -65,6 +68,7 @@
           <i class="ti ti-trash" aria-hidden="true"></i>
         </button>
       {/if}
+      {@render end?.()}
     </div>
     {#if "description" in entry}
       <div class="field">

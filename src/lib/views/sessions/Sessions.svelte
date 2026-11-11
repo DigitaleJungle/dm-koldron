@@ -7,14 +7,17 @@
   import { page } from "$app/state";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { listSessions, type SessionList, type SessionRow } from "$lib/api/sessions";
+  import type { Location, Npc } from "$lib/api/world";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import { characterLevel, encounterParty } from "$lib/views/encounters/roster";
+  import { tick } from "svelte";
+  import WorldEntry from "./WorldEntry.svelte";
   import WorldTree from "./WorldTree.svelte";
-  import { averageLevel, descendants, overview, parseDate, parseTime } from "./sessions";
+  import { ancestors, averageLevel, descendants, overview, parseDate, parseTime, removeLocation, removeNpc, sessionsWith } from "./sessions";
   import { WorldDraft } from "./worldDraft.svelte";
 
   const t = strings.sessions;
@@ -44,6 +47,41 @@
   const parts = $derived(overview(list?.sessions ?? []));
   const party = $derived(encounterParty("party", [], characters).flatMap((id) => characters?.find((c) => c.id === id) ?? []));
   const level = $derived(averageLevel(party.flatMap((c) => characterLevel(c.classes) ?? [])));
+
+  // ---- Editing a location or NPC: in place of the sessions -----------------------------------------
+  let editing = $state<{ kind: "location" | "npc"; id: string } | null>(null);
+  const editEntries = $derived<(Location | Npc)[]>(!editing || !world.world ? [] : editing.kind === "location" ? world.world.locations : world.world.npcs);
+  const editEntry = $derived(editing ? editEntries.find((e) => e.id === editing!.id) : undefined);
+  const editPath = $derived(editEntry ? ancestors(editEntries, editEntry.id).map((a) => a.name || unnamedOf(editing!.kind)) : []);
+  const editNote = $derived.by(() => {
+    if (!editing || !editEntry) return "";
+    const numbers = sessionsWith(list?.sessions ?? [], editEntries, editing.kind, editEntry.id).map((s) => fmt.format(s.number));
+    return numbers.length ? t.world.appearsIn(numbers.join(", ")) : t.world.notInSession;
+  });
+  const unnamedOf = (kind: "location" | "npc") => (kind === "location" ? t.manage.unnamedLocation : t.manage.unnamedNpc);
+
+  /** Opens the entry in the editor, with the cursor in its name. */
+  async function edit(kind: "location" | "npc", id: string) {
+    editing = { kind, id };
+    await tick();
+    const field = document.getElementById(`${kind === "location" ? "loc" : "npc"}-name-${id}`) as HTMLInputElement | null;
+    field?.focus();
+    field?.select();
+  }
+
+  /** Back to the sessions, with the focus on the entry's pencil (or its tree's search, when the pencil is hidden). */
+  async function closeEditor() {
+    const { kind, id } = editing!;
+    editing = null;
+    await tick();
+    (document.querySelector<HTMLElement>(`[data-edit="${id}"]`) ?? document.getElementById(`${kind}-search`))?.focus();
+  }
+
+  function removeEdited(id: string) {
+    (editing!.kind === "location" ? removeLocation : removeNpc)(world.world!, null, id);
+    if (selected?.id === id) selected = null;
+    editing = null;
+  }
 
   // ---- Highlighting ------------------------------------------------------------------------------
   let selected = $state<{ kind: "location" | "npc"; id: string } | null>(null);
@@ -169,6 +207,18 @@
   </header>
 
   <div class="body">
+    {#if editing && editEntry}
+      <section class="editor" aria-label={t.world.edit(editEntry.name || unnamedOf(editing.kind))}>
+        {#if editPath.length}<span class="muted">{editPath.join(" › ")}</span>{/if}
+        <WorldEntry kind={editing.kind} bind:world={() => world.world!, (v) => (world.world = v)} id={editEntry.id} note={editNote} onremove={removeEdited}>
+          {#snippet end()}
+            <button class="icon-btn icon-btn-lg" aria-label={t.world.close} onclick={closeEditor}>
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          {/snippet}
+        </WorldEntry>
+      </section>
+    {:else}
     <main class="sessions" aria-label={o.sessions} use:keepScroll={{ id: "sessions", url: page.url.href, ready: !!list }}>
       {#if selectedEntry}
         <div class="bar">
@@ -222,8 +272,7 @@
         {/if}
 
         {#if parts.later.length}
-          <h2 class="label section">{o.later}</h2>
-          <ul class="rows">
+          <ul class="rows" aria-label={o.later}>
             {#each parts.later as s (s.id)}
               <li class="row" class:hit={hit(s)} class:dim={hit(s) === false}>
                 <strong class="grow">{fmt.format(s.number)} · {s.title}</strong>
@@ -255,6 +304,7 @@
         {/if}
       {/if}
     </main>
+    {/if}
 
     {#if world.loadError}
       <p class="message error trees" role="alert">{world.loadError}</p>
@@ -270,6 +320,7 @@
             sessions={list?.sessions ?? []}
             selected={selected?.kind === kind ? selected.id : null}
             onselect={(id) => (selected = id ? { kind, id } : null)}
+            onedit={(id) => edit(kind, id)}
           />
         {/each}
       </div>
@@ -285,6 +336,11 @@
     flex-direction: column;
     gap: var(--space-4);
     padding: var(--space-5);
+  }
+
+  /* Links that look like buttons. */
+  a.btn {
+    text-decoration: none;
   }
 
   .label {
@@ -375,6 +431,20 @@
     padding: var(--border-width);
   }
 
+  /* The location or NPC being edited, in the sessions' place. */
+  .editor {
+    grid-column: span 2;
+    min-width: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
   .trees {
     grid-column: span 2;
     min-height: 0;
@@ -405,6 +475,7 @@
     }
 
     .sessions,
+    .editor,
     .trees {
       grid-column: 1 / -1;
       overflow: visible;
@@ -581,9 +652,10 @@
     flex: 1;
   }
 
+  /* Apart from Up next, without a heading. */
   .rows {
     list-style: none;
-    margin: 0;
+    margin: var(--space-4) 0 0;
     padding: 0;
     display: flex;
     flex-direction: column;

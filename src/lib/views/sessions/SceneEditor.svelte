@@ -7,6 +7,7 @@
   import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import RichText from "$lib/components/RichText.svelte";
+  import SideTabs from "$lib/components/SideTabs.svelte";
   import TagPreview from "$lib/components/TagPreview.svelte";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
@@ -61,17 +62,7 @@
     { id: "links", icon: "ti-link", label: t.links },
     { id: "checklist", icon: "ti-list", label: t.checklist },
   ] as const;
-  let current = $state<(typeof TABS)[number]["id"]>("text");
-
-  /** Up and down move to the previous or next tab (round), Home and End to the first or last. */
-  function tabKey(ev: KeyboardEvent, i: number) {
-    const n = TABS.length;
-    const to = { ArrowUp: (i + n - 1) % n, ArrowDown: (i + 1) % n, Home: 0, End: n - 1 }[ev.key];
-    if (to === undefined) return;
-    ev.preventDefault();
-    current = TABS[to].id;
-    document.getElementById(`scene-tab-${current}`)?.focus();
-  }
+  let current = $state<string>("text");
 
   let confirming = $state(false);
   let cancelButton: HTMLButtonElement | undefined = $state();
@@ -114,32 +105,8 @@
   </button>
 </div>
 
-<div class="tabbed">
-<div class="side">
-<div class="tabs" role="tablist" aria-orientation="vertical" aria-label={t.parts}>
-  {#each TABS as tab, i (tab.id)}
-    <button
-      id="scene-tab-{tab.id}"
-      class="tab"
-      role="tab"
-      aria-selected={current === tab.id}
-      aria-controls="scene-panel"
-      aria-label={tab.label}
-      tabindex={current === tab.id ? 0 : -1}
-      onclick={() => (current = tab.id)}
-      onkeydown={(ev) => tabKey(ev, i)}
-    >
-      <span class="hex"><i class="ti {tab.icon}" aria-hidden="true"></i></span>
-    </button>
-  {/each}
-</div>
-<!-- At the bottom of the tab column; asks first, under the open part. -->
-<button class="tab trash" aria-label={t.remove} onclick={askRemove}>
-  <span class="hex"><i class="ti ti-trash" aria-hidden="true"></i></span>
-</button>
-</div>
-
-<div class="panel" id="scene-panel" role="tabpanel" aria-labelledby="scene-tab-{current}">
+<!-- The trash at the bottom of the tab column asks first, under the open part. -->
+<SideTabs tabs={TABS} bind:current id="scene" label={t.parts} action={{ icon: "ti-trash", label: t.remove, onclick: askRemove }}>
 {#if current === "text"}
 <!-- Ready: the text shown, as locked encounter notes are. Otherwise the field, keyed: it fills itself once, so another
      scene needs a fresh one. Its name is for screen readers only. -->
@@ -172,21 +139,23 @@
         {/each}
         <option value="__new">{t.newLocation}</option>
       </select>
-      {#if location?.description}<p class="note">{location.description}</p>{/if}
+      {#if location && !isEmpty(location.atmosphere)}
+        <div class="note prose">{@html cleanHtml(location.atmosphere)}</div>
+      {/if}
     </div>
   </div>
   <div class="link-row">
     <label for="link-npc" class="label"><i class="ti ti-user" aria-hidden="true"></i>{t.npcs}</label>
     <div class="controls chips">
       {#each scene.npcIds.filter((id) => world.npcs.some((n) => n.id === id)) as id (id)}
-        <span class="link">
+        <span class="chip-link">
           <strong>{npcName(id)}</strong>
           <button class="icon-btn" aria-label={t.unlink(npcName(id))} onclick={() => unlink(scene.npcIds, id)}>
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
         </span>
       {/each}
-      <select id="link-npc" class="pick" value="" onchange={(ev) => pickLink(ev, scene.npcIds)}>
+      <select id="link-npc" class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.npcIds)}>
         <option value="">{t.link}</option>
         {#each npcChoices as r (r.entry.id)}
           <option value={r.entry.id}>{indent(r.depth, r.entry.name || m.unnamedNpc)}</option>
@@ -199,7 +168,7 @@
     <div class="controls chips">
       {#each scene.encounterIds as id (id)}
         {@const meta = encounterMeta(id)}
-        <span class="link">
+        <span class="chip-link">
           <strong>{encounterName(id)}</strong>
           {#if meta}<span class="mono">{meta}</span>{/if}
           <button class="icon-btn" aria-label={t.unlink(encounterName(id))} onclick={() => unlink(scene.encounterIds, id)}>
@@ -207,7 +176,7 @@
           </button>
         </span>
       {/each}
-      <select id="link-enc" class="pick" value="" onchange={(ev) => pickLink(ev, scene.encounterIds)}>
+      <select id="link-enc" class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.encounterIds)}>
         <option value="">{t.link}</option>
         {#each encounterChoices.filter((x) => !scene.encounterIds.includes(x.id)) as x (x.id)}
           <option value={x.id}>{x.name}</option>
@@ -225,8 +194,7 @@
   <Checklist bind:items={scene.checklist} placeholder={strings.sessions.checklist.short} locked={scene.ready} />
 </section>
 {/if}
-</div>
-</div>
+</SideTabs>
 
 {#if confirming}
   <div class="remove">
@@ -236,77 +204,6 @@
 {/if}
 
 <style>
-  /* The tabs down the left, the open part beside them. */
-  /* Fills the rest of the panel (Session.svelte, .editor): the trash at its bottom, the text field as tall as it. */
-  .tabbed {
-    flex: 1;
-    display: flex;
-    gap: var(--space-4);
-  }
-
-  /* The tabs, and the trash at the bottom. Flush with the panel's left edge: out over the editor's padding
-     (Session.svelte, .editor). */
-  .side {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: var(--space-2);
-    margin-left: calc(-1 * var(--space-5));
-  }
-
-  .tabs {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .trash .hex,
-  .tab.trash:hover .hex {
-    color: var(--color-danger);
-  }
-
-  /* The button keeps the focus ring; the hexagon inside is clipped: flat top and bottom, its left corner cut off. */
-  .tab {
-    display: block;
-    padding: 0;
-    border: 0;
-    background: none;
-    cursor: pointer;
-  }
-
-  .tab .hex {
-    display: grid;
-    place-items: center;
-    width: var(--control-height-lg);
-    height: var(--control-height-lg);
-    background: var(--color-surface-sunken);
-    color: var(--color-text-muted);
-    font-size: var(--icon-size);
-    clip-path: polygon(0 0, 75% 0, 100% 50%, 75% 100%, 0 100%);
-  }
-
-  /* Inside the button: at the panel's edge, a ring outside it would be cut off by the scrolling column. */
-  .tab:focus-visible {
-    outline-offset: calc(-1 * var(--focus-ring));
-  }
-
-  .tab:hover .hex {
-    color: var(--color-text);
-  }
-
-  .tab[aria-selected="true"] .hex {
-    background: var(--color-accent);
-    color: var(--on-fill);
-  }
-
-  .panel {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-5);
-  }
-
   /* The title and the Ready icon on one line, centred on each other. */
   .head {
     display: flex;
@@ -482,31 +379,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
-  }
-
-  .link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: var(--control-height);
-    padding-left: var(--space-3);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    font-size: var(--text-sm);
-  }
-
-  .pick {
-    min-height: var(--control-height);
-    padding: 0 var(--space-2);
-    border: var(--border-width) dashed var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--color-text);
-    font: inherit;
-    font-size: var(--text-sm);
-    font-weight: var(--weight-bold);
-    cursor: pointer;
   }
 
   .mono {

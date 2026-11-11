@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.11] - 2026-11-11
+
+### Added
+
+- Locations have Atmosphere, Purpose and Secrets (rich text), images (add, remove, open larger with previous and next), a map with pins like an encounter's, and linked NPCs.
+- An NPC can be dragged onto the location being edited to link it: the editor gets the session prep's dashed outline and tint, and Linked NPCs opens as soon as the NPC is picked up.
+
+### Changed
+
+- The location editor uses the scene editor's tabs (Atmosphere, purpose and secrets; Images; Map; Linked NPCs) and fills its column; the three text fields share the height and only scroll when their text is longer.
+- A location's earlier description is now its Atmosphere.
+- Manage locations on the session page lists the locations; one opens in the full location editor, and a location made from a scene opens there.
+- Pictures a location no longer uses are removed from the campaign folder when it next loads.
+
 ## [0.5.10] - 2026-11-11
 
 ### Changed

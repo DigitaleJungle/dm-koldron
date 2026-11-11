@@ -161,8 +161,10 @@ describe("sessions", () => {
 
   it("unlinks a removed NPC from every scene", () => {
     const [s, w] = [session(), world()];
+    w.locations[0].npcIds = ["abbot", "wenna"];
     removeNpc(w, s, "abbot");
     expect(w.npcs.map((n) => n.id)).toEqual(["wenna"]);
+    expect(w.locations[0].npcIds).toEqual(["wenna"]); // unlinked from its locations too
     expect(s.scenes.map((sc) => sc.npcIds)).toEqual([[], ["wenna"], []]);
   });
 

@@ -1,10 +1,12 @@
 <script lang="ts">
   // One of the campaign's locations or NPCs, edited in place: name, Inside (its parent: never itself or one under it),
-  // description (a location) or wants and voice (an NPC), a note on where it's used, and remove, which asks first.
+  // a location's own fields (LocationFields) or an NPC's wants and voice, a note on where it's used, and remove, which
+  // asks first.
   // Manage locations / Manage NPCs show one per entry; the Sessions overview shows the one being edited, in place of the sessions.
   import { tick, type Snippet } from "svelte";
   import type { Location, Npc, World } from "$lib/api/world";
   import { strings } from "$lib/strings";
+  import LocationFields from "./LocationFields.svelte";
   import { descendants, treeOrder } from "./sessions";
 
   let {
@@ -70,11 +72,8 @@
       {/if}
       {@render end?.()}
     </div>
-    {#if "description" in entry}
-      <div class="field">
-        <label for="{prefix}-desc-{id}" class="small-label">{strings.sessions.scenes.description}</label>
-        <textarea id="{prefix}-desc-{id}" class="text-field" rows="2" maxlength="20000" bind:value={entry.description}></textarea>
-      </div>
+    {#if "atmosphere" in entry}
+      <LocationFields bind:location={() => entry as Location, (v) => Object.assign(entry!, v)} {world} />
     {:else}
       <div class="pair">
         <div class="field">
@@ -99,7 +98,9 @@
 {/if}
 
 <style>
+  /* Fills its panel, so a location's tabs (LocationFields) are as tall as it. */
   .entry {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -137,11 +138,6 @@
 
   .strong {
     font-weight: var(--weight-bold);
-  }
-
-  textarea {
-    resize: vertical;
-    font: inherit;
   }
 
   select {

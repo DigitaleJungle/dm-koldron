@@ -144,6 +144,9 @@
   --search-width: 360px;
   --session-steps-width: 280px;
   --session-aside-width: 320px;
+  --location-thumb-size: 96px; /* a location's image thumbnails */
+  --location-map-height: 320px; /* the least height of a location's map, which otherwise fills its tab */
+  --location-viewer-width: 960px; /* a location's image, opened larger */
   --scene-label-width: 120px; /* the label column of a scene's location, NPCs and encounters */
   --session-hex-width: 40px; /* the party collage in a session's header */
   --character-form-width: 640px;

@@ -8,7 +8,7 @@
   import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import Checklist from "./Checklist.svelte";
-  import { linkedIn, scenesWith, toggleSection, treeOrder, type Linkable, type Pane, type Section } from "./sessions";
+  import { linkedIn, NPC_DRAG, scenesWith, toggleSection, treeOrder, type Linkable, type Pane, type Section } from "./sessions";
 
   let {
     session = $bindable(),
@@ -114,6 +114,7 @@
                 ondragstart={(ev) => {
                   // Our own type, not text: a text field it passes over must not take it.
                   ev.dataTransfer?.setData("application/x-koldron", `${card.item.kind}:${card.item.id}`);
+                  if (card.item.kind === "npc") ev.dataTransfer?.setData(NPC_DRAG, card.item.id); // a location editor takes it too
                   if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "copy";
                   ondragstart(card.item, card.name);
                 }}

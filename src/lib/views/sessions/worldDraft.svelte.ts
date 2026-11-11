@@ -4,6 +4,22 @@ import { errorMessage } from "$lib/api/storage";
 import { getWorld, saveWorld, type World } from "$lib/api/world";
 import { strings } from "$lib/strings";
 
+/** Pictures being stored for a location (`trackStoring`): until each is in the draft, leaving waits and saves. */
+const storing = $state({ count: 0 });
+const pending = new Set<Promise<unknown>>();
+
+/** Keeps the world "changed" until `job` (storing a picture and adding it to the draft) is done. */
+export function trackStoring<T>(job: Promise<T>): Promise<T> {
+  storing.count++;
+  pending.add(job);
+  const done = () => {
+    storing.count--;
+    pending.delete(job);
+  };
+  job.then(done, done);
+  return job;
+}
+
 export class WorldDraft {
   /** Null until it has loaded. */
   world = $state<World | null>(null);
@@ -30,7 +46,7 @@ export class WorldDraft {
   }
 
   get changed(): boolean {
-    return this.world !== null && JSON.stringify(this.world) !== this.#baseline;
+    return this.world !== null && (storing.count > 0 || JSON.stringify(this.world) !== this.#baseline);
   }
 
   /** Changed, and not what last failed: worth saving on its own. */
@@ -40,6 +56,7 @@ export class WorldDraft {
 
   /** Saves the changes (after a save under way); false when it couldn't (`saveError` says why). */
   async save(): Promise<boolean> {
+    await Promise.allSettled(pending); // a picture being stored is added to the draft first
     while (this.#inflight) await this.#inflight;
     if (!this.changed) return true;
     const sent = JSON.stringify(this.world);

@@ -8,10 +8,12 @@
   import { fade } from "svelte/transition";
   import type { SessionRow } from "$lib/api/sessions";
   import type { Location, Npc, World } from "$lib/api/world";
+  import { cleanHtml, isEmpty } from "$lib/components/richtext";
+  import "$lib/styles/prose.css";
   import { keepScroll } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
-  import { ancestors, newLocation, newNpc, sessionsWith, treeRows } from "./sessions";
+  import { ancestors, newLocation, newNpc, NPC_DRAG, sessionsWith, treeRows } from "./sessions";
 
   let {
     kind,
@@ -139,6 +141,12 @@
             aria-selected={isSelected}
             class:selected={isSelected}
             style:padding-left="calc({r.depth} * var(--space-4))"
+            draggable={kind === "npc"}
+            ondragstart={(ev) => {
+              // An NPC can be dragged onto the location being edited, to link it.
+              ev.dataTransfer?.setData(NPC_DRAG, r.entry.id);
+              if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "copy";
+            }}
           >
             {#if r.kids}
               <button class="arrow" aria-label={r.open ? w.collapse(name) : w.expand(name)} disabled={!!query.trim()} onclick={() => toggle(r.entry.id)}>
@@ -187,8 +195,8 @@
       {#if path.length}<p class="muted">{path.join(" › ")}</p>{/if}
     </header>
     <div class="preview-body">
-      {#if "description" in entry}
-        {#if entry.description}<p class="text-block">{entry.description}</p>{/if}
+      {#if "atmosphere" in entry}
+        {#if !isEmpty(entry.atmosphere)}<div class="prose text-block">{@html cleanHtml(entry.atmosphere)}</div>{/if}
       {:else if entry.wants || entry.voice}
         <dl>
           {#if entry.wants}<dt>{m.wants}</dt><dd>{entry.wants}</dd>{/if}
@@ -264,6 +272,10 @@
     display: flex;
     align-items: center;
     border-radius: var(--radius-sm);
+  }
+
+  li[draggable="true"] {
+    cursor: grab;
   }
 
   li.selected {

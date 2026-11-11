@@ -19,6 +19,9 @@ export const averageLevel = (levels: number[]): number | null => (levels.length 
 export type Section = "previously" | "premise" | "summary" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
 export type Pane = "locations" | "npcs" | "checklist";
 
+/** The drag data type an NPC carries (its id), so a location editor can tell it from other cards while it's dragged. */
+export const NPC_DRAG = "application/x-koldron-npc";
+
 /** What can be dragged onto a scene. */
 export type Linkable = { kind: "location" | "npc" | "encounter"; id: string };
 
@@ -26,7 +29,17 @@ export type Linkable = { kind: "location" | "npc" | "encounter"; id: string };
 export const toggleSection = (open: Section | null, key: Section): Section | null => (open === key ? null : key);
 
 export const newScene = (): Scene => ({ id: crypto.randomUUID(), title: "", summary: "", ready: false, locationId: null, npcIds: [], encounterIds: [], checklist: [] });
-export const newLocation = (name = "", parent: string | null = null): Location => ({ id: crypto.randomUUID(), parent, name, description: "" });
+export const newLocation = (name = "", parent: string | null = null): Location => ({
+  id: crypto.randomUUID(),
+  parent,
+  name,
+  atmosphere: "",
+  purpose: "",
+  secrets: "",
+  npcIds: [],
+  pins: [],
+  images: [],
+});
 export const newNpc = (name = "", parent: string | null = null): Npc => ({ id: crypto.randomUUID(), parent, name, wants: "", voice: "" });
 
 // ---- Trees: the campaign's locations and NPCs -----------------------------------------------------
@@ -111,9 +124,11 @@ export function removeLocation(world: World, session: Session | null, id: string
   for (const scene of session?.scenes ?? []) if (scene.locationId === id) scene.locationId = null;
 }
 
-/** Removes the NPC from the campaign (what was under it moves up), and unlinks it from the open session's scenes. */
+/** Removes the NPC from the campaign (what was under it moves up), and unlinks it from its locations and the open
+ *  session's scenes. */
 export function removeNpc(world: World, session: Session | null, id: string) {
   world.npcs = removeEntry(world.npcs, id);
+  for (const l of world.locations) unlink(l.npcIds, id);
   for (const scene of session?.scenes ?? []) unlink(scene.npcIds, id);
 }
 

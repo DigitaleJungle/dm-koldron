@@ -131,6 +131,8 @@
   /** The open scene, unless a full view (`pane`) is open instead. */
   let selected = $state<string | null>(null);
   let pane = $state<Pane | null>(null);
+  /** The location open in Manage locations' editor. */
+  let locationEditing = $state<string | null>(null);
   let section = $state<Section | null>(null);
   const index = $derived(pane ? -1 : draft.scenes.findIndex((s) => s.id === selected));
   const counts = $derived(checkCounts(draft));
@@ -146,9 +148,10 @@
     openScene(scene.id);
   }
 
-  /** Opens Locations with the cursor in the new location's name. */
+  /** Opens the new location in Manage locations' editor, with the cursor in its name. */
   async function nameLocation(lid: string) {
     pane = "locations";
+    locationEditing = lid;
     await tick();
     const field = document.getElementById(`loc-name-${lid}`) as HTMLInputElement | null;
     field?.focus();
@@ -470,7 +473,7 @@
         {#if pane}
           <div class="pane">
             {#if pane === "locations" || pane === "npcs"}
-              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
+              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:editing={locationEditing} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
             {:else}
               <h2>{t.sections.checklist}</h2>
               <Checklist bind:items={draft.checklist} placeholder={t.checklist.placeholder} />
@@ -492,7 +495,7 @@
           {encounterError}
           encountersHref={encountersBase}
           {encounterMeta}
-          onmanage={(p) => (pane = p)}
+          onmanage={(p) => ([pane, locationEditing] = [p, null])}
           ondragstart={startDrag}
           ondragend={endDrag}
         />
@@ -721,6 +724,7 @@
 
   /* What the full views (locations, NPCs, checklist) share; the scene editor is outside, so none of it reaches there. */
   .pane {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: var(--space-5);

@@ -619,6 +619,11 @@
     font-size: var(--text-sm);
   }
 
+  .when > * + *::before {
+    content: "·" / ""; /* decorative separator */
+    margin-right: var(--space-2);
+    font-weight: var(--weight-bold);
+  }
 
   .counts {
     display: flex;

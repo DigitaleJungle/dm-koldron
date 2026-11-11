@@ -41,6 +41,9 @@
   --color-accent-soft: color-mix(in srgb, var(--potion) 16%, var(--surface-raised)); /* derived: selected/pressed fill, ink text on it */
   --color-search-highlight: var(--potion-glow);
   --color-search-highlight-text: var(--charcoal);
+  /* A ready scene's hexagon: charcoal with a green number; in dark (charcoal is the background) green with a dark one. */
+  --color-ready-fill: var(--charcoal);
+  --color-ready-text: var(--potion-glow);
   --color-link: var(--potion);
   --color-focus: var(--potion);
   --color-danger: var(--danger);
@@ -259,5 +262,7 @@
   --iron: #2e3034;
   --danger: #f4a3a8;
   --on-fill: var(--surface);
+  --color-ready-fill: var(--potion-glow);
+  --color-ready-text: var(--charcoal);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 9l4-4 4 4M8 15l4 4 4-4' stroke='%23a9a59b' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }

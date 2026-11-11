@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.7] - 2026-11-11
+
+### Changed
+
+- The session header puts small dots between the date, the start time and the player count.
+- Scenes in the scene list show icons for what they have (What happens written, NPCs, a location, encounters) instead of a line of text.
+- A Ready scene is locked: its title, What happens and adding or removing checklist items can't change until Ready is switched off.
+
+### Fixed
+
+- Hovering the selected scene in dark mode no longer makes its text unreadable.
+- A Ready scene's hexagon is visible in dark mode.
+
 ## [0.5.6] - 2026-11-11
 
 ### Added

@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The scenes in order: a numbered hexagon (filled once ready), the title, and a line with the location, the NPC
-  // count and whether it has an encounter; Add scene at the bottom. A scene can be dragged to another place, or moved
+  // The scenes in order: a numbered hexagon (filled once ready), the title, and a line of icons for what it has (what
+  // happens written, NPCs, a location, encounters); Add scene at the bottom. A scene can be dragged to another place, or moved
   // with its grip and the up and down arrow keys. While a card is dragged, every scene is a drop target (outlined, the
   // one under the pointer highlighted).
   import { tick } from "svelte";
@@ -53,7 +53,16 @@
     document.querySelector<HTMLElement>(`[data-grip="${id}"]`)?.focus();
   }
 
-  const locationName = (id: string | null) => session.locations.find((l) => l.id === id)?.name || (id ? strings.sessions.manage.unnamedLocation : t.noLocation);
+  const locationName = (id: string) => session.locations.find((l) => l.id === id)?.name || strings.sessions.manage.unnamedLocation;
+
+  /** The icons for what a scene has, each with its name for screen readers. */
+  const factsOf = (scene: Session["scenes"][number]) =>
+    [
+      scene.summary && { icon: "ti-message-2-check", label: t.written },
+      scene.npcIds.length > 0 && { icon: "ti-users", label: t.npcCount(scene.npcIds.length) },
+      scene.locationId && { icon: "ti-map-pin-2", label: t.locationAt(locationName(scene.locationId)) },
+      scene.encounterIds.length > 0 && { icon: "ti-swords", label: t.encounterCount(scene.encounterIds.length) },
+    ].filter((f) => !!f);
 </script>
 
 <nav aria-label={t.title}>
@@ -101,9 +110,10 @@
           <span class="text">
             <span class="title" class:untitled={!scene.title}>{scene.title || t.untitled}</span>
             <span class="meta">
-              {[locationName(scene.locationId), scene.npcIds.length > 0 && t.npcCount(scene.npcIds.length), scene.encounterIds.length > 0 && t.encounter]
-                .filter(Boolean)
-                .join(" · ")}
+              {#each factsOf(scene) as fact, j (fact.icon)}
+                {#if j > 0}<span class="dot" aria-hidden="true">·</span>{/if}
+                <i class="ti {fact.icon}" role="img" aria-label={fact.label}></i>
+              {/each}
             </span>
           </span>
           {#if scene.ready}<i class="ti ti-check ready-mark" role="img" aria-label={t.ready}></i>{/if}
@@ -153,7 +163,7 @@
     border-radius: var(--radius-md);
   }
 
-  li:not(.empty):hover {
+  li:not(.empty, .selected, .over):hover {
     background: var(--color-surface-sunken);
   }
 
@@ -239,6 +249,13 @@
   }
 
   .hex.ready {
+    background: var(--color-ready-fill);
+    color: var(--color-ready-text);
+  }
+
+  /* On the green of a selected or highlighted row: charcoal in both themes. */
+  .selected .hex.ready,
+  .over .hex.ready {
     background: var(--charcoal);
     color: var(--potion-glow);
   }
@@ -261,9 +278,22 @@
     font-weight: var(--weight-regular);
   }
 
+  /* The icons on one line, divided by small dots. */
   .meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
     color: var(--color-text-muted);
     font-size: var(--text-sm);
+  }
+
+  .meta .ti {
+    font-size: var(--icon-size-sm);
+  }
+
+  .dot {
+    font-weight: var(--weight-bold);
   }
 
   .selected .meta,

@@ -8,7 +8,8 @@
     items = $bindable(),
     placeholder,
     compact = false,
-  }: { items: Check[]; placeholder: string; compact?: boolean } = $props();
+    locked = false,
+  }: { items: Check[]; placeholder: string; compact?: boolean; locked?: boolean } = $props();
 
   const t = strings.sessions.checklist;
   let draft = $state("");
@@ -30,7 +31,7 @@
           {#if item.done}<i class="ti ti-check" aria-hidden="true"></i>{/if}
         </button>
         <span class="text">{item.text}</span>
-        {#if !compact}
+        {#if !compact && !locked}
           <button class="icon-btn" aria-label={t.remove(item.text)} onclick={() => items.splice(i, 1)}>
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
@@ -39,10 +40,12 @@
     {/each}
   </ul>
 {/if}
-<form class="add" class:compact onsubmit={add}>
-  <input class="text-field" bind:value={draft} maxlength="200" autocomplete="off" {placeholder} aria-label={t.newItem} />
-  <button class="btn" type="submit" disabled={!draft.trim()}>{t.add}</button>
-</form>
+{#if !locked}
+  <form class="add" class:compact onsubmit={add}>
+    <input class="text-field" bind:value={draft} maxlength="200" autocomplete="off" {placeholder} aria-label={t.newItem} />
+    <button class="btn" type="submit" disabled={!draft.trim()}>{t.add}</button>
+  </form>
+{/if}
 
 <style>
   .checks {

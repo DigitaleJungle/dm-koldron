@@ -68,7 +68,11 @@
 </script>
 
 <div class="head">
-  <input id="scene-title" bind:this={titleInput} bind:value={scene.title} maxlength="100" autocomplete="off" placeholder={t.untitled} aria-label={t.titleField} />
+  {#if scene.ready}
+    <h2 id="scene-title" class:untitled={!scene.title}>{scene.title || t.untitled}</h2>
+  {:else}
+    <input id="scene-title" bind:this={titleInput} bind:value={scene.title} maxlength="100" autocomplete="off" placeholder={t.untitled} aria-label={t.titleField} />
+  {/if}
   <button class="btn icon ready" aria-pressed={scene.ready} aria-label={t.ready} onclick={() => (scene.ready = !scene.ready)}>
     <i class="ti ti-check" aria-hidden="true"></i>
   </button>
@@ -76,7 +80,7 @@
 
 <!-- Keyed: the field fills itself once, so another scene needs a fresh one. Its name is for screen readers only. -->
 {#key scene.id}
-  <RichText label={t.whatHappens} extended bind:value={scene.summary} />
+  <RichText label={t.whatHappens} extended readonly={scene.ready} bind:value={scene.summary} />
 {/key}
 
 <!-- One block, a row each: the label on the left, its controls on the right. -->
@@ -141,7 +145,7 @@
     <h3 id="scene-checklist" class="label"><i class="ti ti-list-check" aria-hidden="true"></i>{t.checklist}</h3>
     <span class="mono">{scene.checklist.filter((c) => c.done).length}/{scene.checklist.length}</span>
   </div>
-  <Checklist bind:items={scene.checklist} placeholder={strings.sessions.checklist.short} />
+  <Checklist bind:items={scene.checklist} placeholder={strings.sessions.checklist.short} locked={scene.ready} />
 </section>
 
 <div class="remove">
@@ -171,6 +175,19 @@
     background: transparent;
     color: var(--color-text);
     font: var(--text-h2);
+  }
+
+  /* A Ready scene's title is text, not a field: same place and size, no underline. */
+  h2#scene-title {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    border-bottom-color: transparent;
+    overflow-wrap: anywhere;
+  }
+
+  h2#scene-title.untitled {
+    color: var(--color-text-muted);
   }
 
   .remove {

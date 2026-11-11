@@ -5,10 +5,12 @@
   // one under the pointer highlighted).
   import { tick } from "svelte";
   import type { Session } from "$lib/api/sessions";
+  import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
 
   let {
     session,
+    world,
     selected,
     dragging,
     onselect,
@@ -17,6 +19,8 @@
     onmove,
   }: {
     session: Session;
+    /** The campaign's locations and NPCs. */
+    world: World;
     /** The open scene, if a scene is open. */
     selected: string | null;
     /** Something is being dragged. */
@@ -53,14 +57,18 @@
     document.querySelector<HTMLElement>(`[data-grip="${id}"]`)?.focus();
   }
 
-  const locationName = (id: string) => session.locations.find((l) => l.id === id)?.name || strings.sessions.manage.unnamedLocation;
+  const locationName = (id: string) => world.locations.find((l) => l.id === id)?.name || strings.sessions.manage.unnamedLocation;
+
+  // Links to locations and NPCs removed from the campaign don't count (the session drops them when it saves).
+  const npcsOf = (scene: Session["scenes"][number]) => scene.npcIds.filter((id) => world.npcs.some((n) => n.id === id)).length;
+  const hasLocation = (scene: Session["scenes"][number]) => world.locations.some((l) => l.id === scene.locationId);
 
   /** The icons for what a scene has, each with its name for screen readers. */
   const factsOf = (scene: Session["scenes"][number]) =>
     [
       scene.summary && { icon: "ti-message-2-check", label: t.written },
-      scene.npcIds.length > 0 && { icon: "ti-users", label: t.npcCount(scene.npcIds.length) },
-      scene.locationId && { icon: "ti-map-pin-2", label: t.locationAt(locationName(scene.locationId)) },
+      npcsOf(scene) > 0 && { icon: "ti-users", label: t.npcCount(npcsOf(scene)) },
+      hasLocation(scene) && { icon: "ti-map-pin-2", label: t.locationAt(locationName(scene.locationId!)) },
       scene.encounterIds.length > 0 && { icon: "ti-swords", label: t.encounterCount(scene.encounterIds.length) },
     ].filter((f) => !!f);
 </script>

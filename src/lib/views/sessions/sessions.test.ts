@@ -1,26 +1,42 @@
 import { describe, expect, it } from "vitest";
 import type { Encounter } from "$lib/api/encounters";
-import type { Scene, Session } from "$lib/api/sessions";
+import type { Scene, Session, Status } from "$lib/api/sessions";
+import type { World } from "$lib/api/world";
 import {
+  ancestors,
+  averageLevel,
   checkCounts,
-  filterSessions,
+  descendants,
+  linkedIn,
   linkTo,
   newLocation,
   newNpc,
   newScene,
   nextNumber,
+  overview,
   parseDate,
   parseTime,
   readyToRun,
   readyCount,
+  removeEntry,
   removeLocation,
   removeNpc,
   scenesWith,
   toggleSection,
+  treeOrder,
+  treeRows,
 } from "./sessions";
 
 const enc = (id: string, name = id, status = "ready"): Encounter => ({ id, name, status }) as Encounter;
 const scene = (id: string, more: Partial<Scene> = {}): Scene => ({ ...newScene(), id, ...more });
+
+/** The ossuary and the vault, inside the crypt; the abbot and Wenna. */
+function world(): World {
+  return {
+    locations: [{ ...newLocation("Crypt"), id: "crypt" }, { ...newLocation("Ossuary", "crypt"), id: "oss" }, { ...newLocation("Vault", "crypt"), id: "vault" }],
+    npcs: [{ ...newNpc("Abbot"), id: "abbot" }, { ...newNpc("Wenna"), id: "wenna" }],
+  };
+}
 
 /** Two scenes at the ossuary with the abbot, a third elsewhere. */
 function session(): Session {
@@ -33,8 +49,10 @@ function session(): Session {
     partyNote: "",
     previously: "",
     premise: "",
-    locations: [{ ...newLocation("Ossuary"), id: "oss" }, { ...newLocation("Vault"), id: "vault" }],
-    npcs: [{ ...newNpc("Abbot"), id: "abbot" }, { ...newNpc("Wenna"), id: "wenna" }],
+    summary: "",
+    started: null,
+    ended: null,
+    playedScenes: null,
     checklist: [{ text: "Minis", done: true }],
     scenes: [
       scene("a", { locationId: "oss", npcIds: ["abbot"], encounterIds: ["e1"], checklist: [{ text: "Clue", done: false }] }),
@@ -51,10 +69,43 @@ describe("sessions", () => {
     expect(nextNumber([{ number: 3 }, { number: 12 }, { number: 5 }])).toBe(13);
   });
 
-  it("filters by title in any case", () => {
-    const all = [{ title: "The Sunken Vault" }, { title: "Bridge" }];
-    expect(filterSessions(all, " vAULT ")).toEqual([all[0]]);
-    expect(filterSessions(all, " ")).toBe(all);
+  it("puts the lowest unplayed session up next, the other unplayed later, and the played highest first", () => {
+    const row = (number: number, status: Status) => ({ number, status });
+    const parts = overview([row(9, "played"), row(13, "drafting"), row(11, "played"), row(12, "ready"), row(14, "playing")]);
+    expect(parts.next).toEqual(row(12, "ready"));
+    expect(parts.later.map((r) => r.number)).toEqual([13, 14]);
+    expect(parts.played.map((r) => r.number)).toEqual([11, 9]);
+    expect(overview([row(1, "played")]).next).toBeNull(); // Planned shows
+    expect(overview([row(2, "drafting")]).next?.number).toBe(2); // any status
+  });
+
+  it("averages the party's level, rounded", () => {
+    expect(averageLevel([5, 5, 6, 4])).toBe(5);
+    expect(averageLevel([5, 6])).toBe(6);
+    expect(averageLevel([])).toBeNull();
+  });
+
+  it("walks a tree: what's under, what's above, and the rows that show", () => {
+    const w = world();
+    expect(descendants(w.locations, "crypt")).toEqual(["crypt", "oss", "vault"]);
+    expect(ancestors(w.locations, "vault").map((l) => l.id)).toEqual(["crypt"]);
+    const rows = (open: string[], q = "") => treeRows(w.locations, new Set(open), q).map((r) => `${r.depth}:${r.entry.id}`);
+    expect(rows([])).toEqual(["0:crypt"]);
+    expect(rows(["crypt"])).toEqual(["0:crypt", "1:oss", "1:vault"]);
+    expect(rows([], "VAU")).toEqual(["0:crypt", "1:vault"]); // a match with its parents, open
+    expect(treeRows(w.locations, new Set())[0].kids).toBe(2);
+    expect(treeOrder([{ ...newLocation("Lost", "gone"), id: "lost" }]).map((r) => r.depth)).toEqual([0]); // parent gone: top
+  });
+
+  it("moves what was under a removed entry up a level", () => {
+    const deeper = [...world().locations, { ...newLocation("Niche", "oss"), id: "niche" }];
+    expect(removeEntry(deeper, "oss").find((l) => l.id === "niche")?.parent).toBe("crypt");
+    expect(removeEntry(deeper, "crypt").filter((l) => l.parent === null).map((l) => l.id)).toEqual(["oss", "vault"]);
+  });
+
+  it("lists what a session's scenes link, each once", () => {
+    expect(linkedIn(session(), "location")).toEqual(["oss", "vault"]);
+    expect(linkedIn(session(), "npc")).toEqual(["abbot", "wenna"]);
   });
 
   it("starts a scene untitled, empty and not ready, each with its own id", () => {
@@ -70,9 +121,9 @@ describe("sessions", () => {
   });
 
   it("shares a location: an edit shows in every scene at it", () => {
-    const s = session();
-    s.locations[0].name = "Bone hall";
-    const names = s.scenes.map((sc) => s.locations.find((l) => l.id === sc.locationId)?.name);
+    const [s, w] = [session(), world()];
+    w.locations[1].name = "Bone hall";
+    const names = s.scenes.map((sc) => w.locations.find((l) => l.id === sc.locationId)?.name);
     expect(names).toEqual(["Bone hall", "Bone hall", "Vault"]);
     expect(scenesWith(s, { kind: "location", id: "oss" }).map((sc) => sc.id)).toEqual(["a", "b"]);
   });
@@ -87,16 +138,18 @@ describe("sessions", () => {
   });
 
   it("clears a removed location from every scene", () => {
-    const s = session();
-    removeLocation(s, "oss");
-    expect(s.locations.map((l) => l.id)).toEqual(["vault"]);
+    const [s, w] = [session(), world()];
+    removeLocation(w, s, "oss");
+    expect(w.locations.map((l) => l.id)).toEqual(["crypt", "vault"]);
     expect(s.scenes.map((sc) => sc.locationId)).toEqual([null, null, "vault"]);
+    removeLocation(w, null, "vault"); // from the overview: no session open
+    expect(w.locations.map((l) => l.id)).toEqual(["crypt"]);
   });
 
   it("unlinks a removed NPC from every scene", () => {
-    const s = session();
-    removeNpc(s, "abbot");
-    expect(s.npcs.map((n) => n.id)).toEqual(["wenna"]);
+    const [s, w] = [session(), world()];
+    removeNpc(w, s, "abbot");
+    expect(w.npcs.map((n) => n.id)).toEqual(["wenna"]);
     expect(s.scenes.map((sc) => sc.npcIds)).toEqual([[], ["wenna"], []]);
   });
 

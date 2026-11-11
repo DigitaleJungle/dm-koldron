@@ -4,16 +4,18 @@
   // checklist; and Remove scene at the bottom. A new location opens Locations to name it.
   import { tick, untrack } from "svelte";
   import type { Session } from "$lib/api/sessions";
+  import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import RichText from "$lib/components/RichText.svelte";
   import TagPreview from "$lib/components/TagPreview.svelte";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
   import Checklist from "./Checklist.svelte";
-  import { link, newLocation, unlink } from "./sessions";
+  import { link, newLocation, treeOrder, unlink } from "./sessions";
 
   let {
     session = $bindable(),
+    world = $bindable(),
     index,
     encounterName,
     encounterMeta,
@@ -22,6 +24,8 @@
     onremove,
   }: {
     session: Session;
+    /** The campaign's locations and NPCs. */
+    world: World;
     /** The open scene's place in the session. */
     index: number;
     /** An encounter's name, and its difficulty and XP, by id (null while unknown). */
@@ -37,8 +41,12 @@
   const t = strings.sessions.scenes;
   const m = strings.sessions.manage;
   const scene = $derived(session.scenes[index]);
-  const location = $derived(session.locations.find((l) => l.id === scene.locationId) ?? null);
-  const npcName = (id: string) => session.npcs.find((n) => n.id === id)?.name || m.unnamedNpc;
+  const location = $derived(world.locations.find((l) => l.id === scene.locationId) ?? null);
+  const npcName = (id: string) => world.npcs.find((n) => n.id === id)?.name || m.unnamedNpc;
+  /** Indented under their parents, as the trees show them. */
+  const indent = (depth: number, name: string) => "  ".repeat(depth) + name;
+  const locationChoices = $derived(treeOrder(world.locations));
+  const npcChoices = $derived(treeOrder(world.npcs).filter((r) => !scene.npcIds.includes(r.entry.id)));
 
   let titleInput: HTMLInputElement | undefined = $state();
   // A new scene has no title yet: start typing it.
@@ -82,7 +90,7 @@
     const value = ev.currentTarget.value;
     if (value === "__new") {
       const created = newLocation(t.newLocationName);
-      session.locations.push(created);
+      world.locations.push(created);
       scene.locationId = created.id;
       onnewlocation(created.id);
     } else scene.locationId = value || null;
@@ -159,8 +167,8 @@
     <div class="controls">
       <select id="scene-loc" class="choose" value={scene.locationId ?? ""} onchange={pickLocation}>
         <option value="">{t.noLocation}</option>
-        {#each session.locations as l (l.id)}
-          <option value={l.id}>{l.name || m.unnamedLocation}</option>
+        {#each locationChoices as r (r.entry.id)}
+          <option value={r.entry.id}>{indent(r.depth, r.entry.name || m.unnamedLocation)}</option>
         {/each}
         <option value="__new">{t.newLocation}</option>
       </select>
@@ -170,7 +178,7 @@
   <div class="link-row">
     <label for="link-npc" class="label"><i class="ti ti-user" aria-hidden="true"></i>{t.npcs}</label>
     <div class="controls chips">
-      {#each scene.npcIds as id (id)}
+      {#each scene.npcIds.filter((id) => world.npcs.some((n) => n.id === id)) as id (id)}
         <span class="link">
           <strong>{npcName(id)}</strong>
           <button class="icon-btn" aria-label={t.unlink(npcName(id))} onclick={() => unlink(scene.npcIds, id)}>
@@ -180,8 +188,8 @@
       {/each}
       <select id="link-npc" class="pick" value="" onchange={(ev) => pickLink(ev, scene.npcIds)}>
         <option value="">{t.link}</option>
-        {#each session.npcs.filter((n) => !scene.npcIds.includes(n.id)) as n (n.id)}
-          <option value={n.id}>{n.name || m.unnamedNpc}</option>
+        {#each npcChoices as r (r.entry.id)}
+          <option value={r.entry.id}>{indent(r.depth, r.entry.name || m.unnamedNpc)}</option>
         {/each}
       </select>
     </div>

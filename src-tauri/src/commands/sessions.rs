@@ -1,21 +1,22 @@
 //! Sessions: one file per session in its campaign's folder, `sessions/<id>.json`. Only active campaigns are changed (an
-//! archived one is read-only). A session holds its scenes in order, plus the locations, NPCs and checklist shared
-//! across them; a scene links those by id, and the campaign's encounters (in their own folder) by their ids.
+//! archived one is read-only). A session holds its scenes in order and its checklist; a scene links the campaign's
+//! locations and NPCs (`world.json`) and encounters (in their own folder) by their ids.
 
 use crate::commands::campaigns::{active_dir, dirs, now_ms};
+use crate::commands::world::{self, Location, Npc, World};
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const FOLDER: &str = "sessions";
 const MAX_TITLE_LEN: usize = 100;
 const MAX_NOTE_LEN: usize = 20_000;
 const MAX_LINE_LEN: usize = 200;
-/// The most scenes, locations, NPCs or checklist items a session (or a scene's checklist) can hold.
+/// The most scenes or checklist items a session (or a scene's checklist) can hold.
 const MAX_ENTRIES: usize = 200;
 
 /// A checklist item.
@@ -35,31 +36,12 @@ pub struct Scene {
     /// What happens.
     pub summary: String,
     pub ready: bool,
-    /// One of the session's locations, or none.
+    /// One of the campaign's locations, or none.
     pub location_id: Option<String>,
     pub npc_ids: Vec<String>,
     /// The campaign's encounters.
     pub encounter_ids: Vec<String>,
     pub checklist: Vec<Check>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Location {
-    pub id: String,
-    pub name: String,
-    /// What the party sees, hears and smells.
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Npc {
-    pub id: String,
-    pub name: String,
-    pub wants: String,
-    /// How they talk.
-    pub voice: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -85,11 +67,24 @@ pub struct Session {
     /// What this session is about and how it opens.
     #[serde(default)]
     pub premise: String,
+    /// What happened, once played.
+    #[serde(default)]
+    pub summary: String,
+    /// When Run session was clicked (ms); set by the live session view.
+    #[serde(default)]
+    pub started: Option<u64>,
+    /// When End session was clicked (ms); set by the live session view.
+    #[serde(default)]
+    pub ended: Option<u64>,
+    /// How many scenes were played out; set by the live session view.
+    #[serde(default)]
+    pub played_scenes: Option<u32>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
-    #[serde(default)]
+    /// The session's own locations and NPCs, as the earlier version saved them: read for `world::migrate`, never written.
+    #[serde(default, skip_serializing)]
     pub locations: Vec<Location>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub npcs: Vec<Npc>,
     #[serde(default)]
     pub checklist: Vec<Check>,
@@ -98,7 +93,34 @@ pub struct Session {
     pub updated: u64,
 }
 
-/// What the list shows of a session.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    /// No scenes, or not every scene is ready.
+    Drafting,
+    /// Every scene is ready.
+    Ready,
+    /// Run session was clicked.
+    Playing,
+    /// End session was clicked.
+    Played,
+}
+
+impl Session {
+    pub fn status(&self) -> Status {
+        if self.ended.is_some() {
+            Status::Played
+        } else if self.started.is_some() {
+            Status::Playing
+        } else if !self.scenes.is_empty() && self.scenes.iter().all(|s| s.ready) {
+            Status::Ready
+        } else {
+            Status::Drafting
+        }
+    }
+}
+
+/// What the overview shows of a session.
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRow {
@@ -107,8 +129,19 @@ pub struct SessionRow {
     pub title: String,
     pub date: Option<String>,
     pub time: Option<String>,
+    pub status: Status,
+    pub premise: String,
+    pub summary: String,
     pub ready: usize,
     pub scenes: usize,
+    /// The campaign's locations and NPCs its scenes link, each once (links to removed ones left out).
+    pub location_ids: Vec<String>,
+    pub npc_ids: Vec<String>,
+    /// How many encounters its scenes link, each counted once.
+    pub encounters: usize,
+    pub played_scenes: Option<u32>,
+    /// From Run session to End session, when both are known.
+    pub played_ms: Option<u64>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -178,11 +211,21 @@ fn check_ids<'a>(ids: impl Iterator<Item = &'a String>, what: &str, problems: &m
     seen
 }
 
-/// Every link must point to something in the session, and once only.
-fn check_links(links: &[String], known: &HashSet<String>, what: &str, scene: &str, problems: &mut Vec<String>) {
+/// Every link must be a valid id, and linked once only.
+fn check_links(links: &[String], what: &str, scene: &str, problems: &mut Vec<String>) {
     let mut seen = HashSet::new();
-    if links.iter().any(|id| !known.contains(id) || !seen.insert(id)) {
-        problems.push(format!("{scene} links a {what} that isn't in the session, or links it twice."));
+    if links.iter().any(|id| check_id(id, "link").is_err() || !seen.insert(id)) {
+        problems.push(format!("{scene} links {what} with an invalid id, or links it twice."));
+    }
+}
+
+/// Drops the scenes' links to locations and NPCs the campaign no longer has.
+fn prune(session: &mut Session, world: &World) {
+    let locations: HashSet<&str> = world.locations.iter().map(|l| l.id.as_str()).collect();
+    let npcs: HashSet<&str> = world.npcs.iter().map(|n| n.id.as_str()).collect();
+    for scene in &mut session.scenes {
+        scene.location_id = scene.location_id.take().filter(|id| locations.contains(id.as_str()));
+        scene.npc_ids.retain(|id| npcs.contains(id.as_str()));
     }
 }
 
@@ -204,21 +247,8 @@ fn check(session: &mut Session) -> Result<(), StorageError> {
     check_text(&mut session.party_note, MAX_NOTE_LEN, "The party note", &mut problems);
     check_text(&mut session.previously, MAX_NOTE_LEN, "Previously", &mut problems);
     check_text(&mut session.premise, MAX_NOTE_LEN, "The premise", &mut problems);
+    check_text(&mut session.summary, MAX_NOTE_LEN, "The summary", &mut problems);
     check_checklist(&mut session.checklist, "the checklist", &mut problems);
-
-    check_count(session.locations.len(), "Locations", &mut problems);
-    let locations = check_ids(session.locations.iter().map(|l| &l.id), "location", &mut problems);
-    for location in &mut session.locations {
-        check_text(&mut location.name, MAX_TITLE_LEN, "A location's name", &mut problems);
-        check_text(&mut location.description, MAX_NOTE_LEN, "A location's description", &mut problems);
-    }
-    check_count(session.npcs.len(), "NPCs", &mut problems);
-    let npcs = check_ids(session.npcs.iter().map(|n| &n.id), "NPC", &mut problems);
-    for npc in &mut session.npcs {
-        check_text(&mut npc.name, MAX_TITLE_LEN, "An NPC's name", &mut problems);
-        check_text(&mut npc.wants, MAX_LINE_LEN, "What an NPC wants", &mut problems);
-        check_text(&mut npc.voice, MAX_LINE_LEN, "An NPC's voice", &mut problems);
-    }
 
     check_count(session.scenes.len(), "Scenes", &mut problems);
     check_ids(session.scenes.iter().map(|s| &s.id), "scene", &mut problems);
@@ -227,14 +257,11 @@ fn check(session: &mut Session) -> Result<(), StorageError> {
         check_text(&mut scene.title, MAX_TITLE_LEN, "A scene's title", &mut problems);
         let name = if scene.title.is_empty() { "A scene".to_string() } else { format!("Scene \"{}\"", scene.title) };
         check_text(&mut scene.summary, MAX_NOTE_LEN, &format!("What happens in {name}"), &mut problems);
-        if scene.location_id.as_ref().is_some_and(|id| !locations.contains(id)) {
-            problems.push(format!("{name} is at a location that isn't in the session."));
+        if scene.location_id.as_ref().is_some_and(|id| check_id(id, "location").is_err()) {
+            problems.push(format!("{name} is at a location with an invalid id."));
         }
-        check_links(&scene.npc_ids, &npcs, "NPC", &name, &mut problems);
-        let mut seen = HashSet::new();
-        if scene.encounter_ids.iter().any(|id| check_id(id, "encounter").is_err() || !seen.insert(id)) {
-            problems.push(format!("{name} links an encounter with an invalid id, or links it twice."));
-        }
+        check_links(&scene.npc_ids, "an NPC", &name, &mut problems);
+        check_links(&scene.encounter_ids, "an encounter", &name, &mut problems);
         check_checklist(&mut scene.checklist, &format!("the checklist of {name}"), &mut problems);
     }
     if problems.is_empty() { Ok(()) } else { Err(StorageError::Invalid(problems.join(" "))) }
@@ -250,11 +277,16 @@ fn read(folder: &Path, id: &str) -> Result<Session, StorageError> {
     Ok(session)
 }
 
-pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
-    let folder = campaign_dir.join(FOLDER);
+pub fn folder(campaign_dir: &Path) -> PathBuf {
+    campaign_dir.join(FOLDER)
+}
+
+/// Every session file that can be read, and the names of those that can't.
+fn read_folder(campaign_dir: &Path) -> Result<(Vec<Session>, Vec<String>), StorageError> {
+    let folder = folder(campaign_dir);
     let entries = match fs::read_dir(&folder) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SessionList { sessions: vec![], unreadable: vec![] }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((vec![], vec![])),
         Err(e) => return Err(e.into()),
     };
     let (mut sessions, mut unreadable) = (Vec::new(), Vec::new());
@@ -262,22 +294,57 @@ pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
         let name = entry.file_name().to_string_lossy().into_owned();
         let Some(id) = name.strip_suffix(".json").filter(|id| check_id(id, "session").is_ok()) else { continue };
         match read(&folder, id) {
-            Ok(s) => {
-                let row = SessionRow {
-                    ready: s.scenes.iter().filter(|sc| sc.ready).count(),
-                    scenes: s.scenes.len(),
-                    id: s.id,
-                    number: s.number,
-                    title: s.title,
-                    date: s.date,
-                    time: s.time,
-                };
-                sessions.push((s.updated, row));
-            }
+            Ok(s) => sessions.push(s),
             Err(StorageError::Corrupt(_)) => unreadable.push(name),
             Err(e) => return Err(e),
         }
     }
+    Ok((sessions, unreadable))
+}
+
+/// Every session that can be read.
+pub fn read_all(campaign_dir: &Path) -> Result<Vec<Session>, StorageError> {
+    Ok(read_folder(campaign_dir)?.0)
+}
+
+/// Writes the session as it is, unchecked: for `world::migrate`.
+pub fn write(campaign_dir: &Path, session: &Session) -> Result<(), StorageError> {
+    write_atomic(&folder(campaign_dir).join(format!("{}.json", session.id)), &to_json(session)?)
+}
+
+/// Each id once, in the order first linked, and only those `known`.
+fn distinct<'a>(ids: impl Iterator<Item = &'a String>, known: &HashSet<&str>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    ids.filter(|id| known.contains(id.as_str()) && seen.insert(id.as_str())).cloned().collect()
+}
+
+fn row(s: Session, world: &World) -> SessionRow {
+    let locations: HashSet<&str> = world.locations.iter().map(|l| l.id.as_str()).collect();
+    let npcs: HashSet<&str> = world.npcs.iter().map(|n| n.id.as_str()).collect();
+    let encounters: HashSet<&String> = s.scenes.iter().flat_map(|sc| &sc.encounter_ids).collect();
+    SessionRow {
+        status: s.status(),
+        ready: s.scenes.iter().filter(|sc| sc.ready).count(),
+        scenes: s.scenes.len(),
+        location_ids: distinct(s.scenes.iter().filter_map(|sc| sc.location_id.as_ref()), &locations),
+        npc_ids: distinct(s.scenes.iter().flat_map(|sc| &sc.npc_ids), &npcs),
+        encounters: encounters.len(),
+        played_scenes: s.played_scenes,
+        played_ms: s.started.zip(s.ended).map(|(a, b)| b.saturating_sub(a)),
+        id: s.id,
+        number: s.number,
+        title: s.title,
+        date: s.date,
+        time: s.time,
+        premise: s.premise,
+        summary: s.summary,
+    }
+}
+
+pub fn list(campaign_dir: &Path) -> Result<SessionList, StorageError> {
+    let (all, mut unreadable) = read_folder(campaign_dir)?;
+    let world = world::read(campaign_dir)?;
+    let mut sessions: Vec<(u64, SessionRow)> = all.into_iter().map(|s| (s.updated, row(s, &world))).collect();
     sessions.sort_by(|(ua, a), (ub, b)| b.number.cmp(&a.number).then(ub.cmp(ua)).then(a.id.cmp(&b.id)));
     unreadable.sort();
     Ok(SessionList { sessions: sessions.into_iter().map(|(_, row)| row).collect(), unreadable })
@@ -291,8 +358,12 @@ pub fn get(campaign_dir: &Path, id: &str) -> Result<Session, StorageError> {
 /// Creates the session (empty `id`) or replaces the saved one.
 pub fn save(campaign_dir: &Path, mut session: Session, now: u64) -> Result<Session, StorageError> {
     check(&mut session)?;
-    let folder = campaign_dir.join(FOLDER);
+    let folder = folder(campaign_dir);
     let _guard = lock_update();
+    prune(&mut session, &world::read(campaign_dir)?);
+    // Only the earlier version's files have these; the commands have moved them to the campaign by now.
+    session.locations.clear();
+    session.npcs.clear();
     let saved_number = if session.id.is_empty() {
         None
     } else {
@@ -327,24 +398,31 @@ pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
     Ok(())
 }
 
+/// The campaign's folder, once its sessions' own locations and NPCs have moved to the campaign.
+fn migrated(app: &AppHandle, campaign: &str) -> Result<PathBuf, StorageError> {
+    let dir = active_dir(&dirs(app)?, campaign)?;
+    world::migrate(&dir, now_ms())?;
+    Ok(dir)
+}
+
 #[tauri::command]
 pub async fn list_sessions(app: AppHandle, campaign: String) -> Result<SessionList, StorageError> {
-    blocking(move || list(&active_dir(&dirs(&app)?, &campaign)?)).await
+    blocking(move || list(&migrated(&app, &campaign)?)).await
 }
 
 #[tauri::command]
 pub async fn get_session(app: AppHandle, campaign: String, id: String) -> Result<Session, StorageError> {
-    blocking(move || get(&active_dir(&dirs(&app)?, &campaign)?, &id)).await
+    blocking(move || get(&migrated(&app, &campaign)?, &id)).await
 }
 
 #[tauri::command]
 pub async fn save_session(app: AppHandle, campaign: String, session: Session) -> Result<Session, StorageError> {
-    blocking(move || save(&active_dir(&dirs(&app)?, &campaign)?, session, now_ms())).await
+    blocking(move || save(&migrated(&app, &campaign)?, session, now_ms())).await
 }
 
 #[tauri::command]
 pub async fn delete_session(app: AppHandle, campaign: String, id: String) -> Result<(), StorageError> {
-    blocking(move || delete(&active_dir(&dirs(&app)?, &campaign)?, &id)).await
+    blocking(move || delete(&migrated(&app, &campaign)?, &id)).await
 }
 
 #[cfg(test)]
@@ -369,12 +447,26 @@ mod tests {
             party_note: String::new(),
             previously: String::new(),
             premise: String::new(),
+            summary: String::new(),
+            started: None,
+            ended: None,
+            played_scenes: None,
             scenes: vec![],
             locations: vec![],
             npcs: vec![],
             checklist: vec![],
             updated: 0,
         }
+    }
+
+    /// The campaign's ossuary and abbot, which `full` links.
+    fn world_with_links(dir: &Path) {
+        let world = World {
+            version: 0,
+            locations: vec![Location { id: "ossuary".into(), name: "Ossuary".into(), ..Location::default() }],
+            npcs: vec![Npc { id: "abbot".into(), name: "The abbot's ghost".into(), ..Npc::default() }],
+        };
+        world::save(dir, world).unwrap();
     }
 
     fn scene(id: &str) -> Scene {
@@ -393,8 +485,6 @@ mod tests {
             party_note: "Tobb is hurt".into(),
             previously: "They reached the abbey.".into(),
             premise: "Into the crypt.".into(),
-            locations: vec![Location { id: "ossuary".into(), name: "Ossuary".into(), description: "Skulls in rows".into() }],
-            npcs: vec![Npc { id: "abbot".into(), name: "The abbot's ghost".into(), wants: "Peace".into(), voice: "Scripture".into() }],
             checklist: vec![Check { text: "Minis".into(), done: true }],
             scenes: vec![
                 Scene {
@@ -414,6 +504,7 @@ mod tests {
     #[test]
     fn saves_reads_back_and_lists_the_highest_number_first() {
         let dir = temp_dir("save");
+        world_with_links(&dir);
         assert!(list(&dir).unwrap().sessions.is_empty());
         let first = save(&dir, full(), 10).unwrap();
         assert_eq!((first.id.as_str(), first.title.as_str(), first.updated), ("a", "Into the Crypt", 10));
@@ -422,8 +513,38 @@ mod tests {
         save(&dir, Session { title: "Crypt II".into(), ..first }, 20).unwrap();
         let all = list(&dir).unwrap().sessions;
         assert_eq!(all.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["Bridge", "Crypt II"]);
-        assert_eq!((all[1].ready, all[1].scenes, all[1].time.as_deref()), (1, 2, Some("19:30")));
+        let crypt = &all[1];
+        assert_eq!((crypt.ready, crypt.scenes, crypt.time.as_deref(), crypt.premise.as_str()), (1, 2, Some("19:30"), "Into the crypt."));
+        assert_eq!((crypt.location_ids.clone(), crypt.npc_ids.clone(), crypt.encounters), (vec!["ossuary".to_string()], vec!["abbot".to_string()], 1));
+        assert_eq!((crypt.status, crypt.played_ms), (Status::Drafting, None));
         assert_eq!(get(&dir, &second.id).unwrap(), second);
+    }
+
+    #[test]
+    fn drops_links_to_removed_locations_and_npcs() {
+        let dir = temp_dir("prune");
+        world_with_links(&dir);
+        let saved = save(&dir, full(), 1).unwrap();
+        assert_eq!(saved.scenes[0].location_id.as_deref(), Some("ossuary"));
+        world::save(&dir, World::default()).unwrap(); // both removed
+        assert_eq!(list(&dir).unwrap().sessions[0].npc_ids, Vec::<String>::new()); // never shown
+        let saved = save(&dir, saved, 2).unwrap();
+        assert_eq!((saved.scenes[0].location_id.clone(), saved.scenes[0].npc_ids.clone()), (None, vec![]));
+        assert_eq!(saved.scenes[0].encounter_ids, ["e1"]); // encounters are the builder's
+    }
+
+    #[test]
+    fn status_follows_scenes_then_running() {
+        let ready = Scene { ready: true, ..scene("a") };
+        assert_eq!(session(1, "A").status(), Status::Drafting); // no scenes
+        assert_eq!(Session { scenes: vec![ready.clone(), scene("b")], ..session(1, "A") }.status(), Status::Drafting);
+        assert_eq!(Session { scenes: vec![ready.clone()], ..session(1, "A") }.status(), Status::Ready);
+        let playing = Session { started: Some(1_000), ..session(1, "A") };
+        assert_eq!(playing.status(), Status::Playing);
+        let played = Session { ended: Some(61_000), played_scenes: Some(3), ..playing };
+        assert_eq!(played.status(), Status::Played);
+        let r = row(played, &World::default());
+        assert_eq!((r.played_ms, r.played_scenes), (Some(60_000), Some(3)));
     }
 
     #[test]
@@ -469,13 +590,12 @@ mod tests {
         assert!(!bad(with_scene(Scene { title: " ".into(), ..scene("a") }))); // untitled is fine
         assert!(bad(Session { scenes: vec![scene("a"), scene("a")], ..full() })); // repeated scene id
         assert!(bad(with_scene(scene("../x"))));
-        assert!(bad(with_scene(Scene { location_id: Some("nowhere".into()), ..scene("a") })));
-        assert!(bad(with_scene(Scene { npc_ids: vec!["stranger".into()], ..scene("a") })));
+        assert!(bad(with_scene(Scene { location_id: Some("../x".into()), ..scene("a") })));
+        assert!(bad(with_scene(Scene { npc_ids: vec!["Bad Id".into()], ..scene("a") })));
         assert!(bad(with_scene(Scene { npc_ids: vec!["abbot".into(), "abbot".into()], ..scene("a") }))); // linked twice
         assert!(bad(with_scene(Scene { encounter_ids: vec!["e1".into(), "e1".into()], ..scene("a") }))); // linked twice
         assert!(bad(with_scene(Scene { encounter_ids: vec!["../e".into()], ..scene("a") })));
         assert!(bad(with_scene(Scene { checklist: vec![check_item("")], ..scene("a") })));
-        assert!(bad(Session { npcs: vec![Npc { id: "a".into(), ..Npc::default() }, Npc { id: "a".into(), ..Npc::default() }], ..session(1, "A") }));
         let ghost = Session { id: "nope".into(), ..session(1, "A") };
         assert!(matches!(save(&dir, ghost, 1), Err(StorageError::NotFound(_))));
         fs::create_dir_all(dir.join(FOLDER)).unwrap();
@@ -490,10 +610,9 @@ mod tests {
     fn trims_what_it_saves() {
         let dir = temp_dir("trim");
         let mut s = full();
-        s.locations[0].name = "  Ossuary ".into();
         s.scenes[0].checklist[0].text = " The ghost appears ".into();
         let saved = save(&dir, s, 1).unwrap();
-        assert_eq!(saved.locations[0].name, "Ossuary");
+        assert_eq!(saved.title, "Into the Crypt");
         assert_eq!(saved.scenes[0].checklist[0].text, "The ghost appears");
     }
 }

@@ -22,12 +22,12 @@
   import { difficulty, monsterXp } from "$lib/views/encounters/difficulty";
   import { characterLevel, encounterParty, entryKey, rowsByKey } from "$lib/views/encounters/roster";
   import Checklist from "./Checklist.svelte";
-  import ManageLocations from "./ManageLocations.svelte";
-  import ManageNpcs from "./ManageNpcs.svelte";
+  import ManageWorld from "./ManageWorld.svelte";
   import SceneEditor from "./SceneEditor.svelte";
   import SceneList from "./SceneList.svelte";
   import SessionAside from "./SessionAside.svelte";
-  import { checkCounts, linkTo, newScene, nextNumber, readyToRun, type Linkable, type Pane, type Section } from "./sessions";
+  import { checkCounts, linkedIn, linkTo, newScene, nextNumber, readyToRun, type Linkable, type Pane, type Section } from "./sessions";
+  import { WorldDraft } from "./worldDraft.svelte";
 
   /** The saved session to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -48,9 +48,11 @@
     partyNote: "",
     previously: "",
     premise: "",
+    summary: "",
+    started: null,
+    ended: null,
+    playedScenes: null,
     scenes: [],
-    locations: [],
-    npcs: [],
     checklist: [],
     updated: 0,
   });
@@ -61,6 +63,9 @@
   /** What was last saved (or loaded), to tell whether there are changes. Null until it has loaded. */
   let baseline = $state<string | null>(null);
   const snapshot = () => JSON.stringify({ ...draft, updated: 0 });
+  /** The campaign's locations and NPCs, which the scenes link; saved with the session, and first. */
+  const world = new WorldDraft(campaign);
+  const npcCount = $derived(linkedIn(draft, "npc").filter((nid) => world.world?.npcs.some((n) => n.id === nid)).length);
 
   /** Left already: a new session created after that doesn't take you back to it. */
   let gone = false;
@@ -187,7 +192,8 @@
   let saving = $state(false);
   let saveError = $state<string | null>(null);
   const valid = $derived(Number.isInteger(draft.number) && draft.number >= 1);
-  const changed = $derived(baseline !== null && snapshot() !== baseline);
+  const sessionChanged = $derived(baseline !== null && snapshot() !== baseline);
+  const changed = $derived(sessionChanged || world.changed);
   let leaving = false;
 
   // Renaming: the pencil shows the number and title fields; Enter or leaving them keeps the change, Escape puts back
@@ -217,10 +223,19 @@
   /** What last failed to save: not tried again until something changes. */
   let failed = $state<string | null>(null);
 
-  /** Saves the changes (after a save that's under way); false when it couldn't (the error shows). */
+  /** Saves the changes (after a save that's under way); false when it couldn't (the error shows). The world goes
+   *  first: a session saved before a location it links would lose the link. */
   async function save(): Promise<boolean> {
     while (inflight) await inflight;
     if (!changed) return true;
+    if (world.changed && !(await world.save())) {
+      saveError = world.saveError;
+      return false;
+    }
+    if (!sessionChanged) {
+      saveError = null;
+      return true;
+    }
     if (!valid) {
       saveError = t.saveError(t.number);
       return false;
@@ -248,7 +263,8 @@
 
   // A second after the last change; not while renaming (a number half typed may be another session's).
   $effect(() => {
-    if (!changed || saving || renaming || !valid || snapshot() === failed) return;
+    const due = (sessionChanged && snapshot() !== failed) || world.due;
+    if (!due || saving || world.saving || renaming || !valid) return;
     const timer = setTimeout(() => void save(), AUTOSAVE_MS);
     return () => clearTimeout(timer);
   });
@@ -329,12 +345,12 @@
 
 <svelte:head><title>{draft.title.trim() || t.newTitle}</title></svelte:head>
 
-{#if loadError}
+{#if loadError || world.loadError}
   <div class="status">
-    <p class="error" role="alert">{loadError}</p>
+    <p class="error" role="alert">{loadError ?? world.loadError}</p>
     <BackButton fallback={base} />
   </div>
-{:else if baseline === null}
+{:else if baseline === null || world.world === null}
   <p class="status muted" role="status">{t.loading}</p>
 {:else}
   <div class="session">
@@ -342,7 +358,7 @@
       <BackButton fallback={base} />
       {#if saveError}
         <span class="error small" role="alert">{saveError}</span>
-      {:else if saving}
+      {:else if saving || world.saving}
         <span class="muted small" role="status">{t.saving}</span>
       {/if}
       <span class="spacer"></span>
@@ -414,7 +430,7 @@
         </div>
         <div>
           <dt>{t.counts.npcs}</dt>
-          <dd>{fmt.format(draft.npcs.length)}</dd>
+          <dd>{fmt.format(npcCount)}</dd>
         </div>
         <div>
           <dt>{t.counts.checklist}</dt>
@@ -430,7 +446,7 @@
 
     <div class="columns">
       <div class="col" use:keepScroll={{ id: "session-scenes", url: page.url.href, ready: true }}>
-        <SceneList session={draft} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} onmove={(from, to) => (draft.scenes = moveTo(draft.scenes, from, to))} />
+        <SceneList session={draft} world={world.world} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} onmove={(from, to) => (draft.scenes = moveTo(draft.scenes, from, to))} />
       </div>
       <main
         class="col editor"
@@ -453,17 +469,15 @@
       >
         {#if pane}
           <div class="pane">
-            {#if pane === "locations"}
-              <ManageLocations bind:session={draft} />
-            {:else if pane === "npcs"}
-              <ManageNpcs bind:session={draft} />
+            {#if pane === "locations" || pane === "npcs"}
+              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
             {:else}
               <h2>{t.sections.checklist}</h2>
               <Checklist bind:items={draft.checklist} placeholder={t.checklist.placeholder} />
             {/if}
           </div>
         {:else if index >= 0}
-          <SceneEditor bind:session={draft} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={nameLocation} onremove={removeScene} />
+          <SceneEditor bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={nameLocation} onremove={removeScene} />
         {:else}
           <p class="muted">{t.scenes.empty}</p>
         {/if}
@@ -471,6 +485,7 @@
       <div class="col" use:keepScroll={{ id: "session-aside", url: page.url.href, ready: true }}>
         <SessionAside
           bind:session={draft}
+          world={world.world}
           bind:open={section}
           {lastDrop}
           {ready}

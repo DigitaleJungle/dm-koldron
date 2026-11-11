@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.9] - 2026-11-11
+
+### Added
+
+- Sessions overview: the campaign header (party and average level, played sessions, locations and NPCs), Up next with its premise and counts, Later, Planned when nothing is left to play, and Played sessions with their summary.
+- Session status: Drafting, Ready, Playing and Played.
+- Locations and NPCs trees on the Sessions overview, with search, adding and editing in place; selecting one highlights the sessions it appears in.
+- A Summary for each session, in the session's right column.
+
+### Changed
+
+- Locations and NPCs belong to the campaign instead of a single session, and can be nested; Manage locations and Manage NPCs edit them, with an Inside field.
+- Existing sessions' locations and NPCs move to the campaign the first time its sessions open, same names merged into one; the old session files are backed up first.
+- Removing a location or NPC asks first, and what was under it moves up a level.
+
 ## [0.5.8] - 2026-11-11
 
 ### Changed

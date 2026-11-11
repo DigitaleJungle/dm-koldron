@@ -1,17 +1,22 @@
 import type { Encounter } from "$lib/api/encounters";
-import type { Location, Npc, Scene, Session } from "$lib/api/sessions";
+import type { Scene, Session, Status } from "$lib/api/sessions";
+import type { Location, Npc, World } from "$lib/api/world";
 
 /** The number a new session gets: the highest + 1, 1 for the first. */
 export const nextNumber = (sessions: { number: number }[]): number => sessions.reduce((n, s) => Math.max(n, s.number), 0) + 1;
 
-/** Sessions whose title contains the text (any case); all of them for blank text. */
-export function filterSessions<T extends { title: string }>(sessions: T[], query: string): T[] {
-  const q = query.trim().toLowerCase();
-  return q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions;
+/** The overview's parts: Up next (the lowest-numbered session not played, any status), Later (the other unplayed ones,
+ *  lowest first) and Played (highest first). */
+export function overview<T extends { number: number; status: Status }>(rows: T[]) {
+  const unplayed = rows.filter((r) => r.status !== "played").toSorted((a, b) => a.number - b.number);
+  return { next: unplayed[0] ?? null, later: unplayed.slice(1), played: rows.filter((r) => r.status === "played").toSorted((a, b) => b.number - a.number) };
 }
 
+/** The party's average level, rounded; null without a party. */
+export const averageLevel = (levels: number[]): number | null => (levels.length ? Math.round(levels.reduce((a, b) => a + b, 0) / levels.length) : null);
+
 /** The right column's sections; locations, NPCs and the checklist also have a full view in the editor. */
-export type Section = "previously" | "premise" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
+export type Section = "previously" | "premise" | "summary" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
 export type Pane = "locations" | "npcs" | "checklist";
 
 /** What can be dragged onto a scene. */
@@ -21,8 +26,61 @@ export type Linkable = { kind: "location" | "npc" | "encounter"; id: string };
 export const toggleSection = (open: Section | null, key: Section): Section | null => (open === key ? null : key);
 
 export const newScene = (): Scene => ({ id: crypto.randomUUID(), title: "", summary: "", ready: false, locationId: null, npcIds: [], encounterIds: [], checklist: [] });
-export const newLocation = (name = ""): Location => ({ id: crypto.randomUUID(), name, description: "" });
-export const newNpc = (name = ""): Npc => ({ id: crypto.randomUUID(), name, wants: "", voice: "" });
+export const newLocation = (name = "", parent: string | null = null): Location => ({ id: crypto.randomUUID(), parent, name, description: "" });
+export const newNpc = (name = "", parent: string | null = null): Npc => ({ id: crypto.randomUUID(), parent, name, wants: "", voice: "" });
+
+// ---- Trees: the campaign's locations and NPCs -----------------------------------------------------
+type Entry = { id: string; parent: string | null; name: string };
+
+/** The entry's id and every id under it. */
+export function descendants(entries: Entry[], id: string): string[] {
+  const out = [id];
+  for (let i = 0; i < out.length; i++) for (const e of entries) if (e.parent === out[i] && !out.includes(e.id)) out.push(e.id);
+  return out;
+}
+
+/** The entries above this one, top first. */
+export function ancestors<T extends Entry>(entries: T[], id: string): T[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const out: T[] = [];
+  for (let p = byId.get(id)?.parent; p && byId.has(p) && !out.some((e) => e.id === p); p = byId.get(p)!.parent) out.unshift(byId.get(p)!);
+  return out;
+}
+
+export type TreeRow<T> = { entry: T; depth: number; kids: number; open: boolean };
+
+/** The rows a tree shows, in tree order: everything under an open entry. With a query, the entries whose name contains
+ *  it (any case) and their parents, all open. An entry whose parent is gone counts as top-level. */
+export function treeRows<T extends Entry>(entries: T[], open: Set<string>, query = ""): TreeRow<T>[] {
+  const ids = new Set(entries.map((e) => e.id));
+  const kids = new Map<string | null, T[]>();
+  for (const e of entries) {
+    const p = e.parent && ids.has(e.parent) ? e.parent : null;
+    kids.set(p, [...(kids.get(p) ?? []), e]);
+  }
+  const q = query.trim().toLowerCase();
+  const shown = q ? new Set(entries.filter((e) => e.name.toLowerCase().includes(q)).flatMap((e) => [e.id, ...ancestors(entries, e.id).map((a) => a.id)])) : null;
+  const out: TreeRow<T>[] = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const entry of kids.get(parent) ?? []) {
+      if (shown && !shown.has(entry.id)) continue;
+      const isOpen = shown ? true : open.has(entry.id);
+      out.push({ entry, depth, kids: kids.get(entry.id)?.length ?? 0, open: isOpen });
+      if (isOpen) walk(entry.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}
+
+/** Every entry in tree order, with its depth: for dropdowns. */
+export const treeOrder = <T extends Entry>(entries: T[]): TreeRow<T>[] => treeRows(entries, new Set(entries.map((e) => e.id)));
+
+/** Removes the entry; what was under it moves up to its parent. */
+export function removeEntry<T extends Entry>(entries: T[], id: string): T[] {
+  const parent = entries.find((e) => e.id === id)?.parent ?? null;
+  return entries.filter((e) => e.id !== id).map((e) => (e.parent === id ? { ...e, parent } : e));
+}
 
 /** Adds the id unless it's there already. */
 export function link(ids: string[], id: string) {
@@ -40,17 +98,23 @@ export function linkTo(scene: Scene, item: Linkable) {
   else link(item.kind === "npc" ? scene.npcIds : scene.encounterIds, item.id);
 }
 
-/** Removes the location, and clears it from every scene at it. */
-export function removeLocation(session: Session, id: string) {
-  session.locations = session.locations.filter((l) => l.id !== id);
-  for (const scene of session.scenes) if (scene.locationId === id) scene.locationId = null;
+/** Removes the location from the campaign (what was under it moves up), and clears it from the open session's scenes;
+ *  other sessions drop it when they next save. */
+export function removeLocation(world: World, session: Session | null, id: string) {
+  world.locations = removeEntry(world.locations, id);
+  for (const scene of session?.scenes ?? []) if (scene.locationId === id) scene.locationId = null;
 }
 
-/** Removes the NPC, and unlinks it from every scene. */
-export function removeNpc(session: Session, id: string) {
-  session.npcs = session.npcs.filter((n) => n.id !== id);
-  for (const scene of session.scenes) unlink(scene.npcIds, id);
+/** Removes the NPC from the campaign (what was under it moves up), and unlinks it from the open session's scenes. */
+export function removeNpc(world: World, session: Session | null, id: string) {
+  world.npcs = removeEntry(world.npcs, id);
+  for (const scene of session?.scenes ?? []) unlink(scene.npcIds, id);
 }
+
+/** The ids the session's scenes link, each once: locations or NPCs. */
+export const linkedIn = (session: Session, kind: "location" | "npc"): string[] => [
+  ...new Set(session.scenes.flatMap((s) => (kind === "location" ? (s.locationId ? [s.locationId] : []) : s.npcIds))),
+];
 
 /** The scenes that use the location, NPC or encounter. */
 export const scenesWith = (session: Session, item: Linkable): Scene[] =>

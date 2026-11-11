@@ -1,16 +1,18 @@
 <script lang="ts">
-  // Across session: Previously, Premise, Party note, Locations, NPCs, Encounters and Checklist, one open at a time (opening one
+  // Across session: Previously, Premise, Summary, Party note, Locations, NPCs, Encounters and Checklist, one open at a time (opening one
   // closes the other; the open one closes again). Location, NPC and encounter cards (the campaign's encounters that are
-  // ready to run) can be dragged onto a scene. Locations, NPCs and the checklist open their full view in the editor;
+  // ready to run) can be dragged onto a scene; locations and NPCs are the campaign's, in tree order. Locations, NPCs and the checklist open their full view in the editor;
   // Manage encounters opens the Encounters screen.
   import type { Encounter } from "$lib/api/encounters";
   import type { Session } from "$lib/api/sessions";
+  import type { World } from "$lib/api/world";
   import { strings } from "$lib/strings";
   import Checklist from "./Checklist.svelte";
-  import { scenesWith, toggleSection, type Linkable, type Pane, type Section } from "./sessions";
+  import { linkedIn, scenesWith, toggleSection, treeOrder, type Linkable, type Pane, type Section } from "./sessions";
 
   let {
     session = $bindable(),
+    world,
     open = $bindable(),
     lastDrop,
     ready,
@@ -22,6 +24,7 @@
     ondragend,
   }: {
     session: Session;
+    world: World;
     open: Section | null;
     /** What the last drop added, said once. */
     lastDrop: string;
@@ -40,28 +43,36 @@
   const written = (text: string) => (text.trim() ? t.written : t.notWritten);
   const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
-  type Card = { item: Linkable; name: string; sub: string };
+  /** `depth`: how far under the top of its tree. */
+  type Card = { item: Linkable; name: string; sub: string; depth: number };
   const cards = $derived<Record<"locations" | "npcs" | "encounters", Card[]>>({
-    locations: session.locations.map((l) => ({
+    locations: treeOrder(world.locations).map(({ entry: l, depth }) => ({
       item: { kind: "location", id: l.id },
       name: l.name || m.unnamedLocation,
       sub: t.inScenes(scenesWith(session, { kind: "location", id: l.id }).length),
+      depth,
     })),
-    npcs: session.npcs.map((n) => ({ item: { kind: "npc", id: n.id }, name: n.name || m.unnamedNpc, sub: n.wants ? t.wants(lowerFirst(n.wants)) : t.noMotive })),
-    encounters: (ready ?? []).map((x) => ({ item: { kind: "encounter", id: x.id }, name: x.name, sub: encounterMeta(x.id) ?? "" })),
+    npcs: treeOrder(world.npcs).map(({ entry: n, depth }) => ({
+      item: { kind: "npc", id: n.id },
+      name: n.name || m.unnamedNpc,
+      sub: n.wants ? t.wants(lowerFirst(n.wants)) : t.noMotive,
+      depth,
+    })),
+    encounters: (ready ?? []).map((x) => ({ item: { kind: "encounter", id: x.id }, name: x.name, sub: encounterMeta(x.id) ?? "", depth: 0 })),
   });
 
   const done = $derived(session.checklist.filter((c) => c.done).length);
   const metas = $derived<Record<Section, string>>({
     previously: written(session.previously),
     premise: written(session.premise),
+    summary: written(session.summary),
     partyNote: written(session.partyNote),
-    locations: t.inSession(session.locations.length),
-    npcs: t.inSession(session.npcs.length),
+    locations: t.inSession(linkedIn(session, "location").filter((id) => world.locations.some((l) => l.id === id)).length),
+    npcs: t.inSession(linkedIn(session, "npc").filter((id) => world.npcs.some((n) => n.id === id)).length),
     encounters: ready === null ? "" : t.readyToRun(ready.length),
     checklist: t.doneOf(done, session.checklist.length),
   });
-  const SECTIONS: Section[] = ["previously", "premise", "partyNote", "locations", "npcs", "encounters", "checklist"];
+  const SECTIONS: Section[] = ["previously", "premise", "summary", "partyNote", "locations", "npcs", "encounters", "checklist"];
 </script>
 
 <aside aria-labelledby="across-session">
@@ -81,7 +92,7 @@
       </button>
       {#if open === key}
         <div id="section-{key}" class="body">
-          {#if key === "previously" || key === "premise" || key === "partyNote"}
+          {#if key === "previously" || key === "premise" || key === "summary" || key === "partyNote"}
             <label for="text-{key}" class="sr-only">{t[key]}</label>
             <textarea id="text-{key}" class="text-field" rows="6" maxlength="20000" bind:value={session[key]}></textarea>
           {:else if key === "checklist"}
@@ -98,6 +109,7 @@
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="card"
+                style:--depth={card.depth}
                 draggable="true"
                 ondragstart={(ev) => {
                   // Our own type, not text: a text field it passes over must not take it.
@@ -224,10 +236,12 @@
     font: inherit;
   }
 
+  /* Under its parent, a step in per level. */
   .card {
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    margin-left: calc(var(--depth, 0) * var(--space-4));
     padding: var(--space-2);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);

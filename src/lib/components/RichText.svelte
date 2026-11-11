@@ -2,11 +2,13 @@
   // A rich text field on Tiptap: headings in three sizes, bold, italic, underline and lists, with a small toolbar;
   // Ctrl/Cmd+B, I and U, and Ctrl/Cmd+Z to undo, work as usual. `value` is HTML, always cleaned to the allowed tags.
   // Pasting keeps only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list).
-  // `extended` adds boxed text (a quote, read-aloud text, a note) and a table; inside a table, its button is a dropdown
+  // `extended` turns the headings into a text style dropdown (Paragraph, Heading 1 to 3), adds left, centre and right
+  // alignment, boxed text (a quote, read-aloud text, a note) and a table; inside a table, its button is a dropdown
   // of the table's actions (rows, columns, header row and column, merging or splitting cells). Typing @ tags a Catalog
   // entry or one of the campaign's characters: a list of matches follows the text after the @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when
   // shown. A tag is one piece: Backspace removes it whole.
   import { onDestroy, onMount } from "svelte";
+  import "$lib/styles/prose.css"; // the note's look (.prose.notes) wherever the field is, not only where a screen loads it
   import Menu, { type MenuItem } from "./Menu.svelte";
   import { Editor, type ChainedCommands } from "@tiptap/core";
   import type { MentionNodeAttrs } from "@tiptap/extension-mention";
@@ -34,14 +36,30 @@
   let editor = $state.raw<Editor | null>(null);
   /** Bumped on every change and cursor move, so the toolbar shows what's on where the cursor is. */
   let version = $state(0);
-  const is = (name: string, attrs?: Record<string, unknown>) => (void version, editor?.isActive(name, attrs) ?? false);
+  const is = (name: string | Record<string, unknown>, attrs?: Record<string, unknown>) =>
+    (void version, (typeof name === "string" ? editor?.isActive(name, attrs) : editor?.isActive(name)) ?? false);
 
   type Tool = { id: string; icon: string; label: string; run: (c: ChainedCommands) => ChainedCommands; active?: () => boolean };
   // Headings 1 to 3 are h2 to h4, under the page's own headings; h4 is what the single heading of older notes was.
-  const BASIC: Tool[] = [
+  const HEADINGS: Tool[] = [
     { id: "h2", icon: "ti-h-1", label: t.heading(1), run: (c) => c.toggleHeading({ level: 2 }), active: () => is("heading", { level: 2 }) },
     { id: "h3", icon: "ti-h-2", label: t.heading(2), run: (c) => c.toggleHeading({ level: 3 }), active: () => is("heading", { level: 3 }) },
     { id: "h4", icon: "ti-h-3", label: t.heading(3), run: (c) => c.toggleHeading({ level: 4 }), active: () => is("heading", { level: 4 }) },
+  ];
+  /** The text style dropdown (extended): the same headings, set rather than toggled, and Paragraph to go back. */
+  const STYLES: Tool[] = [
+    { id: "p", icon: "ti-letter-p", label: t.paragraph, run: (c) => c.setParagraph(), active: () => is("paragraph") },
+    { id: "h2", icon: "ti-h-1", label: t.heading(1), run: (c) => c.setHeading({ level: 2 }), active: () => is("heading", { level: 2 }) },
+    { id: "h3", icon: "ti-h-2", label: t.heading(2), run: (c) => c.setHeading({ level: 3 }), active: () => is("heading", { level: 3 }) },
+    { id: "h4", icon: "ti-h-3", label: t.heading(3), run: (c) => c.setHeading({ level: 4 }), active: () => is("heading", { level: 4 }) },
+  ];
+  /** Left is the default, so it clears the alignment rather than storing one. */
+  const ALIGN: Tool[] = [
+    { id: "left", icon: "ti-align-left", label: t.alignLeft, run: (c) => c.unsetTextAlign(), active: () => !is({ textAlign: "center" }) && !is({ textAlign: "right" }) },
+    { id: "center", icon: "ti-align-center", label: t.alignCenter, run: (c) => c.setTextAlign("center"), active: () => is({ textAlign: "center" }) },
+    { id: "right", icon: "ti-align-right", label: t.alignRight, run: (c) => c.setTextAlign("right"), active: () => is({ textAlign: "right" }) },
+  ];
+  const INLINE: Tool[] = [
     { id: "bold", icon: "ti-bold", label: t.bold, run: (c) => c.toggleBold(), active: () => is("bold") },
     { id: "italic", icon: "ti-italic", label: t.italic, run: (c) => c.toggleItalic(), active: () => is("italic") },
     { id: "underline", icon: "ti-underline", label: t.underline, run: (c) => c.toggleUnderline(), active: () => is("underline") },
@@ -71,10 +89,17 @@
       : { label: t.mergeCells, icon: "ti-arrows-join", run: (c) => c.mergeCells() };
   }
   // svelte-ignore state_referenced_locally
-  const TOOLS = extended ? [...BASIC, ...EXTRA] : BASIC;
+  const TOOLS = extended ? [...ALIGN, ...INLINE, ...EXTRA] : [...HEADINGS, ...INLINE];
+  /** The style the cursor is in, if any (a table cell has none: it holds plain text). */
+  const currentStyle = $derived(STYLES.find((s) => s.active?.()) ?? null);
+  const styleItems = $derived<MenuItem[]>(
+    STYLES.map((s) => ({ label: s.label, icon: s.icon, current: s === currentStyle, disabled: !can(s), onselect: () => run(s) })),
+  );
   const inTable = $derived(extended && is("table"));
 
   const run = (tool: Pick<Tool, "run">) => editor && tool.run(editor.chain().focus()).run();
+  /** Whether the tool can do anything where the cursor is (a heading or an alignment can't in a table cell). */
+  const can = (tool: Pick<Tool, "run">) => (void version, !!editor && tool.run(editor.can().chain()).run());
   // An action that can't apply where the cursor is (merging a single cell, say) is greyed out.
   const tableItems = $derived<MenuItem[]>(
     (void version,
@@ -159,7 +184,7 @@
     editor = new Editor({
       element: host!,
       content: cleanHtml(value),
-      extensions: editorExtensions({
+      extensions: editorExtensions(extended, {
         allowSpaces: true,
         items: () => [], // the matches come from search(), so older answers can be dropped
         render: () => ({
@@ -203,10 +228,18 @@
 
 <div class="rich" class:compact>
   <div class="toolbar" role="toolbar" aria-label={t.toolbar(label)}>
+    {#if extended}
+      <Menu id="{id}-style" label={t.textStyle} items={styleItems} align="start" triggerClass="icon-btn tool dropdown">
+        {#snippet trigger()}
+          <i class="ti {(currentStyle ?? STYLES[0]).icon}" aria-hidden="true"></i>
+          <i class="ti ti-chevron-down caret" aria-hidden="true"></i>
+        {/snippet}
+      </Menu>
+    {/if}
     {#each TOOLS as tool (tool.id)}
       {#if tool.id === "table" && inTable}
         <!-- In a table, the table button is a dropdown of what can be done to it. -->
-        <Menu id="{id}-table" label={t.tableActions} items={tableItems} align="start" triggerClass="icon-btn tool table-menu">
+        <Menu id="{id}-table" label={t.tableActions} items={tableItems} align="start" triggerClass="icon-btn tool dropdown">
           {#snippet trigger()}
             <i class="ti ti-table" aria-hidden="true"></i>
             <i class="ti ti-chevron-down caret" aria-hidden="true"></i>
@@ -214,7 +247,9 @@
         </Menu>
       {:else}
         <!-- mousedown is cancelled so the field keeps its selection -->
-        <button class="icon-btn tool" aria-label={tool.label} aria-pressed={tool.active ? tool.active() : undefined} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
+        <!-- greyed out (and never shown pressed) where it can't apply -->
+        {@const usable = can(tool)}
+        <button class="icon-btn tool" aria-label={tool.label} aria-pressed={tool.active ? usable && tool.active() : undefined} disabled={!usable} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
           <i class="ti {tool.icon}" aria-hidden="true"></i>
         </button>
       {/if}
@@ -269,8 +304,14 @@
     border-bottom: var(--border-width) solid var(--color-border);
   }
 
-  /* The table button with the small arrow that marks it as a dropdown: as wide as both. */
-  .toolbar :global(.table-menu) {
+  /* A tool that can't apply where the cursor is (a heading or an alignment in a table cell). */
+  .toolbar :global(.tool:disabled) {
+    color: var(--color-border-strong);
+    cursor: not-allowed;
+  }
+
+  /* A dropdown button (text style, table) with the small arrow that marks it: as wide as both. */
+  .toolbar :global(.dropdown) {
     width: auto;
     padding: 0 var(--space-1);
   }

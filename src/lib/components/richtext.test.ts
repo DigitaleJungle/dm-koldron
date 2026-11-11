@@ -9,7 +9,7 @@ const table = '<table><tbody><tr><th colspan="2" colwidth="120,0">Loot</th></tr>
 
 /** A stored note opened in the editor and saved again, as RichText.svelte does. */
 function roundTrip(stored: string): string {
-  const editor = new Editor({ element: document.createElement("div"), extensions: editorExtensions({ items: () => [] }), content: cleanHtml(stored) });
+  const editor = new Editor({ element: document.createElement("div"), extensions: editorExtensions(true, { items: () => [] }), content: cleanHtml(stored) });
   const saved = cleanHtml(editor.getHTML());
   editor.destroy();
   return saved;
@@ -30,6 +30,13 @@ describe("cleanHtml", () => {
     expect(cleanHtml('<table><tr><td colwidth="0">a</td></tr></table>', { links: true })).not.toContain("style");
   });
 
+  it("keeps a centre or right alignment on paragraphs and headings, and no other style", () => {
+    expect(cleanHtml('<p style="text-align: center; color: red">a</p><h2 style="text-align: right">b</h2><p style="text-align: left">c</p>')).toBe(
+      '<p style="text-align: center">a</p><h2 style="text-align: right">b</h2><p>c</p>',
+    );
+    expect(cleanHtml('<li style="text-align: center">a</li>')).toBe("<li>a</li>");
+  });
+
   it("reads older plain-text notes as text with their line breaks", () => {
     expect(cleanHtml("1 < 2\nand more")).toBe("1 &lt; 2<br>and more");
     expect(isEmpty("<p><br></p>")).toBe(true);
@@ -38,7 +45,8 @@ describe("cleanHtml", () => {
 
 describe("the editor", () => {
   it("keeps a tag, boxed text and a table with merged cells and widths through opening and saving", () => {
-    const saved = roundTrip(`<p>Meet ${goblin}</p><blockquote><p>Read aloud</p></blockquote>${table}`);
+    const saved = roundTrip(`<p>Meet ${goblin}</p><h2 style="text-align: center">Title</h2><blockquote><p>Read aloud</p></blockquote>${table}`);
+    expect(saved).toContain('<h2 style="text-align: center">Title</h2>');
     expect(saved).toContain(`<p>Meet ${goblin}`);
     expect(saved).toContain("<blockquote><p>Read aloud</p></blockquote>");
     expect(saved).toContain(table);

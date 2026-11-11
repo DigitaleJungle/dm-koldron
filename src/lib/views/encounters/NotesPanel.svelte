@@ -14,6 +14,7 @@
   import { untrack } from "svelte";
   import RichText from "$lib/components/RichText.svelte";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
+  import "$lib/styles/prose.css";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
 

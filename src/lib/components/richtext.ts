@@ -14,6 +14,9 @@ const SAFE = /^[A-Za-z0-9_.-]{1,100}$/;
 /** A table cell keeps how many columns and rows it spans (merged cells) and its column widths, nothing else. */
 const SPANS = ["colspan", "rowspan"] as const;
 const SPAN = /^[1-9][0-9]?$/;
+/** Paragraphs and headings keep an alignment other than the default (left), as a `text-align` style and nothing else. */
+const ALIGNED = new Set(["P", "H2", "H3", "H4"]);
+const ALIGNS = new Set(["center", "right"]);
 /** Pixels per column the cell spans, comma separated (as the editor stores them when a column is resized; 0 is a
  *  column of a merged cell without a width of its own). */
 const COLWIDTH = /^[0-9]{1,4}(,[0-9]{1,4}){0,98}$/;
@@ -59,7 +62,9 @@ export function cleanHtml(value: string, { links = false, base }: { links?: bool
       const cell = child.tagName === "TD" || child.tagName === "TH";
       const spans = cell ? SPANS.map((s) => [s, child.getAttribute(s)] as const) : [];
       const colwidth = cell ? child.getAttribute("colwidth") : null;
+      const align = ALIGNED.has(child.tagName) ? (child as HTMLElement).style.textAlign : "";
       [...child.attributes].forEach((a) => child.removeAttribute(a.name));
+      if (ALIGNS.has(align)) child.setAttribute("style", `text-align: ${align}`);
       spans.forEach(([s, v]) => v && v !== "1" && SPAN.test(v) && child.setAttribute(s, v));
       if (colwidth && COLWIDTH.test(colwidth)) {
         child.setAttribute("colwidth", colwidth);

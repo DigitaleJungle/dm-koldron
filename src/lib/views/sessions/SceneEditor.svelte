@@ -74,13 +74,10 @@
   </button>
 </div>
 
-<div class="field">
-  <span class="label">{t.whatHappens}</span>
-  <!-- Keyed: the field fills itself once, so another scene needs a fresh one. -->
-  {#key scene.id}
-    <RichText label={t.whatHappens} extended bind:value={scene.summary} />
-  {/key}
-</div>
+<!-- Keyed: the field fills itself once, so another scene needs a fresh one. Its name is for screen readers only. -->
+{#key scene.id}
+  <RichText label={t.whatHappens} extended bind:value={scene.summary} />
+{/key}
 
 <!-- One block, a row each: the label on the left, its controls on the right. -->
 <section class="block links" aria-label={t.links}>
@@ -197,12 +194,6 @@
   .danger {
     border-color: var(--color-danger);
     color: var(--color-danger);
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
   }
 
   .label {

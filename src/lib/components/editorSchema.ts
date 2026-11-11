@@ -1,9 +1,11 @@
 // What a rich text field may hold (RichText.svelte), as Tiptap extensions: headings 1 to 3 (h2 to h4), bold, italic,
-// underline, lists, boxed text (blockquote), tables whose cells hold text and line breaks, and tags. Kept apart from the
-// component so a test can load and save notes with exactly the same rules.
+// underline, lists, boxed text (blockquote), tables whose cells hold text and line breaks, and tags; an extended field
+// also left, centre and right alignment of paragraphs and headings. Kept apart from the component so a test can load
+// and save notes with exactly the same rules.
 import type { AnyExtension } from "@tiptap/core";
 import Mention, { type MentionOptions } from "@tiptap/extension-mention";
 import { TableCell, TableHeader, TableKit } from "@tiptap/extension-table";
+import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
 
 /** A tag attribute stored as `data-<name>` on the tag's <a>. */
@@ -36,9 +38,10 @@ const inlineCell = <T extends typeof TableCell | typeof TableHeader>(cell: T) =>
     },
   });
 
-/** The extensions; `suggestion` is how typing @ offers what to tag (the field's list of matches). */
-export function editorExtensions(suggestion: MentionOptions["suggestion"]): AnyExtension[] {
+/** The extensions; `extended` adds alignment, `suggestion` is how typing @ offers what to tag (the field's matches). */
+export function editorExtensions(extended: boolean, suggestion: MentionOptions["suggestion"]): AnyExtension[] {
   return [
+    ...(extended ? [TextAlign.configure({ types: ["heading", "paragraph"], alignments: ["left", "center", "right"] })] : []),
     StarterKit.configure({ heading: { levels: [2, 3, 4] }, code: false, codeBlock: false, strike: false, horizontalRule: false, link: false }),
     TableKit.configure({ table: { resizable: true }, tableCell: false, tableHeader: false }),
     inlineCell(TableCell),

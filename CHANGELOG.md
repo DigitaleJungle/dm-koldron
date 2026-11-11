@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.6] - 2026-11-11
+
+### Added
+
+- Sessions: What happens has a Text style dropdown (Paragraph, Heading 1 to 3) in place of the heading buttons, and Align left, centre and right.
+
+### Changed
+
+- Rich text: a tool that can't apply where the cursor is (a heading or an alignment in a table cell) is greyed out.
+- Sessions: the What happens label is gone.
+
+### Fixed
+
+- Rich text: paragraph and table spacing, and table cell padding, apply on every screen, not only after opening the Library, Search or Encounters.
+
 ## [0.5.5] - 2026-11-11
 
 ### Added

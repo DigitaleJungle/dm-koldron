@@ -1,17 +1,25 @@
 <script lang="ts">
-  // A rich text field: headings in three sizes, bold, italic, underline and lists, typed in place (the window's own editing) with a small
-  // toolbar; Ctrl/Cmd+B, I and U work as usual. `value` is HTML, always cleaned to the allowed tags. Pasting keeps
-  // only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list). `extended`
-  // adds a highlighted section and a table (with tools to add and remove rows and columns while the cursor is in one).
-  // Typing @ tags a Catalog entry or one of the campaign's characters: a list of matches follows the text after the
-  // @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when shown.
-  import { onMount } from "svelte";
+  // A rich text field on Tiptap: headings in three sizes, bold, italic, underline and lists, with a small toolbar;
+  // Ctrl/Cmd+B, I and U, and Ctrl/Cmd+Z to undo, work as usual. `value` is HTML, always cleaned to the allowed tags.
+  // Pasting keeps only the text. `compact` shows the toolbar only while the field has focus (for short notes in a list).
+  // `extended` adds boxed text (a quote, read-aloud text, a note) and a table; inside a table, its button is a dropdown
+  // of the table's actions (rows, columns, header row and column, merging or splitting cells). Typing @ tags a Catalog
+  // entry or one of the campaign's characters: a list of matches follows the text after the @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when
+  // shown. A tag is one piece: Backspace removes it whole.
+  import { onDestroy, onMount } from "svelte";
+  import Menu, { type MenuItem } from "./Menu.svelte";
+  import { Editor, type ChainedCommands } from "@tiptap/core";
+  import type { MentionNodeAttrs } from "@tiptap/extension-mention";
+  import { columnResizingPluginKey, TableMap } from "@tiptap/pm/tables";
+  import type { EditorView } from "@tiptap/pm/view";
+  import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
   import { searchAll, type SearchHit } from "$lib/api/search";
   import { errorMessage } from "$lib/api/storage";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
   import { hitMeta } from "$lib/views/search/search";
-  import { cleanHtml, isEmpty } from "./richtext";
+  import { editorExtensions } from "./editorSchema";
+  import { cleanHtml } from "./richtext";
 
   let {
     value = $bindable(""),
@@ -22,144 +30,65 @@
 
   const t = strings.richText;
   const id = $props.id();
-  let editor: HTMLDivElement | undefined = $state();
-  let active = $state<Record<string, boolean>>({});
+  let host: HTMLDivElement | undefined = $state();
+  let editor = $state.raw<Editor | null>(null);
+  /** Bumped on every change and cursor move, so the toolbar shows what's on where the cursor is. */
+  let version = $state(0);
+  const is = (name: string, attrs?: Record<string, unknown>) => (void version, editor?.isActive(name, attrs) ?? false);
 
-  // A tool with a `block` turns the line into that block (again: back to a paragraph). Headings 1 to 3 are h2 to h4,
-  // under the page's own headings; h4 is what the single heading of older notes was, so those read as Heading 3.
-  type Tool = { command: string; icon: string; label: string; block?: string };
+  type Tool = { id: string; icon: string; label: string; run: (c: ChainedCommands) => ChainedCommands; active?: () => boolean };
+  // Headings 1 to 3 are h2 to h4, under the page's own headings; h4 is what the single heading of older notes was.
   const BASIC: Tool[] = [
-    { command: "h2", icon: "ti-h-1", label: t.heading(1), block: "h2" },
-    { command: "h3", icon: "ti-h-2", label: t.heading(2), block: "h3" },
-    { command: "h4", icon: "ti-h-3", label: t.heading(3), block: "h4" },
-    { command: "bold", icon: "ti-bold", label: t.bold },
-    { command: "italic", icon: "ti-italic", label: t.italic },
-    { command: "underline", icon: "ti-underline", label: t.underline },
-    { command: "insertUnorderedList", icon: "ti-list", label: t.bullets },
-    { command: "insertOrderedList", icon: "ti-list-numbers", label: t.numbers },
+    { id: "h2", icon: "ti-h-1", label: t.heading(1), run: (c) => c.toggleHeading({ level: 2 }), active: () => is("heading", { level: 2 }) },
+    { id: "h3", icon: "ti-h-2", label: t.heading(2), run: (c) => c.toggleHeading({ level: 3 }), active: () => is("heading", { level: 3 }) },
+    { id: "h4", icon: "ti-h-3", label: t.heading(3), run: (c) => c.toggleHeading({ level: 4 }), active: () => is("heading", { level: 4 }) },
+    { id: "bold", icon: "ti-bold", label: t.bold, run: (c) => c.toggleBold(), active: () => is("bold") },
+    { id: "italic", icon: "ti-italic", label: t.italic, run: (c) => c.toggleItalic(), active: () => is("italic") },
+    { id: "underline", icon: "ti-underline", label: t.underline, run: (c) => c.toggleUnderline(), active: () => is("underline") },
+    { id: "bullets", icon: "ti-list", label: t.bullets, run: (c) => c.toggleBulletList(), active: () => is("bulletList") },
+    { id: "numbers", icon: "ti-list-numbers", label: t.numbers, run: (c) => c.toggleOrderedList(), active: () => is("orderedList") },
   ];
   const EXTRA: Tool[] = [
-    { command: "highlight", icon: "ti-highlight", label: t.highlight, block: "blockquote" },
-    { command: "table", icon: "ti-table-plus", label: t.table },
+    { id: "boxed", icon: "ti-blockquote", label: t.boxed, run: (c) => c.toggleBlockquote(), active: () => is("blockquote") },
+    // A header row and one row of two columns.
+    { id: "table", icon: "ti-table-plus", label: t.table, run: (c) => c.insertTable({ rows: 2, cols: 2, withHeaderRow: true }) },
   ];
+  /** The table button's dropdown while the cursor is in a table; removing the last row or column removes the table. */
+  type Action = { label: string; icon: string; run: (c: ChainedCommands) => ChainedCommands };
+  const TABLE_ACTIONS: Action[] = [
+    { label: t.addRow, icon: "ti-row-insert-bottom", run: (c) => c.addRowAfter() },
+    { label: t.addColumn, icon: "ti-column-insert-right", run: (c) => c.addColumnAfter() },
+    { label: t.removeRow, icon: "ti-row-remove", run: (c) => c.deleteRow() },
+    { label: t.removeColumn, icon: "ti-column-remove", run: (c) => c.deleteColumn() },
+    { label: t.headerRow, icon: "ti-table-row", run: (c) => c.toggleHeaderRow() },
+    { label: t.headerColumn, icon: "ti-table-column", run: (c) => c.toggleHeaderColumn() },
+  ];
+  /** One action that merges the selected cells, or splits a merged one: named for what it will do. */
+  function mergeOrSplit(): Action {
+    const can = editor?.can();
+    return can?.splitCell() && !can.mergeCells()
+      ? { label: t.splitCell, icon: "ti-arrows-split", run: (c) => c.splitCell() }
+      : { label: t.mergeCells, icon: "ti-arrows-join", run: (c) => c.mergeCells() };
+  }
   // svelte-ignore state_referenced_locally
   const TOOLS = extended ? [...BASIC, ...EXTRA] : BASIC;
-  /** Shown while the cursor is in a table. */
-  const TABLE_TOOLS = [
-    { id: "row", icon: "ti-row-insert-bottom", label: t.addRow },
-    { id: "column", icon: "ti-column-insert-right", label: t.addColumn },
-    { id: "removeRow", icon: "ti-row-remove", label: t.removeRow },
-    { id: "removeColumn", icon: "ti-column-remove", label: t.removeColumn },
-  ] as const;
-  let cell = $state<HTMLTableCellElement | null>(null);
+  const inTable = $derived(extended && is("table"));
 
-  // Tags can't be edited letter by letter: they're one piece, removed as a whole.
-  const lockTags = () => editor?.querySelectorAll("a[data-kind]").forEach((a) => ((a as HTMLElement).contentEditable = "false"));
-
-  // Filled once; after that the field owns its content and only reports it back.
-  onMount(() => {
-    if (!editor) return;
-    editor.innerHTML = cleanHtml(value);
-    lockTags();
-  });
-
-  export const focus = () => editor?.focus();
-
-  function changed() {
-    // An emptied field leaves a stray <br>; it counts as empty, so clearing a note isn't a change.
-    if (editor) value = isEmpty(editor.innerHTML) ? "" : cleanHtml(editor.innerHTML);
-    update();
-    findTag();
-  }
-
-  // shortcut: document.execCommand is deprecated but the only built-in rich editing; WebView2 and WebKit both support it.
-  function run(tool: Tool) {
-    editor?.focus();
-    if (tool.command === "table") {
-      // A header row and one row of two columns, then a line to go on typing after it.
-      document.execCommand("insertHTML", false, "<table><tbody><tr><th><br></th><th><br></th></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>");
-    } else if (tool.block) document.execCommand("formatBlock", false, active[tool.command] ? "p" : tool.block);
-    else document.execCommand(tool.command);
-    changed();
-  }
-
-  /** The table cell the cursor is in, if any. */
-  function cellAtCursor(): HTMLTableCellElement | null {
-    const node = document.getSelection()?.anchorNode ?? null;
-    const found = (node instanceof Element ? node : node?.parentElement)?.closest("td, th");
-    return found && editor?.contains(found) ? (found as HTMLTableCellElement) : null;
-  }
-
-  const blankCell = (tag: "td" | "th") => Object.assign(document.createElement(tag), { innerHTML: "<br>" });
-
-  function tableTool(id: (typeof TABLE_TOOLS)[number]["id"]) {
-    const at = cell;
-    const row = at?.parentElement as HTMLTableRowElement | null;
-    const table = at?.closest("table");
-    if (!at || !row || !table) return;
-    const rows = [...table.rows];
-    if (id === "row") row.after(newRow(row));
-    else if (id === "column") rows.forEach((r) => r.insertBefore(blankCell(r.cells[0]?.tagName === "TH" ? "th" : "td"), r.cells[at.cellIndex + 1] ?? null));
-    else if (id === "removeRow") row.remove();
-    else rows.forEach((r) => r.cells[at.cellIndex]?.remove());
-    // A table with no rows or no columns left goes.
-    if (!table.rows.length || ![...table.rows].some((r) => r.cells.length)) table.remove();
-    editor?.focus();
-    changed();
-  }
-
-  /** An empty row like `row` (body cells, also under the header row). */
-  function newRow(row: HTMLTableRowElement): HTMLTableRowElement {
-    const next = document.createElement("tr");
-    for (let i = 0; i < row.cells.length; i++) next.appendChild(blankCell("td"));
-    return next;
-  }
-
-  // Which tools are on where the cursor is.
-  function update() {
-    if (!editor || !editor.contains(document.getSelection()?.anchorNode ?? null)) return;
-    const block = String(document.queryCommandValue("formatBlock")).toLowerCase();
-    const anchor = document.getSelection()?.anchorNode ?? null;
-    const inQuote = !!(anchor instanceof Element ? anchor : anchor?.parentElement)?.closest("blockquote");
-    active = Object.fromEntries(
-      TOOLS.map((tool) => [
-        tool.command,
-        tool.command === "highlight" ? inQuote : tool.command === "table" ? false : tool.block ? block === tool.block : document.queryCommandState(tool.command),
-      ]),
-    );
-    cell = extended ? cellAtCursor() : null;
-  }
-
-  function paste(e: ClipboardEvent) {
-    e.preventDefault();
-    document.execCommand("insertText", false, e.clipboardData?.getData("text/plain") ?? "");
-  }
+  const run = (tool: Pick<Tool, "run">) => editor && tool.run(editor.chain().focus()).run();
+  // An action that can't apply where the cursor is (merging a single cell, say) is greyed out.
+  const tableItems = $derived<MenuItem[]>(
+    (void version,
+    [...TABLE_ACTIONS, mergeOrSplit()].map((a) => ({ label: a.label, icon: a.icon, onselect: () => run(a), disabled: !editor || !a.run(editor.can().chain()).run() }))),
+  );
 
   // ---- Tags ------------------------------------------------------------------------------------
-  /** The @ being typed: its text node and place, and where to show the matches. */
-  let tagging = $state<{ node: Text; at: number; query: string; top: number; left: number } | null>(null);
+  /** The @ being typed: what follows it, where to show the matches, and how to pick one. */
+  let tagging = $state<{ query: string; top: number; left: number; pick: (hit: SearchHit) => void } | null>(null);
   let hits = $state<SearchHit[]>([]);
   let hitsFor = $state<string | null>(null); // the query the shown hits are for
   let searchError = $state<string | null>(null);
   let current = $state(0);
   let asked = 0; // answers to older keystrokes are dropped
-
-  // An @ at the start or after a space, then up to 40 letters without another @, right before the cursor.
-  function findTag() {
-    const selection = document.getSelection();
-    const node = selection?.anchorNode;
-    if (!selection?.isCollapsed || !(node instanceof Text) || !editor?.contains(node)) return void (tagging = null);
-    const before = node.data.slice(0, selection.anchorOffset);
-    const match = /(?:^|\s)@([^@\n]{0,40})$/.exec(before);
-    if (!match) return void (tagging = null);
-    const at = before.length - match[1].length - 1;
-    const range = document.createRange();
-    range.setStart(node, at);
-    range.setEnd(node, at + 1);
-    const box = range.getBoundingClientRect();
-    tagging = { node, at, query: match[1], top: box.bottom + 4, left: box.left };
-    void search(match[1]);
-  }
 
   async function search(query: string) {
     if (query === hitsFor) return;
@@ -174,77 +103,124 @@
     }
   }
 
-  function insertTag(hit: SearchHit) {
-    const selection = document.getSelection();
-    if (!tagging || !selection?.anchorNode) return;
-    const range = document.createRange();
-    range.setStart(tagging.node, tagging.at);
-    range.setEnd(selection.anchorNode, selection.anchorOffset);
-    range.deleteContents();
-    const tag = document.createElement("a");
-    Object.entries({ kind: hit.kind, pack: hit.pack, index: hit.index, campaign: hit.campaign ?? "" }).forEach(([k, v]) => v && (tag.dataset[k] = v));
-    tag.textContent = hit.name;
-    tag.contentEditable = "false";
-    const space = document.createTextNode(" "); // so typing goes on after the tag, not inside it
-    range.insertNode(space);
-    range.insertNode(tag);
-    range.setStartAfter(space);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    tagging = null;
-    changed();
+  function showTagging(props: SuggestionProps<unknown, MentionNodeAttrs>) {
+    const box = props.clientRect?.();
+    const pick = (hit: SearchHit) => {
+      // Mention's id and label, plus a tag's own attributes (see editorSchema.ts; the id isn't kept).
+      const attrs = { id: `${hit.kind}/${hit.pack}/${hit.index}`, label: hit.name, kind: hit.kind, pack: hit.pack, index: hit.index, campaign: hit.campaign ?? null };
+      props.command(attrs);
+    };
+    tagging = { query: props.query, top: (box?.bottom ?? 0) + 4, left: box?.left ?? 0, pick };
+    void search(props.query);
   }
 
-  function keydown(e: KeyboardEvent) {
-    if (!tagging) return;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      tagging = null;
-    } else if (hits.length && hitsFor === tagging.query && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-      e.preventDefault();
-      current = (current + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length;
-    } else if (hits.length && hitsFor === tagging.query && (e.key === "Enter" || e.key === "Tab")) {
-      e.preventDefault();
-      insertTag(hits[current]);
+  function tagKey({ event }: SuggestionKeyDownProps): boolean {
+    if (!tagging) return false;
+    const ready = hits.length > 0 && hitsFor === tagging.query;
+    if (event.key === "Escape") tagging = null;
+    else if (ready && (event.key === "ArrowDown" || event.key === "ArrowUp")) current = (current + (event.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length;
+    else if (ready && (event.key === "Enter" || event.key === "Tab")) tagging.pick(hits[current]);
+    else return false;
+    return true;
+  }
+
+  /** Double-clicking a column's edge clears that column's width, so it sizes itself again; false when not on an edge. */
+  function autoWidth(view: EditorView): boolean {
+    const handle = columnResizingPluginKey.getState(view.state)?.activeHandle ?? -1;
+    if (handle < 0) return false;
+    const resolved = view.state.doc.resolve(handle);
+    const table = resolved.node(-1);
+    const start = resolved.start(-1);
+    const map = TableMap.get(table);
+    const edge = resolved.nodeAfter;
+    if (!edge) return false;
+    const col = map.colCount(resolved.pos - start) + edge.attrs.colspan - 1; // the column whose right edge it is
+    const tr = view.state.tr;
+    for (let row = 0; row < map.height; row++) {
+      const index = row * map.width + col;
+      if (row > 0 && map.map[index] === map.map[index - map.width]) continue; // a cell spanning rows: done already
+      const pos = map.map[index];
+      const cell = table.nodeAt(pos);
+      const widths: number[] | null = cell?.attrs.colwidth ?? null;
+      if (!cell || !widths) continue;
+      const next = widths.slice();
+      next[cell.attrs.colspan === 1 ? 0 : col - map.colCount(pos)] = 0; // 0: no width of its own (as prosemirror-tables counts it)
+      tr.setNodeMarkup(start + pos, null, { ...cell.attrs, colwidth: next.some((w) => w > 0) ? next : null });
     }
+    if (tr.docChanged) view.dispatch(tr);
+    return true;
   }
-</script>
 
-<svelte:document onselectionchange={update} />
+  // ---- The editor --------------------------------------------------------------------------------
+  let pastingText = false;
+
+  // Filled once; after that the field owns its content and only reports it back.
+  onMount(() => {
+    editor = new Editor({
+      element: host!,
+      content: cleanHtml(value),
+      extensions: editorExtensions({
+        allowSpaces: true,
+        items: () => [], // the matches come from search(), so older answers can be dropped
+        render: () => ({
+          onStart: showTagging,
+          onUpdate: showTagging,
+          onKeyDown: tagKey,
+          onExit: () => (tagging = null),
+        }),
+      }),
+      editorProps: {
+        attributes: { class: "editor prose notes", role: "textbox", "aria-multiline": "true", "aria-label": label, "aria-controls": `${id}-tags` },
+        handleDoubleClick: (view) => autoWidth(view),
+        // Only the text: pasted HTML would bring its own look.
+        handlePaste: (view, event) => {
+          if (pastingText) return false;
+          pastingText = true;
+          view.pasteText(event.clipboardData?.getData("text/plain") ?? "");
+          pastingText = false;
+          return true;
+        },
+      },
+      onUpdate: ({ editor: e }) => {
+        value = e.isEmpty ? "" : cleanHtml(e.getHTML());
+        version++;
+      },
+      onSelectionUpdate: () => version++,
+      onBlur: () => (tagging = null),
+    });
+  });
+
+  onDestroy(() => editor?.destroy());
+
+  // The highlighted match, for screen readers.
+  $effect(() => {
+    const dom = editor?.view.dom;
+    if (!dom) return;
+    if (tagging && hits.length) dom.setAttribute("aria-activedescendant", `${id}-tag-${current}`);
+    else dom.removeAttribute("aria-activedescendant");
+  });
+</script>
 
 <div class="rich" class:compact>
   <div class="toolbar" role="toolbar" aria-label={t.toolbar(label)}>
-    {#each TOOLS as tool (tool.command)}
-      <!-- mousedown is cancelled so the field keeps its selection -->
-      <button class="icon-btn tool" aria-label={tool.label} aria-pressed={tool.command === "table" ? undefined : !!active[tool.command]} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
-        <i class="ti {tool.icon}" aria-hidden="true"></i>
-      </button>
-    {/each}
-    {#if cell}
-      <span class="divider" aria-hidden="true"></span>
-      {#each TABLE_TOOLS as tool (tool.id)}
-        <button class="icon-btn tool" aria-label={tool.label} onmousedown={(e) => e.preventDefault()} onclick={() => tableTool(tool.id)}>
+    {#each TOOLS as tool (tool.id)}
+      {#if tool.id === "table" && inTable}
+        <!-- In a table, the table button is a dropdown of what can be done to it. -->
+        <Menu id="{id}-table" label={t.tableActions} items={tableItems} align="start" triggerClass="icon-btn tool table-menu">
+          {#snippet trigger()}
+            <i class="ti ti-table" aria-hidden="true"></i>
+            <i class="ti ti-chevron-down caret" aria-hidden="true"></i>
+          {/snippet}
+        </Menu>
+      {:else}
+        <!-- mousedown is cancelled so the field keeps its selection -->
+        <button class="icon-btn tool" aria-label={tool.label} aria-pressed={tool.active ? tool.active() : undefined} onmousedown={(e) => e.preventDefault()} onclick={() => run(tool)}>
           <i class="ti {tool.icon}" aria-hidden="true"></i>
         </button>
-      {/each}
-    {/if}
+      {/if}
+    {/each}
   </div>
-  <div
-    bind:this={editor}
-    class="editor prose"
-    contenteditable="true"
-    role="textbox"
-    aria-multiline="true"
-    aria-label={label}
-    aria-controls="{id}-tags"
-    aria-activedescendant={tagging && hits.length ? `${id}-tag-${current}` : undefined}
-    tabindex="0"
-    oninput={changed}
-    onpaste={paste}
-    onkeydown={keydown}
-    onfocusout={() => (tagging = null)}
-  ></div>
+  <div class="host" bind:this={host}></div>
 </div>
 
 {#if tagging}
@@ -259,7 +235,7 @@
     <ul id="{id}-tags" role="listbox" aria-label={t.tags}>
       {#each hits as hit, i (`${hit.kind}/${hit.pack}/${hit.index}`)}
         <!-- svelte-ignore a11y_click_events_have_key_events: the field's arrow keys and Enter drive the options -->
-        <li id="{id}-tag-{i}" role="option" aria-selected={i === current} onmousedown={(e) => e.preventDefault()} onclick={() => insertTag(hit)} onmousemove={() => (current = i)}>
+        <li id="{id}-tag-{i}" role="option" aria-selected={i === current} onmousedown={(e) => e.preventDefault()} onclick={() => tagging?.pick(hit)} onmousemove={() => (current = i)}>
           <span class="name">{hit.name}</span>
           <span class="meta">{hitMeta(hit)}</span>
         </li>
@@ -293,23 +269,15 @@
     border-bottom: var(--border-width) solid var(--color-border);
   }
 
-  .divider {
-    align-self: stretch;
-    width: var(--border-width);
-    margin: var(--space-1);
-    background: var(--color-border);
+  /* The table button with the small arrow that marks it as a dropdown: as wide as both. */
+  .toolbar :global(.table-menu) {
+    width: auto;
+    padding: 0 var(--space-1);
   }
 
-  /* A highlighted section stands out from the field it's in (.prose gives it the field's own colour). */
-  .editor :global(blockquote) {
-    background: var(--color-accent-soft);
-  }
-
-  /* Every cell outlined while editing, so an empty table can be seen and clicked into. */
-  .editor :global(th),
-  .editor :global(td) {
-    min-width: var(--space-8);
-    border: var(--border-width) solid var(--color-border);
+  .toolbar :global(.caret) {
+    margin-left: calc(-1 * var(--space-1));
+    font-size: var(--icon-size-sm);
   }
 
   /* Short notes in a list show their toolbar only while being written. */
@@ -317,8 +285,15 @@
     display: none;
   }
 
-  /* .prose gives the text its look; its reading width and centring (margin: auto) don't belong in a field. */
-  .editor {
+  .host {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The editable area Tiptap makes. .prose gives the text its look; its reading width and centring (margin: auto)
+     don't belong in a field. */
+  .host :global(.editor) {
     flex: 1;
     max-width: none;
     margin: 0;
@@ -328,20 +303,79 @@
     outline: none;
   }
 
-  .rich:not(.compact) .editor {
+  .rich:not(.compact) .host :global(.editor) {
     min-height: calc(8 * var(--text-md) * var(--leading-normal));
   }
 
-  .compact .editor {
+  .compact .host :global(.editor) {
     min-height: calc(2 * var(--text-md) * var(--leading-normal));
   }
 
-  .editor :global(:first-child) {
+  .host :global(.editor > :first-child) {
     margin-top: 0;
   }
 
-  .editor :global(:last-child) {
+  .host :global(.editor > :last-child) {
     margin-bottom: 0;
+  }
+
+  /* Boxed text: set apart from the text around it by a bar on the left, for a quote, read-aloud text or a note. */
+  .host :global(blockquote) {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    border-left: var(--border-width-thick) solid var(--color-border-strong);
+    border-radius: 0;
+    background: var(--color-bg);
+  }
+
+  /* Every cell outlined while editing, so an empty table can be seen and clicked into; cells picked together tinted. */
+  .host :global(th),
+  .host :global(td) {
+    min-width: var(--space-8);
+    border: var(--border-width) solid var(--color-border);
+  }
+
+  /* Columns are resized by dragging a cell's right edge (Tiptap's own handle; prosemirror-tables' base styles, here
+     with the app's colours). A table wider than the field scrolls sideways. */
+  .host :global(.tableWrapper) {
+    overflow-x: auto;
+  }
+
+  .host :global(.editor table) {
+    table-layout: fixed;
+  }
+
+  .host :global(.editor td),
+  .host :global(.editor th) {
+    position: relative;
+    box-sizing: border-box;
+  }
+
+  .host :global(.column-resize-handle) {
+    position: absolute;
+    top: 0;
+    right: calc(-1 * var(--border-width-thick));
+    bottom: 0;
+    z-index: 1;
+    width: calc(2 * var(--border-width-thick));
+    background: var(--color-accent);
+    pointer-events: none;
+  }
+
+  .host :global(.resize-cursor) {
+    cursor: col-resize;
+  }
+
+  /* Cells touch: one shared border between them, no spacing. */
+  .host :global(table) {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+
+  .host :global(.selectedCell) {
+    background: var(--color-accent-soft);
   }
 
   /* The matches for an @ (a .popover), under it; fixed, so a scrolling panel doesn't cut it off. */

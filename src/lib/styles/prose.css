@@ -68,6 +68,29 @@
   margin-bottom: 0;
 }
 
+/* Rich text notes, the same in the editor and shown (RichText.svelte, NotesPanel.svelte): a new paragraph leaves a full
+   blank line, a new line none; a table sits right under the text before it and leaves the blank line below itself (on
+   its wrapper, when the editor gives it one). :where keeps the paragraph rule weak, so a last child's zero margin wins. */
+.prose.notes :where(p:not(:last-child)) {
+  margin-bottom: var(--space-6);
+}
+
+.prose.notes p:has(+ table),
+.prose.notes p:has(+ .tableWrapper),
+.prose.notes td p,
+.prose.notes th p {
+  margin-bottom: 0;
+}
+
+.prose.notes table,
+.prose.notes .tableWrapper {
+  margin: 0 0 var(--space-6);
+}
+
+.prose.notes .tableWrapper table {
+  margin: 0;
+}
+
 .prose table {
   width: 100%;
   margin: 0 0 var(--space-4);

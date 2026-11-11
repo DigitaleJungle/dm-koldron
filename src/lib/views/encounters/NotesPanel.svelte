@@ -228,7 +228,7 @@
   {#if isEmpty(value)}
     <p class="muted">{t.empty}</p>
   {:else}
-    <div class="note-text prose">{@html cleanHtml(value, { links: true, base: libraryHome() })}</div>
+    <div class="note-text prose notes">{@html cleanHtml(value, { links: true, base: libraryHome() })}</div>
   {/if}
 {/snippet}
 

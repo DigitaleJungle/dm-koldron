@@ -1,6 +1,6 @@
 <script lang="ts" module>
-  /** An item runs `onselect`, or opens a submenu of `items` (one level deep). */
-  export type MenuItem = { label: string; onselect?: () => void; items?: MenuItem[]; disabled?: boolean; current?: boolean };
+  /** An item runs `onselect`, or opens a submenu of `items` (one level deep); `icon` is a Tabler class shown before its label. */
+  export type MenuItem = { label: string; icon?: string; onselect?: () => void; items?: MenuItem[]; disabled?: boolean; current?: boolean };
 </script>
 
 <script lang="ts">
@@ -145,7 +145,8 @@
       aria-current={item.current || undefined}
       onclick={() => select(item)}
     >
-      <span>{item.label}</span>
+      {#if item.icon}<i class="ti {item.icon} item-icon" aria-hidden="true"></i>{/if}
+      <span class="item-label">{item.label}</span>
       {#if item.current}
         <i class="ti ti-check check" aria-hidden="true"></i>
       {/if}
@@ -214,6 +215,16 @@
     font-size: var(--text-sm);
     white-space: nowrap;
     cursor: pointer;
+  }
+
+  /* The label takes the room, so an icon sits before it and the check or chevron stays at the end. */
+  .item-label {
+    flex: 1;
+    text-align: left;
+  }
+
+  .item-icon {
+    font-size: var(--icon-size);
   }
 
   [role="menuitem"]:hover,

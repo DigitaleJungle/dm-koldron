@@ -117,6 +117,7 @@
   --radius-lg: 12px; /* modals, large panels */
   --radius-pill: 999px; /* not for main UI in Koldron; kept for existing round avatars and badges */
   --border-width: 1px;
+  --border-width-thick: 2px; /* the bar beside boxed text */
   --focus-ring: 2px;
   --control-height-sm: 28px;
   --control-height: 36px;

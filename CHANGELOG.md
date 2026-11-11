@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.5] - 2026-11-11
+
+### Added
+
+- Rich text: tables can be resized (drag a column's edge; double-click it for automatic width), and have header row and column toggles and merging or splitting cells, all in a Table dropdown while the cursor is in a table.
+
+### Changed
+
+- Rich text: every rich text field (encounter notes, map pins, What happens) now uses the Tiptap editor; undo covers everything, and a tag is removed whole with Backspace.
+- Rich text: the highlighted section is now boxed text, set apart by a bar on its left.
+- Rich text: a new paragraph leaves a full blank line; table cells hold text and line breaks, and a table sits right under the text before it with a blank line below it.
+
+### Fixed
+
+- Rich text: merged cells and column widths are kept when a note is saved.
+
 ## [0.5.4] - 2026-11-11
 
 ### Added

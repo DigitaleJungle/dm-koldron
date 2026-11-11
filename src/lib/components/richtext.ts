@@ -11,6 +11,12 @@ const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "SVG", 
 /** A tag's attributes: what it is, its pack, its index, and a character's campaign. */
 const TAG_FIELDS = ["kind", "pack", "index", "campaign"] as const;
 const SAFE = /^[A-Za-z0-9_.-]{1,100}$/;
+/** A table cell keeps how many columns and rows it spans (merged cells) and its column widths, nothing else. */
+const SPANS = ["colspan", "rowspan"] as const;
+const SPAN = /^[1-9][0-9]?$/;
+/** Pixels per column the cell spans, comma separated (as the editor stores them when a column is resized; 0 is a
+ *  column of a merged cell without a width of its own). */
+const COLWIDTH = /^[0-9]{1,4}(,[0-9]{1,4}){0,98}$/;
 
 export type Tag = Pick<SearchHit, "kind" | "pack" | "index" | "campaign">;
 
@@ -50,7 +56,17 @@ export function cleanHtml(value: string, { links = false, base }: { links?: bool
         child.replaceWith(...child.childNodes);
         continue;
       }
+      const cell = child.tagName === "TD" || child.tagName === "TH";
+      const spans = cell ? SPANS.map((s) => [s, child.getAttribute(s)] as const) : [];
+      const colwidth = cell ? child.getAttribute("colwidth") : null;
       [...child.attributes].forEach((a) => child.removeAttribute(a.name));
+      spans.forEach(([s, v]) => v && v !== "1" && SPAN.test(v) && child.setAttribute(s, v));
+      if (colwidth && COLWIDTH.test(colwidth)) {
+        child.setAttribute("colwidth", colwidth);
+        // Shown (not stored): the same width as in the editor; none when no column of it has a width of its own.
+        const width = colwidth.split(",").reduce((sum, w) => sum + Number(w), 0);
+        if (links && width > 0) child.setAttribute("style", `width: ${width}px`);
+      }
       if (tag) {
         TAG_FIELDS.forEach((f) => tag[f] && child.setAttribute(`data-${f}`, tag[f]!));
         if (links) child.setAttribute("href", tagAddress(tag, base));

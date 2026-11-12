@@ -230,7 +230,12 @@
     opacity: 1;
   }
 
+  /* Stays in view while the scenes scroll under it. */
   .label {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-bg);
     margin: 0;
     padding: 0 var(--space-1) var(--space-1);
     color: var(--color-text-muted);

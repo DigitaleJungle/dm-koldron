@@ -22,7 +22,7 @@
   import { difficulty, monsterXp } from "$lib/views/encounters/difficulty";
   import { characterLevel, encounterParty, entryKey, rowsByKey } from "$lib/views/encounters/roster";
   import Checklist from "./Checklist.svelte";
-  import ManageWorld from "./ManageWorld.svelte";
+  import SessionWorldEntry from "./SessionWorldEntry.svelte";
   import SceneEditor from "./SceneEditor.svelte";
   import SceneList from "./SceneList.svelte";
   import SessionAside from "./SessionAside.svelte";
@@ -120,6 +120,14 @@
   }
 
   const encounterName = (eid: string) => encounterById.get(eid)?.name ?? (all === null ? t.loading : t.encounters.missing);
+  /** Just the difficulty, for the Encounters section. */
+  function encounterBand(eid: string): string | null {
+    const x = encounterById.get(eid);
+    if (!x) return null;
+    const band = rate(x).band;
+    return band ? e.meter.bands[band] : e.meter.noRating;
+  }
+
   function encounterMeta(eid: string): string | null {
     const x = encounterById.get(eid);
     if (!x) return null;
@@ -131,7 +139,7 @@
   /** The open scene, unless a full view (`pane`) is open instead. */
   let selected = $state<string | null>(null);
   let pane = $state<Pane | null>(null);
-  /** The location or NPC open in Manage locations' or Manage NPCs' editor. */
+  /** The location or NPC open in the editor (`pane` "locations" or "npcs"). */
   let worldEditing = $state<string | null>(null);
   let section = $state<Section | null>(null);
   const index = $derived(pane ? -1 : draft.scenes.findIndex((s) => s.id === selected));
@@ -148,14 +156,21 @@
     openScene(scene.id);
   }
 
-  /** Opens the new location in Manage locations' editor, with the cursor in its name. */
-  async function nameLocation(lid: string) {
-    pane = "locations";
-    worldEditing = lid;
+  /** Opens a location or NPC in the editor, with the cursor in its name. */
+  async function editWorld(kind: "location" | "npc", wid: string) {
+    [pane, worldEditing] = [kind === "location" ? "locations" : "npcs", wid];
     await tick();
-    const field = document.getElementById(`loc-name-${lid}`) as HTMLInputElement | null;
+    const field = document.getElementById(`${kind === "location" ? "loc" : "npc"}-name-${wid}`) as HTMLInputElement | null;
     field?.focus();
     field?.select();
+  }
+
+  /** Back to the scene, with the focus on the entry's pencil when its tree is open. */
+  async function closeWorld() {
+    const wid = worldEditing;
+    [pane, worldEditing] = [null, null];
+    await tick();
+    document.querySelector<HTMLElement>(`[data-edit="${wid}"]`)?.focus();
   }
 
   function removeScene() {
@@ -448,8 +463,28 @@
     </header>
 
     <div class="columns">
-      <div class="col" use:keepScroll={{ id: "session-scenes", url: page.url.href, ready: true }}>
-        <SceneList session={draft} world={world.world} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} onmove={(from, to) => (draft.scenes = moveTo(draft.scenes, from, to))} />
+      <div class="col left">
+        <div class="scenes" use:keepScroll={{ id: "session-scenes", url: page.url.href, ready: true }}>
+          <SceneList session={draft} world={world.world} selected={pane ? null : selected} dragging={dragged !== null} onselect={openScene} onadd={addScene} ondrop={dropOn} onmove={(from, to) => (draft.scenes = moveTo(draft.scenes, from, to))} />
+        </div>
+        <div class="linkables" use:keepScroll={{ id: "session-linkables", url: page.url.href, ready: true }}>
+          <SessionAside
+            bind:session={draft}
+            keys={["locations", "npcs", "encounters"]}
+            heading={false}
+            bind:world={() => world.world!, (v) => (world.world = v)}
+            bind:open={section}
+            {lastDrop}
+            {ready}
+            {encounterError}
+            encountersHref={encountersBase}
+            encounterMeta={encounterBand}
+            onmanage={(p) => ([pane, worldEditing] = [p, null])}
+            onedit={editWorld}
+            ondragstart={startDrag}
+            ondragend={endDrag}
+          />
+        </div>
       </div>
       <main
         class="col editor"
@@ -472,15 +507,15 @@
       >
         {#if pane}
           <div class="pane">
-            {#if pane === "locations" || pane === "npcs"}
-              <ManageWorld kind={pane === "locations" ? "location" : "npc"} bind:editing={worldEditing} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
+            {#if (pane === "locations" || pane === "npcs") && worldEditing}
+              <SessionWorldEntry kind={pane === "locations" ? "location" : "npc"} id={worldEditing} onclose={closeWorld} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} />
             {:else}
               <h2>{t.sections.checklist}</h2>
               <Checklist bind:items={draft.checklist} placeholder={t.checklist.placeholder} />
             {/if}
           </div>
         {:else if index >= 0}
-          <SceneEditor bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={nameLocation} onremove={removeScene} />
+          <SceneEditor bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={(lid) => editWorld("location", lid)} onremove={removeScene} />
         {:else}
           <p class="muted">{t.scenes.empty}</p>
         {/if}
@@ -488,14 +523,16 @@
       <div class="col" use:keepScroll={{ id: "session-aside", url: page.url.href, ready: true }}>
         <SessionAside
           bind:session={draft}
-          world={world.world}
+          keys={["previously", "premise", "summary", "partyNote", "checklist"]}
+          bind:world={() => world.world!, (v) => (world.world = v)}
           bind:open={section}
           {lastDrop}
           {ready}
           {encounterError}
           encountersHref={encountersBase}
-          {encounterMeta}
+          encounterMeta={encounterBand}
           onmanage={(p) => ([pane, worldEditing] = [p, null])}
+          onedit={editWorld}
           ondragstart={startDrag}
           ondragend={endDrag}
         />
@@ -691,6 +728,29 @@
     overflow-y: auto;
   }
 
+  /* The scenes fill the column down to Locations, NPCs and Encounters, and scroll after that; an open section grows
+     up over them (to most of the column, then it scrolls itself). */
+  .left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    overflow: hidden;
+  }
+
+  .scenes {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .linkables {
+    flex: none;
+    max-height: 75%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
   .editor {
     display: flex;
     flex-direction: column;
@@ -835,8 +895,14 @@
       grid-template-rows: none;
     }
 
-    .col {
+    .col,
+    .scenes,
+    .linkables {
       overflow: visible;
+    }
+
+    .linkables {
+      max-height: none;
     }
   }
 </style>

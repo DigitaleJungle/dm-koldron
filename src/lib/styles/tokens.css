@@ -144,6 +144,7 @@
   --search-width: 360px;
   --session-steps-width: 280px;
   --session-aside-width: 320px;
+  --session-list-height: 320px;
   --location-thumb-size: 96px; /* a location's image thumbnails */
   --location-map-height: 320px; /* the least height of a location's map, which otherwise fills its tab */
   --location-viewer-width: 960px; /* a location's image, opened larger */

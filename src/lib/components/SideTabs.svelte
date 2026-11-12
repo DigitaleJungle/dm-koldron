@@ -2,7 +2,7 @@
   // Tabs stacked down the left of a panel, each an icon in a hexagon (flat top and bottom, its left corner cut off so it
   // sits flush with the panel's left edge; the open one filled green), the open part beside them. Up and down move
   // between them (round), Home and End to the first or last. An optional action (a red trash can) sits at the bottom of
-  // the column. Used by a scene and a location in the session prep. Fills the rest of its panel, which must have the
+  // the column; while it asks first (`confirm`), a cross takes its spot (cancel) with a red check above it (do it). Used by a scene and a location in the session prep. Fills the rest of its panel, which must have the
   // panel padding (--space-5) the column reaches out over.
   import type { Snippet } from "svelte";
 
@@ -22,7 +22,13 @@
     id: string;
     /** The tab list's name, for screen readers. */
     label: string;
-    action?: { icon: string; label: string; onclick: () => void };
+    action?: {
+      icon: string;
+      label: string;
+      onclick: () => void;
+      /** Set while asking first. */
+      confirm?: { label: string; cancel: string; onconfirm: () => void; oncancel: () => void };
+    };
     children: Snippet;
   } = $props();
 
@@ -55,8 +61,19 @@
         </button>
       {/each}
     </div>
-    {#if action}
-      <button class="tab action" aria-label={action.label} onclick={action.onclick}>
+    {#if action?.confirm}
+      {@const c = action.confirm}
+      <!-- svelte-ignore a11y_no_static_element_interactions: Escape cancels, as the cross does -->
+      <div class="confirm" onkeydown={(ev) => ev.key === "Escape" && (ev.stopPropagation(), c.oncancel())}>
+        <button class="tab action" aria-label={c.label} onclick={c.onconfirm}>
+          <span class="hex"><i class="ti ti-check" aria-hidden="true"></i></span>
+        </button>
+        <button id="{id}-action-cancel" class="tab" aria-label={c.cancel} onclick={c.oncancel}>
+          <span class="hex"><i class="ti ti-x" aria-hidden="true"></i></span>
+        </button>
+      </div>
+    {:else if action}
+      <button id="{id}-action" class="tab action" aria-label={action.label} onclick={action.onclick}>
         <span class="hex"><i class="ti {action.icon}" aria-hidden="true"></i></span>
       </button>
     {/if}
@@ -83,7 +100,8 @@
     margin-left: calc(-1 * var(--space-5));
   }
 
-  .tabs {
+  .tabs,
+  .confirm {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);

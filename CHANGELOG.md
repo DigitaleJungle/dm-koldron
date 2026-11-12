@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.14] - 2026-11-12
+
+### Changed
+
+- Session prep: Locations, NPCs and Encounters moved to the bottom left, under the scenes; an open one grows up over the scenes, which scroll under a pinned Scenes heading.
+- Session prep: Locations and NPCs show the campaign's trees as on the Sessions overview, with Add beside the section's arrow; the Manage locations and Manage NPCs screens are gone.
+- Session prep: Encounters has a search and matching rows (name and difficulty), with Manage encounters and a + for a new encounter beside the arrow.
+- Session prep: sections open with a growing animation; the Not written yet and checklist done labels are gone.
+- Removing a scene asks with a check above a cross in the trash can's place.
+
 ## [0.5.13] - 2026-11-12
 
 ### Added

@@ -26,6 +26,9 @@
     selected,
     onselect,
     onedit,
+    embedded = false,
+    ondragentry,
+    ondragentryend,
   }: {
     kind: "location" | "npc";
     world: World;
@@ -34,6 +37,12 @@
     onselect: (id: string | null) => void;
     /** Open the entry in the editor. */
     onedit: (id: string) => void;
+    /** Inside a section that names it already (session prep): no title, border or Add buttons of its own (the
+     *  section has them and calls `add` and `addGroup`). */
+    embedded?: boolean;
+    /** A location or NPC (not a group) picked up, to drop on a scene. */
+    ondragentry?: (id: string, name: string) => void;
+    ondragentryend?: () => void;
   } = $props();
 
   const w = strings.sessions.world;
@@ -84,7 +93,7 @@
     query = "";
   }
 
-  function add() {
+  export function add() {
     const parent = parentFor();
     let created: Location | Npc;
     if (kind === "location") world.locations.push((created = newLocation(strings.sessions.scenes.newLocationName, parent)));
@@ -98,7 +107,7 @@
   /** The group's name and place when renaming began: Escape puts them back. */
   let before = { name: "", parent: null as string | null };
 
-  function addGroup() {
+  export function addGroup() {
     const parent = parentFor();
     const created = newGroup(w.newGroup, parent);
     world.npcGroups.push(created);
@@ -148,6 +157,7 @@
     // An NPC can also be dragged onto the location being edited, to link it.
     if (kind === "npc" && !groups.has(id)) ev.dataTransfer.setData(NPC_DRAG, id);
     ev.dataTransfer.effectAllowed = "copyMove";
+    if (!groups.has(id)) ondragentry?.(id, list.find((e) => e.id === id)?.name || unnamed);
   }
 
   function dragOver(ev: DragEvent, target: string | null) {
@@ -170,7 +180,10 @@
     dragEnded();
   }
 
-  const dragEnded = () => ([moving, dropOn] = [null, undefined]);
+  const dragEnded = () => {
+    [moving, dropOn] = [null, undefined];
+    ondragentryend?.();
+  };
 
   const focusSelect = (node: HTMLInputElement) => {
     node.focus();
@@ -228,17 +241,19 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && shown && close()} onscrollcapture={(e) => shown && !card?.contains(e.target as Node) && (shown = null)} />
 
-<section class="tree-panel" aria-labelledby="{kind}-tree-title">
-  <div class="head">
+<section class="tree-panel" class:embedded aria-labelledby="{kind}-tree-title">
+  <div class="head" class:sr-only={embedded}>
     <h2 id="{kind}-tree-title">{title}</h2>
-    {#if kind === "npc"}
-      <button class="btn icon" aria-label={w.addGroup} onclick={addGroup}>
-        <i class="ti ti-folder-plus" aria-hidden="true"></i>
+    {#if !embedded}
+      {#if kind === "npc"}
+        <button class="btn icon" aria-label={w.addGroup} onclick={addGroup}>
+          <i class="ti ti-folder-plus" aria-hidden="true"></i>
+        </button>
+      {/if}
+      <button class="btn icon" aria-label={kind === "location" ? w.addLocation : w.addNpc} onclick={add}>
+        <i class="ti ti-plus" aria-hidden="true"></i>
       </button>
     {/if}
-    <button class="btn icon" aria-label={kind === "location" ? w.addLocation : w.addNpc} onclick={add}>
-      <i class="ti ti-plus" aria-hidden="true"></i>
-    </button>
   </div>
   <label for="{kind}-search" class="sr-only">{kind === "location" ? w.searchLocations : w.searchNpcs}</label>
   <input id="{kind}-search" class="text-field search" type="search" autocomplete="off" placeholder={kind === "location" ? w.searchLocations : w.searchNpcs} bind:value={query} />
@@ -431,6 +446,13 @@
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
+  }
+
+  .embedded {
+    flex: 1;
+    padding: 0;
+    border: 0;
+    background: none;
   }
 
   /* Out to the panel's edges, so the rows start at its left; its notes keep the panel's inset. */

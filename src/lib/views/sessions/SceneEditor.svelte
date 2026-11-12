@@ -65,12 +65,17 @@
   let current = $state<string>("text");
 
   let confirming = $state(false);
-  let cancelButton: HTMLButtonElement | undefined = $state();
-  /** Asks first, with the focus on Cancel: the question is under the open part, after everything in it. */
+  /** Asks first (a check over a cross in the trash's place), with the focus on the cross. */
   async function askRemove() {
     confirming = true;
     await tick();
-    cancelButton?.focus();
+    document.getElementById("scene-action-cancel")?.focus();
+  }
+
+  async function keepScene() {
+    confirming = false;
+    await tick();
+    document.getElementById("scene-action")?.focus();
   }
   $effect(() => {
     void scene.id;
@@ -105,8 +110,19 @@
   </button>
 </div>
 
-<!-- The trash at the bottom of the tab column asks first, under the open part. -->
-<SideTabs tabs={TABS} bind:current id="scene" label={t.parts} action={{ icon: "ti-trash", label: t.remove, onclick: askRemove }}>
+<!-- The trash at the bottom of the tab column asks first, in its place. -->
+<SideTabs
+  tabs={TABS}
+  bind:current
+  id="scene"
+  label={t.parts}
+  action={{
+    icon: "ti-trash",
+    label: t.remove,
+    onclick: askRemove,
+    confirm: confirming ? { label: t.remove, cancel: strings.sessions.cancel, onconfirm: onremove, oncancel: keepScene } : undefined,
+  }}
+>
 {#if current === "text"}
 <!-- Ready: the text shown, as locked encounter notes are. Otherwise the field, keyed: it fills itself once, so another
      scene needs a fresh one. Its name is for screen readers only. -->
@@ -196,12 +212,6 @@
 {/if}
 </SideTabs>
 
-{#if confirming}
-  <div class="remove">
-    <button class="btn" bind:this={cancelButton} onclick={() => (confirming = false)}>{strings.sessions.cancel}</button>
-    <button class="btn btn-danger" onclick={onremove}>{t.remove}</button>
-  </div>
-{/if}
 
 <style>
   /* The title and the Ready icon on one line, centred on each other. */
@@ -276,12 +286,6 @@
 
   .what-happens :global(tr:nth-child(even of :has(> td)) > *) {
     background: var(--color-surface-sunken);
-  }
-
-  .remove {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
   }
 
   .ready[aria-pressed="true"] {

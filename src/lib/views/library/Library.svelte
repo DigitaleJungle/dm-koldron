@@ -2,6 +2,7 @@
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
+  import { showHeaderBack } from "$lib/stores/header.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsDialog, { settingsClosed, type SectionId } from "$lib/components/SettingsDialog.svelte";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
@@ -11,7 +12,7 @@
   import RulesReader from "./RulesReader.svelte";
 
   // `embedded`: inside a campaign's screens (/campaign/<id>/library), whose shell has the sidebar, the search bar and
-  // Settings: then no search bar or gear of its own, and Back only on a Catalog entry. Outside any campaign
+  // Settings: then no search bar or gear of its own, and Back only on a Catalog entry (in the shell's header). Outside any campaign
   // (/library) it has all three on every page.
   let { embedded = false }: { embedded?: boolean } = $props();
 
@@ -31,6 +32,8 @@
     params.delete("kind");
     return `${base}?${params}`;
   });
+  // Inside a campaign, a Catalog entry's Back sits in the shell's header.
+  showHeaderBack(() => (embedded && tab === "catalog" && page.url.searchParams.has("entry") ? backTo : null));
   function switchTab(event: MouseEvent & { currentTarget: HTMLAnchorElement }) {
     event.preventDefault();
     gotoReplacing(event.currentTarget.href);
@@ -77,8 +80,9 @@
 
 <div class="library" class:embedded>
   <header class="top">
-    {#if !embedded || (tab === "catalog" && page.url.searchParams.has("entry"))}<BackButton fallback={backTo} />{/if}
-    {#if tab === "rules" && rulesHasContents}
+    {#if !embedded}<BackButton fallback={backTo} />{/if}
+    <!-- Inside a campaign the contents column is always shown. -->
+    {#if !embedded && tab === "rules" && rulesHasContents}
       <button
         class="icon-btn icon-btn-lg"
         aria-expanded={!collapsed}
@@ -100,7 +104,7 @@
   {#if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} />
   {:else}
-    <RulesReader {collapsed} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} bottom={gearInContents ? gear : undefined} />
+    <RulesReader collapsed={collapsed && !embedded} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} bottom={gearInContents ? gear : undefined} />
   {/if}
 
   <!-- One dialog: the gear opens it where it was, the "turn a pack on" hints at Rules. Inside a campaign the shell has

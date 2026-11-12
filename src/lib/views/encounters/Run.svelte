@@ -3,7 +3,6 @@
   // the selected combatant (tracker and stat block), and the DM notes with the encounter log.
   // Every change is saved to the encounter's run file, so a crash loses nothing and reopening resumes the run.
   import { tick } from "svelte";
-  import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, saveCharacter, type Character } from "$lib/api/characters";
   import { rollDice } from "$lib/api/dice";
@@ -12,6 +11,7 @@
   import { pictureSrc } from "$lib/api/campaigns";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
+  import { showHeaderBack } from "$lib/stores/header.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
@@ -31,6 +31,7 @@
   const campaign = campaigns.current!.id;
   // svelte-ignore state_referenced_locally
   const prepare = `/campaign/${campaign}/encounters/${id}`;
+  showHeaderBack(() => prepare);
   const fmt = new Intl.NumberFormat();
 
   // ---- Loading -----------------------------------------------------------------------------------
@@ -503,14 +504,12 @@
 {#if loadError}
   <div class="status">
     <p class="error" role="alert">{loadError}</p>
-    <BackButton fallback={prepare} />
   </div>
 {:else if !run || !encounter}
   <p class="status muted" role="status">{t.loading}</p>
 {:else if run.round === 0}
   <div class="run">
     <header class="bar">
-      <BackButton fallback={prepare} />
       <h1 class="title">{encounter.name}</h1>
       <button class="btn" onclick={() => adder?.open()}><i class="ti ti-plus" aria-hidden="true"></i>{t.addCombatant}</button>
       <button class="btn" onclick={() => endDialog?.showModal()}>{t.end}</button>
@@ -591,7 +590,6 @@
 {:else}
   <div class="run">
     <header class="bar turn-bar">
-      <BackButton fallback={prepare} />
       <div class="stat">
         <span class="label">{t.round}</span>
         <span class="round dice">{fmt.format(run.round)}</span>

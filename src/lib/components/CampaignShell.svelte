@@ -8,10 +8,12 @@
   import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Campaign } from "$lib/api/campaigns";
+  import BackButton from "$lib/components/BackButton.svelte";
   import Menu from "$lib/components/Menu.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
+  import { header } from "$lib/stores/header.svelte";
   import { strings } from "$lib/strings";
   import { moveTo, ordered } from "./sidebarOrder";
 
@@ -202,17 +204,22 @@
 
   <div class="main">
     <header class="top">
-      <button
-        bind:this={toggle}
-        class="icon-btn icon-btn-lg menu-toggle"
-        aria-expanded={drawerOpen}
-        aria-controls="campaign-sidebar"
-        aria-label={drawerOpen ? t.closeMenu : t.openMenu}
-        onclick={() => (drawerOpen = !drawerOpen)}
-      >
-        <i class="ti ti-menu-2" aria-hidden="true"></i>
-      </button>
-      <div class="search"><SearchBar /></div>
+      <div class="lead">
+        <button
+          bind:this={toggle}
+          class="icon-btn icon-btn-lg menu-toggle"
+          aria-expanded={drawerOpen}
+          aria-controls="campaign-sidebar"
+          aria-label={drawerOpen ? t.closeMenu : t.openMenu}
+          onclick={() => (drawerOpen = !drawerOpen)}
+        >
+          <i class="ti ti-menu-2" aria-hidden="true"></i>
+        </button>
+        {#if header.back !== null}<BackButton fallback={header.back} />{/if}
+        {@render header.lead?.()}
+      </div>
+      <div class="search"><SearchBar large /></div>
+      <div class="action">{@render header.action?.()}</div>
     </header>
     <div class="screen">{@render children()}</div>
   </div>
@@ -457,7 +464,9 @@
 
   .top {
     flex: none;
-    display: flex;
+    /* Menu and Back on the left, the screen's action on the right; the search bar centred on the header, shrinking first when there's no room. */
+    display: grid;
+    grid-template-columns: minmax(min-content, 1fr) minmax(0, calc(var(--search-width) * 1.5)) minmax(min-content, 1fr);
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-5);
@@ -465,8 +474,14 @@
     background: var(--color-surface);
   }
 
-  .search {
-    width: min(100%, var(--search-width));
+  .lead {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .action {
+    justify-self: end;
   }
 
   .menu-toggle,

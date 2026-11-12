@@ -6,7 +6,6 @@
   import { fade, scale } from "svelte/transition";
   import { flushSync, untrack } from "svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
-  import BackButton from "$lib/components/BackButton.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { encounterBudgets, getEncounter, saveEncounter, setEncounterMap, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
@@ -14,6 +13,7 @@
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing } from "$lib/stores/history.svelte";
+  import { showHeaderAction, showHeaderBack } from "$lib/stores/header.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
@@ -32,6 +32,7 @@
   const t = strings.encounters;
   const campaign = campaigns.current!.id;
   const base = `/campaign/${campaign}/encounters`;
+  showHeaderBack(() => base);
 
   // ---- Loading -----------------------------------------------------------------------------------
   let loadError = $state<string | null>(null);
@@ -58,6 +59,9 @@
   let notes = $state<Notes>({ description: "", pins: [] });
   /** What was last saved (or loaded), to tell whether there are changes. Null until everything has loaded. */
   let baseline = $state<string | null>(null);
+  // Derived, so saving (a new baseline) doesn't refill the header.
+  const loaded = $derived(baseline !== null && !loadError);
+  showHeaderAction(() => (loaded ? actions : null));
 
   const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort(), partyMode, notes });
 
@@ -374,50 +378,51 @@
 
 </script>
 
+<!-- Shown right of the shell's search bar. -->
+{#snippet actions()}
+  <div class="actions">
+    {#if saveError}<span class="error small" role="alert">{saveError}</span>{/if}
+    {#if locked}
+      <button class="icon-btn icon-btn-lg" aria-label={t.toDraft} disabled={saving} onclick={() => save("draft")}>
+        <i class="ti ti-pencil" aria-hidden="true"></i>
+      </button>
+      <a class="btn btn-primary run" href="{base}/{encounter?.id}/run">
+        {t.start}
+        <i class="ti ti-player-play" aria-hidden="true"></i>
+      </a>
+    {:else}
+      <button class="btn" disabled={saving || !changed} onclick={() => save()}>
+        <i class="ti ti-device-floppy" aria-hidden="true"></i>
+        {saving ? t.saving : t.save}
+      </button>
+      <button class="btn btn-primary" disabled={saving} onclick={() => save("ready")}>
+        {t.ready}
+        <i class="ti ti-check" aria-hidden="true"></i>
+      </button>
+    {/if}
+  </div>
+{/snippet}
+
 <svelte:head><title>{name.trim() || t.newTitle}</title></svelte:head>
 
 {#if loadError}
   <div class="status">
     <p class="error" role="alert">{loadError}</p>
-    <BackButton fallback={base} />
   </div>
 {:else if baseline === null}
   <p class="status muted" role="status">{t.loading}</p>
 {:else}
   <div class="prepare">
-    <header class="top">
-      <BackButton fallback={base} />
-      {#if locked}
-        <h1 class="name-field name-text">{name}</h1>
-      {:else}
-        <label class="name-field">
-          <span class="sr-only">{t.name}</span>
-          <input bind:value={name} maxlength="100" autocomplete="off" placeholder={t.newTitle} />
-        </label>
-      {/if}
-      {#if saveError}<span class="error small" role="alert">{saveError}</span>{/if}
-      {#if locked}
-        <button class="icon-btn icon-btn-lg" aria-label={t.toDraft} disabled={saving} onclick={() => save("draft")}>
-          <i class="ti ti-pencil" aria-hidden="true"></i>
-        </button>
-        <a class="btn btn-primary run" href="{base}/{encounter?.id}/run">
-          {t.start}
-          <i class="ti ti-player-play" aria-hidden="true"></i>
-        </a>
-      {:else}
-        <button class="btn" disabled={saving || !changed} onclick={() => save()}>
-          <i class="ti ti-device-floppy" aria-hidden="true"></i>
-          {saving ? t.saving : t.save}
-        </button>
-        <button class="btn btn-primary" disabled={saving} onclick={() => save("ready")}>
-          {t.ready}
-          <i class="ti ti-check" aria-hidden="true"></i>
-        </button>
-      {/if}
-    </header>
-
     <div class="columns">
       <section class="panel browser" aria-label={t.browser.title} bind:this={browserPanel}>
+        {#if locked}
+          <h1 class="name-field name-text">{name}</h1>
+        {:else}
+          <label class="name-field">
+            <span class="sr-only">{t.name}</span>
+            <input bind:value={name} maxlength="100" autocomplete="off" placeholder={t.newTitle} />
+          </label>
+        {/if}
         {#if monsterError}
           <p class="error" role="alert">{monsterError}</p>
         {:else if monsters === null}
@@ -719,14 +724,14 @@
     padding: var(--space-4) var(--space-4) var(--space-5);
   }
 
-  .top {
+  .actions {
     display: flex;
     align-items: center;
     gap: var(--space-3);
   }
 
   .name-field {
-    flex: 1;
+    flex: none;
     min-width: 0;
   }
 

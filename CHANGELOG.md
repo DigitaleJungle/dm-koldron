@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.16] - 2026-11-12
+
+### Changed
+
+- Inside a campaign, the search bar is centred and larger, and Back sits in its header
+- Encounter builder: Save, Ready, Back to draft and Run moved to the header; the encounter name sits above the monster search
+- Session prep: Delete sits next to Back and Run session at the top right of the header
+- Library Rules inside a campaign: the contents column is always shown (no collapse button)
+
 ## [0.5.15] - 2026-11-12
 
 ### Changed

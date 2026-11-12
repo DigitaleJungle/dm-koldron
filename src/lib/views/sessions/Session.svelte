@@ -6,7 +6,6 @@
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import { tick } from "svelte";
-  import BackButton from "$lib/components/BackButton.svelte";
   import HexCollage from "$lib/components/HexCollage.svelte";
   import { moveTo } from "$lib/components/sidebarOrder";
   import { pictureSrc } from "$lib/api/campaigns";
@@ -18,6 +17,7 @@
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing, keepScroll } from "$lib/stores/history.svelte";
+  import { showHeaderAction, showHeaderBack, showHeaderLead } from "$lib/stores/header.svelte";
   import { strings } from "$lib/strings";
   import { encounterCard } from "$lib/views/encounters/card";
   import { encounterParty, rowsByKey } from "$lib/views/encounters/roster";
@@ -36,6 +36,7 @@
   const e = strings.encounters;
   const campaign = campaigns.current!.id;
   const base = `/campaign/${campaign}/sessions`;
+  showHeaderBack(() => base);
   const encountersBase = `/campaign/${campaign}/encounters`;
   const AUTOSAVE_MS = 1000;
 
@@ -65,6 +66,9 @@
   const snapshot = () => JSON.stringify({ ...draft, updated: 0 });
   /** The campaign's locations and NPCs, which the scenes link; saved with the session, and first. */
   const world = new WorldDraft(campaign);
+  const loaded = $derived(!loadError && !world.loadError && baseline !== null && world.world !== null);
+  showHeaderLead(() => (loaded ? deleteControls : null));
+  showHeaderAction(() => (loaded ? runControls : null));
   const npcCount = $derived(linkedIn(draft, "npc").filter((nid) => world.world?.npcs.some((n) => n.id === nid)).length);
 
   /** Left already: a new session created after that doesn't take you back to it. */
@@ -348,37 +352,48 @@
   }
 </script>
 
+<!-- Next to the shell's Back: deleting the session. -->
+{#snippet deleteControls()}
+  <div class="bar">
+    {#if confirming}
+      <p class="confirm" role="alert">{t.confirmDelete(draft.title.trim() || t.newTitle)}</p>
+      <button id="session-keep" class="btn" onclick={keep}>{t.cancel}</button>
+      <button class="btn btn-danger" disabled={deleting} onclick={remove}>{t.delete}</button>
+    {:else}
+      <button id="session-delete" class="btn delete" onclick={askDelete}>
+        <i class="ti ti-trash" aria-hidden="true"></i>
+        {t.delete}
+      </button>
+    {/if}
+  </div>
+{/snippet}
+
+<!-- Right of the shell's search bar: the save status and Run session. -->
+{#snippet runControls()}
+  <div class="bar">
+    {#if saveError}
+      <span class="error small" role="alert">{saveError}</span>
+    {:else if saving || world.saving}
+      <span class="muted small" role="status">{t.saving}</span>
+    {/if}
+    <!-- The live session view comes later. -->
+    <button class="btn btn-primary run" disabled>
+      {t.run}
+      <i class="ti ti-player-play" aria-hidden="true"></i>
+    </button>
+  </div>
+{/snippet}
+
 <svelte:head><title>{draft.title.trim() || t.newTitle}</title></svelte:head>
 
 {#if loadError || world.loadError}
   <div class="status">
     <p class="error" role="alert">{loadError ?? world.loadError}</p>
-    <BackButton fallback={base} />
   </div>
 {:else if baseline === null || world.world === null}
   <p class="status muted" role="status">{t.loading}</p>
 {:else}
   <div class="session">
-    <div class="top">
-      <BackButton fallback={base} />
-      {#if saveError}
-        <span class="error small" role="alert">{saveError}</span>
-      {:else if saving || world.saving}
-        <span class="muted small" role="status">{t.saving}</span>
-      {/if}
-      <span class="spacer"></span>
-      {#if confirming}
-        <p class="confirm" role="alert">{t.confirmDelete(draft.title.trim() || t.newTitle)}</p>
-        <button id="session-keep" class="btn" onclick={keep}>{t.cancel}</button>
-        <button class="btn btn-danger" disabled={deleting} onclick={remove}>{t.delete}</button>
-      {:else}
-        <button id="session-delete" class="btn delete" onclick={askDelete}>
-          <i class="ti ti-trash" aria-hidden="true"></i>
-          {t.delete}
-        </button>
-      {/if}
-    </div>
-
     <header class="head">
       {#if party.length > 0}
         <div class="party" aria-label={t.party} role="img">
@@ -442,11 +457,6 @@
           <dd>{fmt.format(counts.done)}<span class="of">/{fmt.format(counts.total)}</span></dd>
         </div>
       </dl>
-      <!-- The live session view comes later. -->
-      <button class="btn btn-primary run" disabled>
-        {t.run}
-        <i class="ti ti-player-play" aria-hidden="true"></i>
-      </button>
     </header>
 
     <div class="columns">
@@ -556,14 +566,10 @@
     padding: var(--space-4) var(--space-4) var(--space-5);
   }
 
-  .top {
+  .bar {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-  }
-
-  .spacer {
-    flex: 1;
   }
 
   .delete {

@@ -4,18 +4,21 @@
   // arrow) and select (the name, to highlight its sessions). The eye opens and closes a card with what it is; the
   // pencil (shown on hover or focus) opens it in the editor, in place of the sessions. NPCs sit in groups (folders,
   // which nest): Add group adds one, renamed right in its row; a group's pencil renames it there and its trash removes
-  // it (what was in it moves up).
+  // it (what was in it moves up); renaming also shows Inside, to move it into another group from the keyboard. Any row
+  // can be dragged: onto a location (into it), a group (into it), an NPC (beside
+  // it, in its group) or the tree's free space (to the top); never into itself or what's under it.
   import { page } from "$app/state";
   import { tick } from "svelte";
   import { cubicInOut } from "svelte/easing";
   import { fade } from "svelte/transition";
+  import { pictureSrc } from "$lib/api/campaigns";
   import type { Location, Npc, NpcGroup, World } from "$lib/api/world";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
   import "$lib/styles/prose.css";
   import { keepScroll } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
-  import { ancestors, newGroup, newLocation, newNpc, NPC_DRAG, npcSpecs, removeGroup, treeRows } from "./sessions";
+  import { ancestors, descendants, dropParent, newGroup, newLocation, newNpc, NPC_DRAG, npcSpecs, removeGroup, treeOrder, treeRows } from "./sessions";
 
   let {
     kind,
@@ -34,6 +37,8 @@
   } = $props();
 
   const w = strings.sessions.world;
+  const lf = strings.sessions.locationFields;
+  const e = strings.entry;
   const m = strings.sessions.manage;
   /** The tree's entries: the locations, or the NPC groups and the NPCs. */
   const list = $derived<(Location | Npc | NpcGroup)[]>(kind === "location" ? world.locations : [...world.npcGroups, ...world.npcs]);
@@ -53,9 +58,24 @@
 
   /** Where something new goes: in the selected location or group (an NPC's group when an NPC is selected), or at the top. */
   function parentFor(): string | null {
+    if (lastFolder && groups.has(lastFolder)) return lastFolder;
     if (!selected || !list.some((e) => e.id === selected)) return null;
-    if (kind === "location" || groups.has(selected)) return selected;
+    if (kind === "location") return selected;
     return world.npcs.find((n) => n.id === selected)?.parent ?? null;
+  }
+
+  /** The group last opened or closed by a click (groups aren't selected): Add puts new things in it, until an NPC is
+   *  selected. */
+  let lastFolder = $state<string | null>(null);
+
+  function clickRow(id: string, group: boolean) {
+    if (group) {
+      lastFolder = id;
+      if (!query.trim()) toggle(id);
+    } else {
+      lastFolder = null;
+      onselect(selected === id ? null : id);
+    }
   }
 
   /** Shows the new entry: its parents open, the search cleared. */
@@ -75,7 +95,8 @@
 
   // ---- Groups: renamed in their row ----------------------------------------------------------------
   let renaming = $state<string | null>(null);
-  let before = "";
+  /** The group's name and place when renaming began: Escape puts them back. */
+  let before = { name: "", parent: null as string | null };
 
   function addGroup() {
     const parent = parentFor();
@@ -85,23 +106,71 @@
     rename(created);
   }
 
-  function rename(group: { id: string; name: string }) {
-    [renaming, before] = [group.id, group.name];
+  function rename(group: NpcGroup) {
+    [renaming, before] = [group.id, { name: group.name, parent: group.parent }];
   }
 
-  /** Ends renaming; Escape puts back the name it had. */
-  async function renamed(group: { id: string; name: string }, keep: boolean) {
+  /** Ends renaming; Escape puts back the name and place it had. */
+  async function renamed(group: NpcGroup, keep: boolean) {
     if (renaming !== group.id) return;
-    if (!keep) group.name = before;
+    if (!keep) [group.name, group.parent] = [before.name, before.parent];
     renaming = null;
     await tick();
     document.querySelector<HTMLElement>(`[data-edit="${group.id}"]`)?.focus();
+  }
+
+  /** The groups a group can go into: never itself or one inside it. */
+  function groupChoices(id: string) {
+    const under = new Set(descendants(world.npcGroups, id));
+    return treeOrder(world.npcGroups).filter((r) => !under.has(r.entry.id));
+  }
+
+  function moveGroup(group: NpcGroup, parent: string | null) {
+    group.parent = parent;
+    if (parent) open = new Set([...open, parent, ...ancestors(list, parent).map((a) => a.id)]);
   }
 
   function dropGroup(id: string) {
     if (selected === id) onselect(null);
     removeGroup(world, id);
   }
+
+  // ---- Dragging to move: `dropOn` is the row the drop would go into (null: the tree itself) ----
+  const MOVE = "application/x-koldron-tree-move";
+  let moving = $state<string | null>(null);
+  let dropOn = $state<string | null | undefined>(undefined);
+  const canHold = (id: string) => kind === "location" || groups.has(id);
+
+  function dragStart(ev: DragEvent, id: string) {
+    if (!ev.dataTransfer) return;
+    moving = id;
+    ev.dataTransfer.setData(MOVE, id);
+    // An NPC can also be dragged onto the location being edited, to link it.
+    if (kind === "npc" && !groups.has(id)) ev.dataTransfer.setData(NPC_DRAG, id);
+    ev.dataTransfer.effectAllowed = "copyMove";
+  }
+
+  function dragOver(ev: DragEvent, target: string | null) {
+    if (!moving) return;
+    if (target !== null) ev.stopPropagation(); // a row, even one it can't go into, never the tree around it
+    if (dropParent(list, moving, target, canHold) === undefined) return void (dropOn = undefined);
+    ev.preventDefault();
+    ev.dataTransfer!.dropEffect = "move";
+    dropOn = target;
+  }
+
+  function drop(ev: DragEvent, target: string | null) {
+    if (moving !== null && target !== null) ev.stopPropagation(); // let go on itself: nothing moves
+    const parent = moving === null ? undefined : dropParent(list, moving, target, canHold);
+    const entry = list.find((e) => e.id === moving);
+    if (parent === undefined || !entry) return dragEnded();
+    ev.preventDefault();
+    entry.parent = parent;
+    if (parent) open = new Set([...open, parent, ...ancestors(list, parent).map((a) => a.id)]); // the search stays
+    dragEnded();
+  }
+
+  const dragEnded = () => ([moving, dropOn] = [null, undefined]);
 
   const focusSelect = (node: HTMLInputElement) => {
     node.focus();
@@ -175,7 +244,15 @@
   <input id="{kind}-search" class="text-field search" type="search" autocomplete="off" placeholder={kind === "location" ? w.searchLocations : w.searchNpcs} bind:value={query} />
 
   <!-- The tree scrolls inside the panel; its head and search stay. -->
-  <div class="scroll" use:keepScroll={{ id: `${kind}-tree`, url: page.url.href, ready: true }}>
+  <!-- svelte-ignore a11y_no_static_element_interactions: dropping here moves a dragged row to the top; Inside (the editor's, or a group's while renaming) does the same from the keyboard -->
+  <div
+    class="scroll"
+    class:drop-top={moving !== null && dropOn === null}
+    use:keepScroll={{ id: `${kind}-tree`, url: page.url.href, ready: true }}
+    ondragover={(ev) => dragOver(ev, null)}
+    ondragleave={(ev) => !ev.currentTarget.contains(ev.relatedTarget as Node | null) && (dropOn = undefined)}
+    ondrop={(ev) => drop(ev, null)}
+  >
     {#if list.length === 0}
       <p class="note">{kind === "location" ? w.noLocations : w.noNpcs}</p>
     {:else if rows.length === 0}
@@ -193,17 +270,18 @@
             aria-expanded={r.kids ? r.open : undefined}
             aria-selected={isSelected}
             class:selected={isSelected}
+            class:drop-target={moving !== null && dropOn === r.entry.id}
+            class:moving={moving === r.entry.id}
             style:padding-left="calc({r.depth} * var(--space-4))"
-            draggable={kind === "npc" && !group}
-            ondragstart={(ev) => {
-              // An NPC can be dragged onto the location being edited, to link it.
-              ev.dataTransfer?.setData(NPC_DRAG, r.entry.id);
-              if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "copy";
-            }}
+            draggable={renaming !== r.entry.id}
+            ondragstart={(ev) => dragStart(ev, r.entry.id)}
+            ondragend={dragEnded}
+            ondragover={(ev) => dragOver(ev, r.entry.id)}
+            ondrop={(ev) => drop(ev, r.entry.id)}
           >
             <!-- A group's folder takes the arrow's place (open while its contents show). -->
             {#if r.kids}
-              <button class="arrow" aria-label={r.open ? w.collapse(name) : w.expand(name)} disabled={!!query.trim()} onclick={() => toggle(r.entry.id)}>
+              <button class="arrow" aria-label={r.open ? w.collapse(name) : w.expand(name)} disabled={!!query.trim()} onclick={() => (group ? clickRow(r.entry.id, true) : toggle(r.entry.id))}>
                 {#if group}
                   <i class="ti {r.open ? 'ti-folder-open' : 'ti-folder'}" aria-hidden="true"></i>
                 {:else}
@@ -214,34 +292,45 @@
               <span class="arrow" aria-hidden="true">{#if group}<i class="ti ti-folder"></i>{/if}</span>
             {/if}
             {#if renaming === r.entry.id}
-              <input
-                class="text-field rename"
-                aria-label={w.groupName}
-                maxlength="100"
-                autocomplete="off"
-                bind:value={r.entry.name}
-                use:focusSelect
+              {@const g = r.entry as NpcGroup}
+              <!-- The name and Inside: leaving both keeps them, Enter keeps them, Escape puts both back. -->
+              <!-- svelte-ignore a11y_no_static_element_interactions: only notices the focus leaving its fields -->
+              <span
+                class="rename"
+                onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && renamed(g, true)}
                 onkeydown={(e) => {
-                  if (e.key === "Enter") renamed(r.entry, true);
+                  if (e.key === "Enter") renamed(g, true);
                   if (e.key === "Escape") {
                     e.stopPropagation();
-                    renamed(r.entry, false);
+                    renamed(g, false);
                   }
                 }}
-                onblur={() => renamed(r.entry, true)}
-              />
+              >
+                <input class="text-field" aria-label={w.groupName} maxlength="100" autocomplete="off" bind:value={g.name} use:focusSelect />
+                <select aria-label={w.inside} value={g.parent ?? ""} onchange={(e) => moveGroup(g, e.currentTarget.value || null)}>
+                  <option value="">{w.topLevel}</option>
+                  {#each groupChoices(g.id) as c (c.entry.id)}
+                    <option value={c.entry.id}>{"  ".repeat(c.depth) + (c.entry.name || w.unnamedGroup)}</option>
+                  {/each}
+                </select>
+              </span>
             {:else}
-              <button class="name" onclick={() => onselect(isSelected ? null : r.entry.id)}>
+              <!-- A group's name opens and closes it (as its folder does); another entry's selects it. -->
+              <button
+                class="name"
+                aria-expanded={group && r.kids ? r.open : undefined}
+                onclick={() => clickRow(r.entry.id, group)}
+              >
                 <span class="text" class:parent={r.kids > 0}>{name}</span>
               </button>
             {/if}
             {#if group}
               {#if renaming !== r.entry.id}
-                <button class="edit pencil" data-edit={r.entry.id} aria-label={w.renameGroup(name)} onclick={() => rename(r.entry)}>
-                  <i class="ti ti-pencil" aria-hidden="true"></i>
-                </button>
                 <button class="edit pencil" aria-label={w.removeGroup(name)} onclick={() => dropGroup(r.entry.id)}>
                   <i class="ti ti-trash" aria-hidden="true"></i>
+                </button>
+                <button class="edit pencil" data-edit={r.entry.id} aria-label={w.renameGroup(name)} onclick={() => rename(r.entry)}>
+                  <i class="ti ti-pencil" aria-hidden="true"></i>
                 </button>
               {/if}
             {:else}
@@ -278,22 +367,56 @@
     onmouseenter={() => clearTimeout(timer)}
     onmouseleave={hide}
   >
-    <header>
-      <h3>{entry.name || unnamed}</h3>
-      {#if path.length}<p class="muted">{path.join(" › ")}</p>{/if}
-    </header>
-    <div class="preview-body">
-      {#if "atmosphere" in entry}
-        {#if !isEmpty(entry.atmosphere)}<div class="prose text-block">{@html cleanHtml(entry.atmosphere)}</div>{/if}
-      {:else}
-        {#if npcSpecs(entry)}<p class="muted">{npcSpecs(entry)}</p>{/if}
+    {#if "atmosphere" in entry}
+      <!-- A location: its first image (or its map) across the top, then what it's like and who's there. -->
+      {@const banner = entry.pictures?.[0] ?? entry.map}
+      {@const here = entry.npcIds.map((id) => world.npcs.find((n) => n.id === id)).filter((n) => !!n)}
+      {#if banner}<img class="banner" src={pictureSrc(banner)} alt="" />{/if}
+      <header>
+        <h3>{entry.name || unnamed}</h3>
+        {#if path.length}<p class="muted">{path.join(" › ")}</p>{/if}
+      </header>
+      <div class="preview-body">
+        {#each [[lf.atmosphere, entry.atmosphere], [lf.purpose, entry.purpose]] as [label, text] (label)}
+          {#if !isEmpty(text)}
+            <section>
+              <h4 class="small-label">{label}</h4>
+              <div class="prose text-block">{@html cleanHtml(text)}</div>
+            </section>
+          {/if}
+        {/each}
+        {#if here.length}
+          <p><span class="small-label">{lf.npcs}:</span> {here.map((n) => n.name || m.unnamedNpc).join(", ")}</p>
+        {/if}
+        {#if isEmpty(entry.atmosphere) && isEmpty(entry.purpose) && !here.length}<p class="muted">{w.nothingYet}</p>{/if}
+      </div>
+    {:else}
+      <!-- An NPC: the portrait beside who they are, then their stats, summary and motivation. -->
+      {@const stats = [[e.ac, entry.stats.ac], [e.hp, entry.stats.hp], [e.speed, entry.stats.speed], [e.cr, entry.stats.cr]].filter(([, v]) => v.trim())}
+      <header class="npc-head">
+        {#if entry.portrait}<img class="portrait" src={pictureSrc(entry.portrait)} alt="" />{/if}
+        <div>
+          <h3>{entry.name || unnamed}</h3>
+          {#if npcSpecs(entry)}<p>{npcSpecs(entry)}</p>{/if}
+          {#if path.length}<p class="muted">{path.join(" › ")}</p>{/if}
+        </div>
+      </header>
+      <div class="preview-body">
+        {#if stats.length}
+          <p class="stats">
+            {#each stats as [label, value], i (label)}{#if i}<span class="dot" aria-hidden="true">·</span>{/if}<span><strong>{label}</strong> {value}</span>{/each}
+          </p>
+        {/if}
         {#if !isEmpty(entry.summary)}<div class="prose text-block">{@html cleanHtml(entry.summary)}</div>{/if}
         {#if !isEmpty(entry.motivation)}
-          <h4 class="small-label">{strings.sessions.npcFields.motivation}</h4>
-          <div class="prose text-block">{@html cleanHtml(entry.motivation)}</div>
+          <section>
+            <h4 class="small-label">{strings.sessions.npcFields.motivation}</h4>
+            <div class="prose text-block">{@html cleanHtml(entry.motivation)}</div>
+          </section>
         {/if}
-      {/if}
-    </div>
+        {#if !stats.length && isEmpty(entry.summary) && isEmpty(entry.motivation)}<p class="muted">{w.nothingYet}</p>{/if}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -370,6 +493,46 @@
 
   li.selected {
     background: var(--color-accent-soft);
+  }
+
+  /* Dragging: the row it would go into, and the tree itself when it would go to the top. */
+  li.drop-target {
+    background: var(--color-accent-soft);
+    outline: var(--focus-ring) dashed var(--color-accent);
+    outline-offset: calc(-1 * var(--focus-ring));
+  }
+
+  li.moving {
+    opacity: 0.5;
+  }
+
+  /* A group being renamed: its name, and Inside beside it. */
+  .rename {
+    flex: 1;
+    display: flex;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .rename input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .rename input,
+  .rename select {
+    min-height: var(--control-height-sm);
+    font-size: var(--text-sm);
+  }
+
+  .rename select {
+    max-width: 45%;
+  }
+
+  .scroll.drop-top {
+    outline: var(--focus-ring) dashed var(--color-accent);
+    outline-offset: calc(-1 * var(--focus-ring));
+    border-radius: var(--radius-sm);
   }
 
   .arrow,
@@ -474,6 +637,58 @@
 
   .text-block {
     white-space: pre-line;
+  }
+
+  /* .prose centres itself at a reading width; in the card it fills the width, from the left. */
+  .preview-body .prose {
+    max-width: none;
+    margin: 0;
+    font-size: inherit; /* the card's size, as the rest of it */
+  }
+
+  /* Long words and names wrap inside the card. */
+  .preview-card {
+    overflow-wrap: anywhere;
+  }
+
+  .preview-body section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  /* A location's picture across the top of the card. */
+  .banner {
+    display: block;
+    width: 100%;
+    height: var(--location-thumb-size);
+    object-fit: cover;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  /* An NPC's portrait beside their name. */
+  .npc-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .portrait {
+    flex: none;
+    width: var(--control-height-xl);
+    height: var(--control-height-xl);
+    object-fit: cover;
+    border-radius: var(--radius-md);
+  }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  .dot {
+    color: var(--color-text-muted);
   }
 
   .small-label {

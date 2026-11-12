@@ -20,6 +20,7 @@ import {
   readyCount,
   removeEntry,
   removeGroup,
+  dropParent,
   UndoHistory,
   removeLocation,
   removeNpc,
@@ -165,6 +166,20 @@ describe("sessions", () => {
     undo.push(4);
     undo.clear();
     expect(undo.pop()).toBeUndefined();
+  });
+
+  it("finds where a dragged entry lands, never inside itself", () => {
+    const w = world();
+    const any = () => true;
+    expect(dropParent(w.locations, "vault", "oss", any)).toBe("oss");
+    expect(dropParent(w.locations, "oss", null, any)).toBeNull();
+    expect(dropParent(w.locations, "crypt", "vault", any)).toBeUndefined(); // under itself
+    expect(dropParent(w.locations, "crypt", "crypt", any)).toBeUndefined();
+    // NPCs hold nothing: dropped on one, an NPC goes in beside it.
+    const tree = [{ id: "harbour", parent: null, name: "Harbour" }, { id: "abbot", parent: "harbour", name: "Abbot" }, { id: "wenna", parent: null, name: "Wenna" }];
+    const groups = (id: string) => id === "harbour";
+    expect(dropParent(tree, "wenna", "abbot", groups)).toBe("harbour");
+    expect(dropParent(tree, "harbour", "abbot", groups)).toBeUndefined();
   });
 
   it("moves what was in a removed group up to its parent", () => {

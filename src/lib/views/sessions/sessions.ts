@@ -127,6 +127,14 @@ export function treeRows<T extends Entry>(entries: T[], open: Set<string>, query
 /** Every entry in tree order, with its depth: for dropdowns. */
 export const treeOrder = <T extends Entry>(entries: T[]): TreeRow<T>[] => treeRows(entries, new Set(entries.map((e) => e.id)));
 
+/** The parent `id` gets when dropped on `target` in its tree (null: on the tree itself, so at the top), or undefined
+ *  when it can't go there (into itself or something under it). An entry that can't hold others (`canHold`: an NPC)
+ *  takes the dropped one in beside it, in its own parent. */
+export function dropParent(entries: Entry[], id: string, target: string | null, canHold: (id: string) => boolean): string | null | undefined {
+  const parent = target === null || canHold(target) ? target : (entries.find((e) => e.id === target)?.parent ?? null);
+  return parent !== null && descendants(entries, id).includes(parent) ? undefined : parent;
+}
+
 /** Removes the entry; what was under it moves up to its parent. */
 export function removeEntry<T extends Entry>(entries: T[], id: string): T[] {
   const parent = entries.find((e) => e.id === id)?.parent ?? null;

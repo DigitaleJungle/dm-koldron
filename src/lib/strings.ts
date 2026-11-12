@@ -518,6 +518,7 @@ export const strings = {
       addLocation: "Add location",
       addNpc: "Add NPC",
       newNpc: "New NPC",
+      nothingYet: "Nothing written yet.",
       addGroup: "Add group",
       newGroup: "New group",
       unnamedGroup: "Unnamed group",

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.13] - 2026-11-12
+
+### Added
+
+- Drag rows in the Locations and NPCs trees to move them: a location into another, an NPC or folder into a folder, or to the top
+- A folder's rename row has an Inside dropdown to move it from the keyboard
+
+### Changed
+
+- Clicking a folder's name opens or closes it; Add puts new NPCs and folders in the folder last clicked
+- A folder's trash can comes before its pencil
+- Richer hover cards: an NPC's portrait, details and stats; a location's image, atmosphere, purpose and linked NPCs
+
+### Fixed
+
+- Text in the hover cards was centred and squeezed
+
 ## [0.5.12] - 2026-11-12
 
 ### Added

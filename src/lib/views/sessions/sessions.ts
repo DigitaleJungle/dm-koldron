@@ -178,9 +178,9 @@ export function removeNpc(world: World, session: Session | null, id: string) {
   for (const scene of session?.scenes ?? []) unlink(scene.npcIds, id);
 }
 
-/** The ids the session's scenes link, each once: locations or NPCs. */
-export const linkedIn = (session: Session, kind: "location" | "npc"): string[] => [
-  ...new Set(session.scenes.flatMap((s) => (kind === "location" ? (s.locationId ? [s.locationId] : []) : s.npcIds))),
+/** The ids the session's scenes link, each once: locations, NPCs or encounters. */
+export const linkedIn = (session: Session, kind: "location" | "npc" | "encounter"): string[] => [
+  ...new Set(session.scenes.flatMap((s) => (kind === "location" ? (s.locationId ? [s.locationId] : []) : kind === "npc" ? s.npcIds : s.encounterIds))),
 ];
 
 /** The scenes that use the location, NPC or encounter. */

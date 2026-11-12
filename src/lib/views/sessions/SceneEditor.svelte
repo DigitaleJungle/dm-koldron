@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The open scene: its title and Ready (an icon); what happens; one block with its location (and that location's
-  // description), linked NPCs and linked encounters (chips and a dropdown each, so dragging is never the only way); its
-  // checklist; and Remove scene at the bottom. A new location opens Locations to name it.
+  // The open scene: its title and Ready (an icon); what happens; its links: the location, NPCs and encounters as cards
+  // (a dropdown each to pick or link, so dragging is never the only way; a pencil opens a location or NPC in its editor,
+  // a cross unlinks); its checklist; and Remove scene at the bottom. A new location opens its editor to name it.
   import { tick, untrack } from "svelte";
   import type { Session } from "$lib/api/sessions";
   import type { World } from "$lib/api/world";
@@ -11,39 +11,48 @@
   import TagPreview from "$lib/components/TagPreview.svelte";
   import { cleanHtml, isEmpty } from "$lib/components/richtext";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
+  import EncounterCard from "$lib/views/encounters/EncounterCard.svelte";
+  import type { EncounterCardData } from "$lib/views/encounters/card";
   import Checklist from "./Checklist.svelte";
-  import { link, newLocation, treeOrder, unlink } from "./sessions";
+  import LocationCard from "./LocationCard.svelte";
+  import NpcCard from "./NpcCard.svelte";
+  import { ancestors, link, newLocation, treeOrder, unlink } from "./sessions";
 
   let {
     session = $bindable(),
     world = $bindable(),
     index,
     encounterName,
-    encounterMeta,
+    encounterCard,
+    encountersHref,
     encounterChoices,
-    onnewlocation,
+    onedit,
     onremove,
+    current = $bindable(),
   }: {
     session: Session;
     /** The campaign's locations and NPCs. */
     world: World;
     /** The open scene's place in the session. */
     index: number;
-    /** An encounter's name, and its difficulty and XP, by id (null while unknown). */
+    /** An encounter's name (or that it's loading or gone), and its card once known, by id. */
     encounterName: (id: string) => string;
-    encounterMeta: (id: string) => string | null;
+    encounterCard: (id: string) => EncounterCardData | undefined;
+    encountersHref: string;
     /** The campaign's encounters that are ready to run. */
     encounterChoices: { id: string; name: string }[];
-    /** A location was just made for this scene: name it. */
-    onnewlocation: (id: string) => void;
+    /** Open a location or NPC in its editor (a new location to name it). */
+    onedit: (kind: "location" | "npc", id: string) => void;
     onremove: () => void;
+    /** The open tab; kept by the page, so it's still open after a location or NPC editor took the scene's place. */
+    current: string;
   } = $props();
 
   const t = strings.sessions.scenes;
   const m = strings.sessions.manage;
   const scene = $derived(session.scenes[index]);
   const location = $derived(world.locations.find((l) => l.id === scene.locationId) ?? null);
-  const npcName = (id: string) => world.npcs.find((n) => n.id === id)?.name || m.unnamedNpc;
+  const linkedNpcs = $derived(scene.npcIds.flatMap((id) => world.npcs.find((n) => n.id === id) ?? []));
   /** Indented under their parents, as the trees show them. */
   const indent = (depth: number, name: string) => "  ".repeat(depth) + name;
   const locationChoices = $derived(treeOrder(world.locations));
@@ -62,7 +71,6 @@
     { id: "links", icon: "ti-link", label: t.links },
     { id: "checklist", icon: "ti-list", label: t.checklist },
   ] as const;
-  let current = $state<string>("text");
 
   let confirming = $state(false);
   /** Asks first (a check over a cross in the trash's place), with the focus on the cross. */
@@ -88,7 +96,7 @@
       const created = newLocation(t.newLocationName);
       world.locations.push(created);
       scene.locationId = created.id;
-      onnewlocation(created.id);
+      onedit("location", created.id);
     } else scene.locationId = value || null;
   }
 
@@ -143,64 +151,82 @@
 {/if}
 {:else if current === "links"}
 
-<!-- One block, a row each: the label on the left, its controls on the right. -->
-<section class="block links" aria-label={t.links}>
-  <div class="link-row">
-    <label for="scene-loc" class="label"><i class="ti ti-map-pin" aria-hidden="true"></i>{t.location}</label>
-    <div class="controls">
-      <select id="scene-loc" class="choose" value={scene.locationId ?? ""} onchange={pickLocation}>
+<!-- A group each: its name and dropdown, then its cards. -->
+<div class="links">
+  <section class="group" aria-labelledby="links-location">
+    <div class="group-head">
+      <h3 id="links-location" class="label"><i class="ti ti-map-pin" aria-hidden="true"></i>{t.location}</h3>
+      <select class="choose" value={scene.locationId ?? ""} onchange={pickLocation} aria-label={t.location}>
         <option value="">{t.noLocation}</option>
         {#each locationChoices as r (r.entry.id)}
           <option value={r.entry.id}>{indent(r.depth, r.entry.name || m.unnamedLocation)}</option>
         {/each}
         <option value="__new">{t.newLocation}</option>
       </select>
-      {#if location && !isEmpty(location.atmosphere)}
-        <div class="note prose">{@html cleanHtml(location.atmosphere)}</div>
-      {/if}
     </div>
-  </div>
-  <div class="link-row">
-    <label for="link-npc" class="label"><i class="ti ti-user" aria-hidden="true"></i>{t.npcs}</label>
-    <div class="controls chips">
-      {#each scene.npcIds.filter((id) => world.npcs.some((n) => n.id === id)) as id (id)}
-        <span class="chip-link">
-          <strong>{npcName(id)}</strong>
-          <button class="icon-btn" aria-label={t.unlink(npcName(id))} onclick={() => unlink(scene.npcIds, id)}>
-            <i class="ti ti-x" aria-hidden="true"></i>
-          </button>
-        </span>
-      {/each}
-      <select id="link-npc" class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.npcIds)}>
+    {#if location}
+      <div class="cards">
+        <LocationCard
+          {location}
+          path={ancestors(world.locations, location.id).map((a) => a.name || m.unnamedLocation)}
+          onedit={() => onedit("location", location.id)}
+          onremove={() => (scene.locationId = null)}
+        />
+      </div>
+    {/if}
+  </section>
+
+  <section class="group" aria-labelledby="links-npcs">
+    <div class="group-head">
+      <h3 id="links-npcs" class="label"><i class="ti ti-user" aria-hidden="true"></i>{t.npcs}</h3>
+      <select class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.npcIds)} aria-label={t.npcs}>
         <option value="">{t.link}</option>
         {#each npcChoices as r (r.entry.id)}
           <option value={r.entry.id}>{indent(r.depth, r.entry.name || m.unnamedNpc)}</option>
         {/each}
       </select>
     </div>
-  </div>
-  <div class="link-row">
-    <label for="link-enc" class="label"><i class="ti ti-sword" aria-hidden="true"></i>{t.encounters}</label>
-    <div class="controls chips">
-      {#each scene.encounterIds as id (id)}
-        {@const meta = encounterMeta(id)}
-        <span class="chip-link">
-          <strong>{encounterName(id)}</strong>
-          {#if meta}<span class="mono">{meta}</span>{/if}
-          <button class="icon-btn" aria-label={t.unlink(encounterName(id))} onclick={() => unlink(scene.encounterIds, id)}>
-            <i class="ti ti-x" aria-hidden="true"></i>
-          </button>
-        </span>
-      {/each}
-      <select id="link-enc" class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.encounterIds)}>
+    {#if linkedNpcs.length}
+      <div class="cards">
+        {#each linkedNpcs as npc (npc.id)}
+          <NpcCard {npc} onedit={() => onedit("npc", npc.id)} onremove={() => unlink(scene.npcIds, npc.id)} />
+        {/each}
+      </div>
+    {/if}
+  </section>
+
+  <section class="group" aria-labelledby="links-encounters">
+    <div class="group-head">
+      <h3 id="links-encounters" class="label"><i class="ti ti-sword" aria-hidden="true"></i>{t.encounters}</h3>
+      <select class="chip-pick" value="" onchange={(ev) => pickLink(ev, scene.encounterIds)} aria-label={t.encounters}>
         <option value="">{t.link}</option>
         {#each encounterChoices.filter((x) => !scene.encounterIds.includes(x.id)) as x (x.id)}
           <option value={x.id}>{x.name}</option>
         {/each}
       </select>
     </div>
-  </div>
-</section>
+    {#if scene.encounterIds.length}
+      <div class="cards">
+        {#each scene.encounterIds as id (id)}
+          {@const card = encounterCard(id)}
+          {#if card}
+            <EncounterCard {card} base={encountersHref} compact onremove={() => unlink(scene.encounterIds, id)} removeLabel={t.unlink(card.name)} />
+          {:else}
+            <!-- Still loading, or removed from the campaign: its name or that it's gone, and the cross. -->
+            <article class="link-card missing">
+              <div class="title">
+                <h4 class="muted">{encounterName(id)}</h4>
+                <button class="icon-btn" aria-label={t.unlink(encounterName(id))} onclick={() => unlink(scene.encounterIds, id)}>
+                  <i class="ti ti-x" aria-hidden="true"></i>
+                </button>
+              </div>
+            </article>
+          {/if}
+        {/each}
+      </div>
+    {/if}
+  </section>
+</div>
 {:else}
 <section class="block" aria-labelledby="scene-checklist">
   <div class="row">
@@ -310,33 +336,70 @@
     font-weight: var(--weight-bold);
   }
 
-  /* The scene's links: a row each, divided by lines, the labels in one column. */
+  /* The scene's links: a group each (its name and dropdown on one line, then its cards), divided by lines. */
+  /* The encounter card's collage, smaller here than on the Encounters screen. */
   .links {
-    gap: 0;
-    padding-block: var(--space-1);
+    --encounter-art-height: var(--link-card-art-height);
+    --encounter-hex-width: var(--link-card-hex-width);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
   }
 
-  .link-row {
-    display: grid;
-    grid-template-columns: var(--scene-label-width) minmax(0, 1fr);
-    align-items: start;
-    gap: var(--space-3);
-    padding-block: var(--space-2);
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
   }
 
-  .link-row + .link-row {
+  .group + .group {
+    padding-top: var(--space-4);
     border-top: var(--border-width) solid var(--color-border);
   }
 
-  .link-row .label {
-    min-height: var(--control-height);
+  .group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
   }
 
-  .controls {
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--link-card-min-width), 1fr));
+    gap: var(--space-3);
+  }
+
+  /* What the location, NPC and missing-encounter cards share (the encounter card has its own). */
+  .links :global(.link-card) {
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  .links :global(.link-card .title) {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--space-1);
+  }
+
+  .links :global(.link-card h4) {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font: var(--text-body);
+    font-weight: var(--weight-bold);
+    overflow-wrap: anywhere;
+  }
+
+  .links :global(.link-card .muted) {
+    margin: 0;
+    color: var(--color-text-muted);
+    font: var(--text-body-sm);
+  }
+
+  .missing {
+    padding: var(--space-3);
   }
 
   .choose {
@@ -376,13 +439,6 @@
     margin: 0;
     color: var(--color-text-muted);
     font-size: var(--text-sm);
-  }
-
-  .controls.chips {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .mono {

@@ -200,6 +200,12 @@
   /* Encounter list: the collage's band on each card, and one hexagon's width (smaller when many must fit). */
   --encounter-art-height: 208px;
   --encounter-hex-width: 64px;
+  /* A scene's links (session prep): smaller cards than the Encounters screen's. */
+  --link-card-min-width: 200px;
+  --link-card-art-height: 120px;
+  --link-card-hex-width: 40px;
+  --link-card-banner-height: 80px;
+  --link-card-portrait-size: 48px;
   --entry-picture-size: 400px;
   /* Encounters → Run: the initiative column, the DM notes column, the amount field, an HP bar, the map dialog. */
   --run-order-width: 420px;

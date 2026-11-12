@@ -54,6 +54,7 @@
   } = $props();
 
   const t = strings.sessions.sections;
+  const fmt = new Intl.NumberFormat();
   const written = (text: string) => (text.trim() ? t.written : "");
 
   const encounterCards = $derived((ready ?? []).map((x) => ({ item: { kind: "encounter", id: x.id } as Linkable, name: x.name, sub: encounterMeta(x.id) ?? "" })));
@@ -67,14 +68,19 @@
   const shownEncounters = $derived(encounterCards.filter((c) => c.name.toLowerCase().includes(encounterQuery.trim().toLowerCase())));
 
 
-  const metas = $derived<Record<Section, string>>({
+  /** Beside the name: how many the session's scenes link (removed locations and NPCs don't count). */
+  const added = (n: number) => t.added(fmt.format(n));
+  const counts = $derived<Partial<Record<Section, string>>>({
+    locations: added(linkedIn(session, "location").filter((id) => world.locations.some((l) => l.id === id)).length),
+    npcs: added(linkedIn(session, "npc").filter((id) => world.npcs.some((n) => n.id === id)).length),
+    encounters: added(linkedIn(session, "encounter").length),
+  });
+
+  const metas = $derived<Partial<Record<Section, string>>>({
     previously: written(session.previously),
     premise: written(session.premise),
     summary: written(session.summary),
     partyNote: written(session.partyNote),
-    locations: t.inSession(linkedIn(session, "location").filter((id) => world.locations.some((l) => l.id === id)).length),
-    npcs: t.inSession(linkedIn(session, "npc").filter((id) => world.npcs.some((n) => n.id === id)).length),
-    encounters: ready === null ? "" : t.readyToRun(ready.length),
     checklist: "",
   });
 </script>
@@ -94,7 +100,10 @@
       <div class="head">
         <button class="toggle" aria-expanded={open === key} aria-controls="section-{key}" onclick={() => (open = toggleSection(open, key))}>
           <span class="text" style:--actions={actions}>
-            <span class="name">{t[key]}</span>
+            <span class="name">
+              {t[key]}
+              {#if counts[key]}<span class="count">{counts[key]}</span>{/if}
+            </span>
             {#if metas[key]}<span class="meta">{metas[key]}</span>{/if}
           </span>
           <i class="ti ti-chevron-down chevron" class:turned={open === key} aria-hidden="true"></i>
@@ -264,6 +273,13 @@
     display: flex;
     flex-direction: column;
     padding-right: calc(var(--actions, 0) * (var(--control-height-sm) + var(--space-1)));
+  }
+
+  .count {
+    margin-left: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
   }
 
   .name {

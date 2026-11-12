@@ -19,8 +19,8 @@
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
-  import { difficulty, monsterXp } from "$lib/views/encounters/difficulty";
-  import { characterLevel, encounterParty, entryKey, rowsByKey } from "$lib/views/encounters/roster";
+  import { encounterCard } from "$lib/views/encounters/card";
+  import { encounterParty, rowsByKey } from "$lib/views/encounters/roster";
   import Checklist from "./Checklist.svelte";
   import SessionWorldEntry from "./SessionWorldEntry.svelte";
   import SceneEditor from "./SceneEditor.svelte";
@@ -101,38 +101,23 @@
     (err) => (encounterError = t.encounters.loadError(errorMessage(err))),
   );
   listCharacters(campaign).then((l) => (characters = l.characters), () => {});
-  catalogRows("monsters", ["xp"]).then((rows) => (monsters = rows), () => {});
+  catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), () => {});
   encounterBudgets().then((b) => (budgets = b), () => {});
 
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
   const party = $derived(encounterParty("party", [], characters).flatMap((cid) => characterById.get(cid) ?? [])); // as in Prepare
-  const encounterById = $derived(new Map((all ?? []).map((x) => [x.id, x])));
   const ready = $derived(all ? readyToRun(all) : null);
   const fmt = new Intl.NumberFormat();
+  /** As the Encounters screen shows them. */
+  const cardById = $derived(new Map((all ?? []).map((x) => [x.id, encounterCard(x, byKey, characters, budgets)])));
 
-  /** Difficulty and XP as the Encounters cards compute them. */
-  function rate(encounter: Encounter) {
-    const levels = encounterParty(encounter.partyMode, encounter.party, characters).map((cid) => characterLevel(characterById.get(cid)?.classes));
-    const xps = encounter.monsters.map((m) => monsterXp(byKey.get(entryKey(m))?.fields.xp));
-    const result = difficulty(levels, encounter.monsters.map((m, i) => ({ quantity: m.quantity, xp: xps[i] })), budgets);
-    return { band: result.band, xp: result.total };
-  }
-
-  const encounterName = (eid: string) => encounterById.get(eid)?.name ?? (all === null ? t.loading : t.encounters.missing);
+  const encounterName = (eid: string) => cardById.get(eid)?.name ?? (all === null ? t.loading : t.encounters.missing);
   /** Just the difficulty, for the Encounters section. */
   function encounterBand(eid: string): string | null {
-    const x = encounterById.get(eid);
-    if (!x) return null;
-    const band = rate(x).band;
-    return band ? e.meter.bands[band] : e.meter.noRating;
-  }
-
-  function encounterMeta(eid: string): string | null {
-    const x = encounterById.get(eid);
-    if (!x) return null;
-    const r = rate(x);
-    return `${r.band ? e.meter.bands[r.band] : e.meter.noRating} · ${t.encounters.xp(fmt.format(r.xp))}`;
+    const card = cardById.get(eid);
+    if (!card) return null;
+    return card.band ? e.meter.bands[card.band] : e.meter.noRating;
   }
 
   // ---- What the editor shows ---------------------------------------------------------------------
@@ -141,6 +126,8 @@
   let pane = $state<Pane | null>(null);
   /** The location or NPC open in the editor (`pane` "locations" or "npcs"). */
   let worldEditing = $state<string | null>(null);
+  /** The scene editor's open tab (kept when another scene opens, or a location or NPC editor takes its place). */
+  let sceneTab = $state("text");
   let section = $state<Section | null>(null);
   const index = $derived(pane ? -1 : draft.scenes.findIndex((s) => s.id === selected));
   const counts = $derived(checkCounts(draft));
@@ -165,12 +152,12 @@
     field?.select();
   }
 
-  /** Back to the scene, with the focus on the entry's pencil when its tree is open. */
+  /** Back to the scene, with the focus on the entry's pencil: its card's in the scene, else its tree's when open. */
   async function closeWorld() {
     const wid = worldEditing;
     [pane, worldEditing] = [null, null];
     await tick();
-    document.querySelector<HTMLElement>(`[data-edit="${wid}"]`)?.focus();
+    (document.querySelector<HTMLElement>(`main [data-edit="${wid}"]`) ?? document.querySelector<HTMLElement>(`[data-edit="${wid}"]`))?.focus();
   }
 
   function removeScene() {
@@ -515,7 +502,7 @@
             {/if}
           </div>
         {:else if index >= 0}
-          <SceneEditor bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} {index} {encounterName} {encounterMeta} encounterChoices={ready ?? []} onnewlocation={(lid) => editWorld("location", lid)} onremove={removeScene} />
+          <SceneEditor bind:current={sceneTab} bind:session={draft} bind:world={() => world.world!, (v) => (world.world = v)} {index} {encounterName} encounterCard={(eid) => cardById.get(eid)} encountersHref={encountersBase} encounterChoices={ready ?? []} onedit={editWorld} onremove={removeScene} />
         {:else}
           <p class="muted">{t.scenes.empty}</p>
         {/if}

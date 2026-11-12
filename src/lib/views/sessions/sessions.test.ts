@@ -110,6 +110,7 @@ describe("sessions", () => {
   it("lists what a session's scenes link, each once", () => {
     expect(linkedIn(session(), "location")).toEqual(["oss", "vault"]);
     expect(linkedIn(session(), "npc")).toEqual(["abbot", "wenna"]);
+    expect(linkedIn(session(), "encounter")).toEqual(["e1"]);
   });
 
   it("starts a scene untitled, empty and not ready, each with its own id", () => {

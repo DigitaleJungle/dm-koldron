@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.15] - 2026-11-12
+
+### Changed
+
+- Session prep: a scene's Links tab shows cards: the location (banner, where it sits, its atmosphere), each NPC (portrait and details) and each encounter (its Encounters card without Start and XP); a pencil opens a location or NPC in its editor, a cross unlinks.
+- Session prep: Locations, NPCs and Encounters show how many the session's scenes link ("2 added") beside their names.
+- Encounter cards show how many monsters instead of listing them.
+
+### Fixed
+
+- Session prep: closing a location or NPC editor returns to the scene's open tab, with the focus back on its pencil.
+
 ## [0.5.14] - 2026-11-12
 
 ### Changed

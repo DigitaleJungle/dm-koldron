@@ -594,8 +594,7 @@ export const strings = {
       checklist: "Checklist",
       written: "Written",
       notWritten: "Not written yet",
-      inSession: (n: number) => `${n} in this session`,
-      readyToRun: (n: number) => `${n} ready to run`,
+      added: (n: string) => `${n} added`,
       manage: { encounters: "Manage encounters", checklist: "Manage checklist" },
       searchEncounters: "Search encounters…",
       newEncounter: "New encounter",
@@ -662,7 +661,6 @@ export const strings = {
     },
     encounters: {
       loadError: (reason: string) => `Couldn't load the encounters. ${reason}`,
-      xp: (n: string) => `${n} XP`,
       missing: "Deleted encounter",
     },
     checklist: {

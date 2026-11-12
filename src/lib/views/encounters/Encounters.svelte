@@ -1,27 +1,24 @@
 <script lang="ts">
-  // The campaign's encounters as cards: a hexagon collage of the monsters (one per roster row, placed at random but
-  // the same each visit), name, Draft / Ready, the monsters, difficulty, XP and party. Search (?q=), difficulty
-  // filter (?band=) and sort (?sort=name|xp) refine the list in place; a card opens the encounter in Prepare.
+  // The campaign's encounters as cards (EncounterCard). Search (?q=), difficulty filter (?band=) and sort
+  // (?sort=name|xp) refine the list in place; a card opens the encounter in Prepare.
   import { afterNavigate } from "$app/navigation";
   import { flip } from "svelte/animate";
   import { scale } from "svelte/transition";
   import { page } from "$app/state";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, listEncounters, type Budget, type Encounter, type EncounterList, type RosterEntry } from "$lib/api/encounters";
+  import { encounterBudgets, listEncounters, type Budget, type EncounterList } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
-  import HexCollage from "$lib/components/HexCollage.svelte";
   import { enterMotion, moveMotion } from "$lib/motion";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
-  import { BANDS, difficulty, monsterXp, type Band } from "./difficulty";
-  import { monsterPicture } from "$lib/stores/monsterPictures";
-  import { characterLevel, encounterParty, entryKey, rowKeys, rowsByKey } from "./roster";
+  import { BANDS } from "./difficulty";
+  import { encounterCard } from "./card";
+  import EncounterCard from "./EncounterCard.svelte";
+  import { rowsByKey } from "./roster";
 
   const t = strings.encounters;
-  const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
-  const fmt = new Intl.NumberFormat();
   const campaign = $derived(campaigns.current!.id);
   const base = $derived(`/campaign/${campaign}/encounters`);
 
@@ -51,49 +48,7 @@
   });
 
   const byKey = $derived(rowsByKey(monsters));
-  const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
-
-  // Pictures, when its pack's images are on.
-  let pictures = $state<Record<string, string | null>>({});
-  $effect(() => {
-    for (const row of list?.encounters.flatMap((e) => e.monsters) ?? []) {
-      const key = entryKey(row);
-      const image = byKey.get(key)?.fields.image;
-      if (typeof image === "string") monsterPicture(row.pack, image).then((src) => (pictures[key] = src));
-    }
-  });
-
-  type Card = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; rows: (RosterEntry & { key: string })[] };
-
-  /** The monsters for the collage, strongest first: that one goes in the middle, the rest outward. */
-  const strongestFirst = (e: Encounter, xps: (number | null)[]) => {
-    const keys = rowKeys(e.monsters); // a split group is its own hexagon
-    return e.monsters.map((m, i) => ({ m: { ...m, key: keys[i] }, xp: xps[i] ?? 0 })).sort((a, b) => b.xp - a.xp).map(({ m }) => m);
-  };
-
-  function partyText(ids: string[]) {
-    if (ids.length === 0) return t.list.noParty;
-    const levels = ids.map((id) => characterLevel(characterById.get(id)?.classes));
-    const known = levels.every((l) => l !== null) ? (levels as number[]) : null;
-    return t.list.party(ids.length, known && Math.min(...known), known && Math.max(...known));
-  }
-
-  const cards = $derived<Card[]>(
-    (list?.encounters ?? []).map((e) => {
-      const party = encounterParty(e.partyMode, e.party, characters); // as in Prepare
-      const xps = e.monsters.map((m) => monsterXp(byKey.get(entryKey(m))?.fields.xp));
-      const levels = party.map((id) => characterLevel(characterById.get(id)?.classes));
-      const result = difficulty(levels, e.monsters.map((m, i) => ({ quantity: m.quantity, xp: xps[i] })), budgets);
-      return {
-        ...e,
-        count: e.monsters.reduce((n, m) => n + m.quantity, 0),
-        band: result.band,
-        xp: result.total,
-        partyLine: partyText(party),
-        rows: strongestFirst(e, xps),
-      };
-    }),
-  );
+  const cards = $derived((list?.encounters ?? []).map((e) => encounterCard(e, byKey, characters, budgets)));
 
   // Search, filter and sort refine the list in place (no Back step).
   let search = $state(page.url.searchParams.get("q") ?? "");
@@ -120,9 +75,6 @@
     if (sort === "xp") return found.toSorted((a, b) => b.xp - a.xp);
     return found;
   });
-
-  const monsterLine = (c: Card) =>
-    `${t.monsterCount(c.count)} · ${c.monsters.map((m) => (m.quantity > 1 ? `${m.name} ×${fmt.format(m.quantity)}` : m.name)).join(", ")}`;
 </script>
 
 <svelte:head><title>{t.title}</title></svelte:head>
@@ -170,38 +122,7 @@
       <ul class="cards">
         {#each shown as c (c.id)}
           <li animate:flip={moveMotion()} in:scale={enterMotion()}>
-            <article class="card">
-              <div class="art">
-                <HexCollage
-                  tiles={c.rows.map((r) => ({ key: r.key, picture: pictures[entryKey(r)] ?? null, letter: r.name.charAt(0), count: r.quantity }))}
-                  seed={c.id}
-                  hexWidth="var(--encounter-hex-width)"
-                />
-              </div>
-              <div class="body">
-                <div class="title">
-                  <!-- The name's link covers the whole card; Run sits above it. -->
-                  <h2 class="name"><a class="open" href="{base}/{c.id}">{c.name}</a></h2>
-                  {#if c.status === "ready"}
-                    <a class="btn btn-primary run" href="{base}/{c.id}/run">
-                      {t.start}
-                      <i class="ti ti-player-play" aria-hidden="true"></i>
-                    </a>
-                  {:else}
-                    <span class="status">{t.list.draft}</span>
-                  {/if}
-                </div>
-                <p class="muted">{c.count > 0 ? monsterLine(c) : t.list.noMonsters}</p>
-                <div class="stats">
-                  <span class="band band-{c.band ?? 'none'}">
-                    {#if c.band}<i class="ti {BAND_ICONS[c.band]}" aria-hidden="true"></i>{/if}
-                    {c.band ? t.meter.bands[c.band] : t.meter.noRating}
-                  </span>
-                  <span>{t.meter.xp(fmt.format(c.xp))}</span>
-                  <span class="party muted">{c.partyLine}</span>
-                </div>
-              </div>
-            </article>
+            <EncounterCard card={c} {base} />
           </li>
         {/each}
       </ul>
@@ -285,131 +206,5 @@
 
   .cards li {
     display: flex;
-  }
-
-  .card {
-    position: relative;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    text-decoration: none;
-  }
-
-  .card:hover {
-    border-color: var(--color-border-strong);
-  }
-
-  .card:hover .open {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-
-  /* The keyboard's focus ring goes round the whole card, which the link covers. */
-  .card:has(.open:focus-visible) {
-    outline: var(--focus-ring) solid var(--color-focus);
-    outline-offset: 2px;
-  }
-
-  .open {
-    color: inherit;
-    text-decoration: none;
-    outline: none;
-  }
-
-  .open::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-  }
-
-  .run {
-    position: relative;
-    z-index: 1;
-    flex-shrink: 0;
-    min-height: var(--control-height-sm);
-    padding: 0 var(--space-3);
-    text-decoration: none;
-  }
-
-  .art {
-    height: var(--encounter-art-height);
-    padding: var(--space-4);
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom: var(--border-width) solid var(--color-border);
-    background: var(--color-bg);
-  }
-
-  .body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-4);
-  }
-
-  .title {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-
-  .name {
-    margin: 0;
-    font: var(--text-body);
-    font-weight: var(--weight-bold);
-  }
-
-  .status {
-    flex-shrink: 0;
-    padding: 2px var(--space-2);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    font: var(--text-label);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-  }
-
-  .muted {
-    margin: 0;
-    color: var(--color-text-muted);
-    font: var(--text-body-sm);
-  }
-
-  .stats {
-    margin-top: auto;
-    padding-top: var(--space-2);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-4);
-    border-top: var(--border-width) solid var(--color-border);
-    font: var(--text-dice);
-  }
-
-  .band {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--band);
-    font: var(--text-body-sm);
-    font-weight: var(--weight-bold);
-  }
-
-  .band .ti {
-    font-size: var(--icon-size-sm);
-  }
-
-  .party {
-    margin-left: auto;
   }
 </style>

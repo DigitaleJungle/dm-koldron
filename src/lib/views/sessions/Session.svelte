@@ -26,7 +26,7 @@
   import SceneEditor from "./SceneEditor.svelte";
   import SceneList from "./SceneList.svelte";
   import SessionAside from "./SessionAside.svelte";
-  import { checkCounts, linkedIn, linkTo, newScene, nextNumber, readyToRun, type Linkable, type Pane, type Section } from "./sessions";
+  import { askRunAgain, checkCounts, linkedIn, linkTo, newScene, nextNumber, readyToRun, type Linkable, type Pane, type Section } from "./sessions";
   import { WorldDraft } from "./worldDraft.svelte";
 
   /** The saved session to open, or null for a new one. */
@@ -52,7 +52,13 @@
     summary: "",
     started: null,
     ended: null,
+    pausedAt: null,
+    pausedMs: 0,
     playedScenes: null,
+    playedSceneIds: [],
+    currentSceneId: null,
+    log: [],
+    logAddedUntil: null,
     scenes: [],
     checklist: [],
     updated: 0,
@@ -376,11 +382,11 @@
     {:else if saving || world.saving}
       <span class="muted small" role="status">{t.saving}</span>
     {/if}
-    <!-- The live session view comes later. -->
-    <button class="btn btn-primary run" disabled>
+    <!-- A Played session can be run again: it carries on where it ended. -->
+    <a class="btn btn-primary run" href="{base}/{draft.id}/run" onclick={() => askRunAgain(draft.id)}>
       {t.run}
       <i class="ti ti-player-play" aria-hidden="true"></i>
-    </button>
+    </a>
   </div>
 {/snippet}
 
@@ -520,7 +526,7 @@
       <div class="col" use:keepScroll={{ id: "session-aside", url: page.url.href, ready: true }}>
         <SessionAside
           bind:session={draft}
-          keys={["previously", "premise", "summary", "partyNote", "checklist"]}
+          keys={["previously", "premise", "partyNote", "checklist"]}
           bind:world={() => world.world!, (v) => (world.world = v)}
           bind:open={section}
           {lastDrop}
@@ -705,6 +711,7 @@
 
   .run {
     min-height: var(--control-height-lg);
+    text-decoration: none;
   }
 
   .columns {

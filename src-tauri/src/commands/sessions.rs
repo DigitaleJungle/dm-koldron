@@ -18,6 +18,8 @@ const MAX_NOTE_LEN: usize = 20_000;
 const MAX_LINE_LEN: usize = 200;
 /// The most scenes or checklist items a session (or a scene's checklist) can hold.
 const MAX_ENTRIES: usize = 200;
+/// The most notes a session's log holds.
+const MAX_LOG: usize = 2_000;
 
 /// A checklist item.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -25,6 +27,15 @@ const MAX_ENTRIES: usize = 200;
 pub struct Check {
     pub text: String,
     pub done: bool,
+}
+
+/// A note in the live session view's log.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LogEntry {
+    /// When it was written (ms).
+    pub at: u64,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -76,9 +87,27 @@ pub struct Session {
     /// When End session was clicked (ms); set by the live session view.
     #[serde(default)]
     pub ended: Option<u64>,
-    /// How many scenes were played out; set by the live session view.
+    /// When it was paused (ms), while it is.
+    #[serde(default)]
+    pub paused_at: Option<u64>,
+    /// How long it was paused in all (ms), and between an end and running it again: left out of the time played.
+    #[serde(default)]
+    pub paused_ms: u64,
+    /// How many scenes were played out: the length of `played_scene_ids` once the session has started.
     #[serde(default)]
     pub played_scenes: Option<u32>,
+    /// The scenes played out, in any order; set by the live session view.
+    #[serde(default)]
+    pub played_scene_ids: Vec<String>,
+    /// The scene the live session view shows.
+    #[serde(default)]
+    pub current_scene_id: Option<String>,
+    /// The live session view's notes, newest first.
+    #[serde(default)]
+    pub log: Vec<LogEntry>,
+    /// The notes up to this time (ms) are in the summary already: End session adds only later ones.
+    #[serde(default)]
+    pub log_added_until: Option<u64>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     /// The session's own locations and NPCs, as the earlier version saved them: read for `world::migrate`, never written.
@@ -140,7 +169,7 @@ pub struct SessionRow {
     /// How many encounters its scenes link, each counted once.
     pub encounters: usize,
     pub played_scenes: Option<u32>,
-    /// From Run session to End session, when both are known.
+    /// From Run session to End session, the pauses left out, when both are known.
     pub played_ms: Option<u64>,
 }
 
@@ -219,8 +248,16 @@ fn check_links(links: &[String], what: &str, scene: &str, problems: &mut Vec<Str
     }
 }
 
-/// Drops the scenes' links to locations and NPCs the campaign no longer has.
+/// Drops the scenes' links to locations and NPCs the campaign no longer has, and the live view's marks on scenes the
+/// session no longer has.
 fn prune(session: &mut Session, world: &World) {
+    let scenes: HashSet<String> = session.scenes.iter().map(|s| s.id.clone()).collect();
+    let mut seen = HashSet::new();
+    session.played_scene_ids.retain(|id| scenes.contains(id) && seen.insert(id.clone()));
+    session.current_scene_id = session.current_scene_id.take().filter(|id| scenes.contains(id));
+    if session.started.is_some() {
+        session.played_scenes = Some(session.played_scene_ids.len() as u32);
+    }
     let locations: HashSet<&str> = world.locations.iter().map(|l| l.id.as_str()).collect();
     let npcs: HashSet<&str> = world.npcs.iter().map(|n| n.id.as_str()).collect();
     for scene in &mut session.scenes {
@@ -252,6 +289,15 @@ fn check(session: &mut Session) -> Result<(), StorageError> {
 
     check_count(session.scenes.len(), "Scenes", &mut problems);
     check_ids(session.scenes.iter().map(|s| &s.id), "scene", &mut problems);
+    if session.log.len() > MAX_LOG {
+        problems.push(format!("The session notes can hold at most {MAX_LOG} entries."));
+    }
+    for entry in &mut session.log {
+        entry.text = entry.text.trim().into();
+    }
+    if session.log.iter().any(|e| e.text.is_empty() || e.text.chars().count() > MAX_NOTE_LEN) {
+        problems.push(format!("Every session note needs a text of at most {MAX_NOTE_LEN} characters."));
+    }
     for scene in &mut session.scenes {
         // A scene gets its title after it's added, so an empty one is fine.
         check_text(&mut scene.title, MAX_TITLE_LEN, "A scene's title", &mut problems);
@@ -330,7 +376,7 @@ fn row(s: Session, world: &World) -> SessionRow {
         npc_ids: distinct(s.scenes.iter().flat_map(|sc| &sc.npc_ids), &npcs),
         encounters: encounters.len(),
         played_scenes: s.played_scenes,
-        played_ms: s.started.zip(s.ended).map(|(a, b)| b.saturating_sub(a)),
+        played_ms: s.started.zip(s.ended).map(|(a, b)| b.saturating_sub(a).saturating_sub(s.paused_ms)),
         id: s.id,
         number: s.number,
         title: s.title,
@@ -450,7 +496,13 @@ mod tests {
             summary: String::new(),
             started: None,
             ended: None,
+            paused_at: None,
+            paused_ms: 0,
             played_scenes: None,
+            played_scene_ids: vec![],
+            current_scene_id: None,
+            log: vec![],
+            log_added_until: None,
             scenes: vec![],
             locations: vec![],
             npcs: vec![],
@@ -543,8 +595,28 @@ mod tests {
         assert_eq!(playing.status(), Status::Playing);
         let played = Session { ended: Some(61_000), played_scenes: Some(3), ..playing };
         assert_eq!(played.status(), Status::Played);
-        let r = row(played, &World::default());
+        let r = row(played.clone(), &World::default());
         assert_eq!((r.played_ms, r.played_scenes), (Some(60_000), Some(3)));
+        let r = row(Session { paused_ms: 15_000, ..played }, &World::default());
+        assert_eq!(r.played_ms, Some(45_000)); // the pauses left out
+    }
+
+    #[test]
+    fn keeps_the_live_views_marks_only_on_scenes_it_has() {
+        let dir = temp_dir("live");
+        world_with_links(&dir);
+        let running = Session {
+            started: Some(5),
+            played_scene_ids: vec!["b".into(), "gone".into(), "b".into(), "a".into()],
+            current_scene_id: Some("gone".into()),
+            log: vec![LogEntry { at: 7, text: " Recap read ".into() }],
+            ..full()
+        };
+        let saved = save(&dir, running, 9).unwrap();
+        assert_eq!((saved.played_scene_ids.clone(), saved.current_scene_id.clone(), saved.played_scenes), (vec!["b".to_string(), "a".to_string()], None, Some(2)));
+        assert_eq!(saved.log, [LogEntry { at: 7, text: "Recap read".into() }]);
+        let blank = Session { log: vec![LogEntry { at: 8, text: " ".into() }], ..saved };
+        assert!(matches!(save(&dir, blank, 10), Err(StorageError::Invalid(_))));
     }
 
     #[test]

@@ -16,7 +16,7 @@ export function overview<T extends { number: number; status: Status }>(rows: T[]
 export const averageLevel = (levels: number[]): number | null => (levels.length ? Math.round(levels.reduce((a, b) => a + b, 0) / levels.length) : null);
 
 /** The right column's sections; locations, NPCs and the checklist also have a full view in the editor. */
-export type Section = "previously" | "premise" | "summary" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
+export type Section = "previously" | "premise" | "partyNote" | "locations" | "npcs" | "encounters" | "checklist";
 export type Pane = "locations" | "npcs" | "checklist";
 
 /** The drag data type an NPC carries (its id), so a location editor can tell it from other cards while it's dragged. */
@@ -210,4 +210,71 @@ export function parseDate(date: string | null): Date | null {
 export function parseTime(time: string | null): Date | null {
   const m = /^(\d{2}):(\d{2})$/.exec(time ?? "");
   return m ? new Date(2000, 0, 1, Number(m[1]), Number(m[2])) : null;
+}
+
+// ---- Run session --------------------------------------------------------------------------------
+
+/** The scene the live view shows: the one it showed last, else the first not played yet, else the first. */
+export function currentScene(session: Session): Scene | null {
+  const { scenes, currentSceneId, playedSceneIds } = session;
+  return scenes.find((s) => s.id === currentSceneId) ?? scenes.find((s) => !playedSceneIds.includes(s.id)) ?? scenes[0] ?? null;
+}
+
+/** The session Run session was just clicked for: a Played one opened that way runs again. Set by the click, taken
+ *  once by the screen, so coming back with Forward after End session doesn't run it again. */
+let runAgain: string | null = null;
+export const askRunAgain = (id: string) => (runAgain = id);
+export function takeRunAgain(id: string): boolean {
+  const asked = runAgain === id;
+  runAgain = null;
+  return asked;
+}
+
+/** Marks the scene played (once). */
+export function markPlayed(session: Session, id: string) {
+  if (!session.playedSceneIds.includes(id)) session.playedSceneIds.push(id);
+}
+
+/** A span of time as h:mm. */
+export function clock(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** Opening Run session: the first time it starts the session; a Played one is Playing again, and its time played
+ *  carries on from where it ended. */
+export function startOrResume(session: Session, now: number) {
+  if (session.started === null) session.started = now;
+  if (session.ended !== null) [session.pausedMs, session.ended] = [session.pausedMs + Math.max(0, now - session.ended), null];
+}
+
+/** Pauses the time played (a session that's running and not paused already). */
+export function pause(session: Session, now: number) {
+  if (session.started !== null && session.ended === null && session.pausedAt === null) session.pausedAt = now;
+}
+
+/** Carries the time played on, leaving the pause out of it. */
+export function resume(session: Session, now: number) {
+  if (session.pausedAt === null) return;
+  [session.pausedMs, session.pausedAt] = [session.pausedMs + Math.max(0, now - session.pausedAt), null];
+}
+
+/** How long it's been played (ms), the pauses left out: up to the end, the pause or now; null before it starts. */
+export const timePlayed = (session: Session, now: number): number | null =>
+  session.started === null ? null : Math.max(0, (session.ended ?? session.pausedAt ?? now) - session.started - session.pausedMs);
+
+/** What End session's Summary starts as: the summary so far, with the notes written since the last end below it
+ *  (oldest first, one per line). */
+export function summaryDraft(session: Session): string {
+  const since = session.logAddedUntil;
+  const fresh = since === null ? session.log : session.log.filter((e) => e.at > since);
+  const lines = fresh.toReversed().map((e) => e.text);
+  return [session.summary.trim(), lines.join("\n")].filter(Boolean).join("\n\n");
+}
+
+/** End session: marks it ended (a pause left out of the time played) with the summary as written; the notes so far
+ *  are in it now. */
+export function endSession(session: Session, now: number, summary: string) {
+  resume(session, now);
+  [session.summary, session.ended, session.logAddedUntil] = [summary.trim(), now, now];
 }

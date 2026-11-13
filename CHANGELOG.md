@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.17] - 2026-11-13
+
+### Added
+
+- Run session: the live view for a session at the table, with the party's passives and HP, a run sheet, the current scene in Info, Location and NPC tabs, scene and session checklists, and DM notes
+- Run session: mark scenes played in any order, pause and resume the timer, and end the session with a summary written beside the DM's notes
+- A Played session can be run again from Session prep, and its summary edited from the Sessions overview
+
+### Changed
+
+- Session prep: Run session is enabled, and the Summary field moved to End session
+
 ## [0.5.16] - 2026-11-12
 
 ### Changed

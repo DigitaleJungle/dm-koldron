@@ -7,6 +7,9 @@ import { strings } from "$lib/strings";
 import { difficulty, monsterXp, type Band } from "./difficulty";
 import { characterLevel, encounterParty, entryKey, rowKeys } from "./roster";
 
+/** Each difficulty's icon. */
+export const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
+
 export type CardRow = RosterEntry & { key: string; image: string | null };
 export type EncounterCardData = Encounter & { count: number; band: Band | null; xp: number; partyLine: string; rows: CardRow[] };
 

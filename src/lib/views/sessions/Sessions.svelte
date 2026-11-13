@@ -6,7 +6,7 @@
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { listSessions, type SessionList, type SessionRow } from "$lib/api/sessions";
+  import { getSession, listSessions, saveSession, type Session, type SessionList, type SessionRow } from "$lib/api/sessions";
   import type { Location, Npc } from "$lib/api/world";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
@@ -15,6 +15,7 @@
   import { strings } from "$lib/strings";
   import { characterLevel, encounterParty } from "$lib/views/encounters/roster";
   import { tick } from "svelte";
+  import SummaryDialog from "./SummaryDialog.svelte";
   import WorldEntry from "./WorldEntry.svelte";
   import WorldTree from "./WorldTree.svelte";
   import { ancestors, averageLevel, descendants, overview, parseDate, parseTime, removeLocation, removeNpc } from "./sessions";
@@ -45,6 +46,35 @@
   const world = new WorldDraft(campaign);
 
   const parts = $derived(overview(list?.sessions ?? []));
+
+  // ---- A Played session's summary: its pencil opens it, with the session notes beside it ---------------------
+  let summaryDialog: SummaryDialog | undefined = $state();
+  let summaryOf = $state<Session | null>(null);
+  let summaryError = $state<string | null>(null);
+
+  async function editSummary(id: string) {
+    [summaryOf, summaryError] = [null, null];
+    try {
+      summaryOf = await getSession(campaign, id);
+    } catch (e) {
+      summaryError = t.openError(errorMessage(e));
+      return;
+    }
+    await tick();
+    summaryDialog?.open(summaryOf.summary);
+  }
+
+  async function saveSummary(summary: string): Promise<boolean> {
+    if (!summaryOf) return false;
+    try {
+      await saveSession(campaign, { ...summaryOf, summary: summary.trim() });
+      list = await listSessions(campaign);
+      return true;
+    } catch (e) {
+      summaryError = t.saveError(errorMessage(e));
+      return false;
+    }
+  }
   const party = $derived(encounterParty("party", [], characters).flatMap((id) => characters?.find((c) => c.id === id) ?? []));
   const level = $derived(averageLevel(party.flatMap((c) => characterLevel(c.classes) ?? [])));
 
@@ -250,11 +280,10 @@
               </div>
               <div class="actions">
                 <a class="btn" href="{base}/{s.id}">{o.continuePrep}</a>
-                <!-- The live session view comes later. -->
-                <button class="btn" disabled>
+                <a class="btn" href="{base}/{s.id}/run">
                   <i class="ti ti-player-play" aria-hidden="true"></i>
                   {t.run}
-                </button>
+                </a>
               </div>
             </div>
             {#if s.premise}<p class="summary">{s.premise}</p>{/if}
@@ -297,9 +326,15 @@
                 {#if s.summary}<p class="summary small">{s.summary}</p>{/if}
                 {@render facts(playedFacts(s))}
               </div>
+              <!-- Shown while the card is hovered or has focus. -->
+              <button class="icon-btn edit-summary" aria-label={o.editSummary(s.number, s.title)} onclick={() => editSummary(s.id)}>
+                <i class="ti ti-pencil" aria-hidden="true"></i>
+              </button>
               <a class="btn" href="{base}/{s.id}" aria-label={o.openSession(s.number, s.title)}>{o.open}</a>
             </article>
           {/each}
+          {#if summaryError && !summaryOf}<p class="message error" role="alert">{summaryError}</p>{/if}
+          <SummaryDialog bind:this={summaryDialog} notes={summaryOf?.log ?? []} saveLabel={strings.sessions.live.saveSummary} error={summaryError} onsave={saveSummary} />
         {/if}
       {/if}
     </main>
@@ -681,8 +716,18 @@
     gap: var(--space-1);
   }
 
-  .played > .btn {
+  .played > .btn,
+  .edit-summary {
     align-self: center;
+  }
+
+  .edit-summary {
+    opacity: 0;
+  }
+
+  .played:hover .edit-summary,
+  .played:focus-within .edit-summary {
+    opacity: 1;
   }
 
   .line {

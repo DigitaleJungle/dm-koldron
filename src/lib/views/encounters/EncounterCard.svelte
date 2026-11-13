@@ -5,8 +5,7 @@
   import HexCollage from "$lib/components/HexCollage.svelte";
   import { monsterPicture } from "$lib/stores/monsterPictures";
   import { strings } from "$lib/strings";
-  import type { Band } from "./difficulty";
-  import type { EncounterCardData } from "./card";
+  import { BAND_ICONS, type EncounterCardData } from "./card";
   import { entryKey } from "./roster";
 
   let {
@@ -25,7 +24,6 @@
   } = $props();
 
   const t = strings.encounters;
-  const BAND_ICONS: Record<Band, string> = { trivial: "ti-feather", easy: "ti-shield", medium: "ti-sword", hard: "ti-flame", deadly: "ti-skull" };
   const fmt = new Intl.NumberFormat();
 
   // Pictures, when its pack's images are on.

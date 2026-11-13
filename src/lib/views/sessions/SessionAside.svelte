@@ -79,7 +79,6 @@
   const metas = $derived<Partial<Record<Section, string>>>({
     previously: written(session.previously),
     premise: written(session.premise),
-    summary: written(session.summary),
     partyNote: written(session.partyNote),
     checklist: "",
   });
@@ -133,7 +132,7 @@
       </div>
       {#if open === key}
         <div id="section-{key}" class="body" class:fixed transition:slide={grow()}>
-          {#if key === "previously" || key === "premise" || key === "summary" || key === "partyNote"}
+          {#if key === "previously" || key === "premise" || key === "partyNote"}
             <label for="text-{key}" class="sr-only">{t[key]}</label>
             <textarea id="text-{key}" class="text-field" rows="6" maxlength="20000" bind:value={session[key]}></textarea>
           {:else if key === "checklist"}

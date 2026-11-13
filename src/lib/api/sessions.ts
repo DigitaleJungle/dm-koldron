@@ -15,8 +15,12 @@ export type Scene = {
   checklist: Check[];
 };
 
-/** `date`: `YYYY-MM-DD`, `time`: `HH:MM`, or null; `updated`: ms, set by Rust. `started`, `ended` (ms) and
- *  `playedScenes` are set by the live session view. */
+/** A note in the live session view's log; `at`: ms. */
+export type LogEntry = { at: number; text: string };
+
+/** `date`: `YYYY-MM-DD`, `time`: `HH:MM`, or null; `updated`: ms, set by Rust. `started`, `ended` (ms),
+ *  `playedSceneIds`, `currentSceneId` and `log` (newest first) are set by the live session view; `playedScenes`, their
+ *  count, by Rust. */
 export type Session = {
   id: string;
   number: number;
@@ -29,7 +33,16 @@ export type Session = {
   summary: string;
   started: number | null;
   ended: number | null;
+  /** When it was paused (ms), while it is. */
+  pausedAt: number | null;
+  /** How long it was paused in all (ms), and between an end and running it again. */
+  pausedMs: number;
   playedScenes: number | null;
+  playedSceneIds: string[];
+  currentSceneId: string | null;
+  log: LogEntry[];
+  /** The notes up to this time (ms) are in the summary already. */
+  logAddedUntil: number | null;
   scenes: Scene[];
   checklist: Check[];
   updated: number;

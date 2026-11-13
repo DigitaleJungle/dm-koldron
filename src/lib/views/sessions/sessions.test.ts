@@ -4,6 +4,17 @@ import type { Scene, Session, Status } from "$lib/api/sessions";
 import type { World } from "$lib/api/world";
 import {
   ancestors,
+  clock,
+  currentScene,
+  askRunAgain,
+  endSession,
+  pause,
+  takeRunAgain,
+  summaryDraft,
+  resume,
+  startOrResume,
+  timePlayed,
+  markPlayed,
   averageLevel,
   checkCounts,
   descendants,
@@ -56,7 +67,13 @@ function session(): Session {
     summary: "",
     started: null,
     ended: null,
+    pausedAt: null,
+    pausedMs: 0,
     playedScenes: null,
+    playedSceneIds: [],
+    currentSceneId: null,
+    log: [],
+    logAddedUntil: null,
     checklist: [{ text: "Minis", done: true }],
     scenes: [
       scene("a", { locationId: "oss", npcIds: ["abbot"], encounterIds: ["e1"], checklist: [{ text: "Clue", done: false }] }),
@@ -208,5 +225,80 @@ describe("sessions", () => {
     expect(parseDate("nope")).toBeNull();
     expect(parseTime("19:30")?.getMinutes()).toBe(30);
     expect(parseTime("7:30")).toBeNull();
+  });
+});
+
+describe("run session", () => {
+  const scenes = [scene("a"), scene("b"), scene("c")];
+  it("shows the last shown scene, else the first not played, else the first", () => {
+    const s = { ...session(), scenes };
+    expect(currentScene(s)?.id).toBe("a");
+    markPlayed(s, "a");
+    markPlayed(s, "a");
+    expect([s.playedSceneIds, currentScene(s)?.id]).toEqual([["a"], "b"]);
+    expect(currentScene({ ...s, currentSceneId: "c" })?.id).toBe("c");
+    expect(currentScene({ ...s, currentSceneId: "gone", playedSceneIds: ["a", "b", "c"] })?.id).toBe("a");
+    expect(currentScene({ ...s, scenes: [] })).toBeNull();
+  });
+
+  it("starts the summary with the notes below it, oldest first", () => {
+    const log = [{ at: 2, text: "Fight" }, { at: 1, text: "Recap" }];
+    expect(summaryDraft({ ...session(), summary: " Went well. ", log })).toBe("Went well.\n\nRecap\nFight");
+    expect(summaryDraft({ ...session(), log })).toBe("Recap\nFight");
+    expect(summaryDraft({ ...session(), summary: "Kept" })).toBe("Kept");
+  });
+
+  it("shows time played as h:mm", () => {
+    expect([clock(0), clock(59_999), clock(84 * 60_000), clock(-5)]).toEqual(["0:00", "0:00", "1:24", "0:00"]);
+  });
+});
+
+describe("running a session again", () => {
+  it("starts once, and a Played session carries on its time played", () => {
+    const s = session();
+    startOrResume(s, 1_000);
+    startOrResume(s, 5_000); // reopened while Playing: unchanged
+    expect([s.started, s.ended]).toEqual([1_000, null]);
+    s.ended = 61_000; // played a minute
+    startOrResume(s, 100_000);
+    expect([s.started, s.ended, timePlayed(s, 100_000)]).toEqual([1_000, null, 60_000]); // the start stays
+  });
+
+  it("starts the summary with only the notes since the last end", () => {
+    const s = { ...session(), log: [{ at: 10, text: "First" }] };
+    endSession(s, 20, ` ${summaryDraft(s)} `);
+    expect([s.summary, s.ended, s.logAddedUntil]).toEqual(["First", 20, 20]);
+    s.log.unshift({ at: 30, text: "Second" });
+    endSession(s, 40, summaryDraft(s));
+    expect(s.summary).toBe("First\n\nSecond");
+  });
+});
+
+describe("pausing a session", () => {
+  it("leaves the pause out of the time played, also when ended while paused", () => {
+    const s = session();
+    expect(timePlayed(s, 5)).toBeNull();
+    pause(s, 5); // not started: nothing to pause
+    expect(s.pausedAt).toBeNull();
+    startOrResume(s, 1_000);
+    pause(s, 4_000);
+    pause(s, 6_000); // already paused
+    expect([s.pausedAt, timePlayed(s, 9_000)]).toEqual([4_000, 3_000]);
+    resume(s, 10_000);
+    expect([s.started, s.pausedAt, timePlayed(s, 12_000)]).toEqual([1_000, null, 5_000]);
+    pause(s, 13_000);
+    endSession(s, 20_000, "");
+    expect([s.pausedAt, s.ended, timePlayed(s, 99_000)]).toEqual([null, 20_000, 6_000]);
+  });
+});
+
+describe("running a Played session again", () => {
+  it("only when Run session asked for that session, and only once", () => {
+    expect(takeRunAgain("a")).toBe(false);
+    askRunAgain("a");
+    expect(takeRunAgain("b")).toBe(false); // another session: and the request is gone
+    expect(takeRunAgain("a")).toBe(false);
+    askRunAgain("a");
+    expect([takeRunAgain("a"), takeRunAgain("a")]).toEqual([true, false]); // Forward later doesn't rerun it
   });
 });

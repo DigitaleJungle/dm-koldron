@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0] - 2026-11-15
+
+### Added
+
+- Addons: code in the data folder's addons/<id>/ runs in a sandboxed frame and reaches the app only through a permissioned message API (addons/addons.md); a fresh install has none
+- Addons can list, install and remove packs; an installed pack is fully validated before an atomic swap, and one with a bundled pack's id (an updated SRD) is used instead of it until removed
+- Settings → Rules shows the panel of each addon that adds one; Settings → About lists the addons, invalid ones with their errors, and their license texts
+
 ## [0.5.18] - 2026-11-14
 
 ### Added

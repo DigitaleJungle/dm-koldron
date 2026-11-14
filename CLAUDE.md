@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 # DM's Koldron
 
-Koldron is an open-source (MPL-2.0), local-first desktop companion for Dungeon Masters running in-person D&D sessions. Its v1 scope includes a readable SRD 5.2 library and catalog, global search, campaigns, characters, and encounters (prepare and run). Keep the core small; community content packs extend the data, and code plugins are a later phase.
+Koldron is an open-source (MPL-2.0), local-first desktop companion for Dungeon Masters running in-person D&D sessions. Its v1 scope includes a readable SRD 5.2 library and catalog, global search, campaigns, characters, and encounters (prepare and run). Keep the core small; community content packs extend the data, and addons (sandboxed code, `addons/addons.md`) extend the app.
 
 ## Product specification
 
@@ -31,7 +31,7 @@ Koldron is an open-source (MPL-2.0), local-first desktop companion for Dungeon M
 - Preserve required legal notices: use exactly the attribution specified in SRD 5.2.1 Legal Information, plus the `5e-srd-api` MIT notice, in the pack and Settings → About. Do not invent additional Wizards of the Coast attribution. Preserve any other legally required notices in included source files.
 - Packs must declare a compatible schema version. Validate completely in Rust before making data available. Report and skip invalid packs; never partially load one or prevent other valid packs from loading.
 - Keep pack parsing, validation, indexing, and game-rules interpretation conceptually separate. Never assume every future community pack follows D&D 5e rules beyond its declared schema and ruleset.
-- Code plugins are a later development phase. Keep boundaries clear but do not build speculative plugin APIs, runtimes, licensing checks, or a marketplace before the product specification requires them.
+- Addons live in the data folder (`addons/<id>/`) and run in a sandboxed frame; their only way into the app is the message API in `addons/addons.md`, and Rust checks every call against the addon's declared permissions. Add an API call or contribution point only when a real addon needs it; no install UI, licensing checks or marketplace before the product specification requires them.
 
 ## Domain invariants — never break
 

@@ -1,3 +1,4 @@
+mod addons;
 mod bundles;
 mod commands;
 mod dice;
@@ -11,6 +12,11 @@ use tauri::{Manager, WindowEvent};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Addon pages, each from its own folder only (commands/addons.rs).
+        .register_asynchronous_uri_scheme_protocol(commands::addons::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || responder.respond(commands::addons::serve(&app, &request)));
+        })
         .setup(|app| {
             // Dev keeps its own data folder; a debug build on the prod identifier would use real data.
             if cfg!(debug_assertions) && !app.config().identifier.ends_with(".dev") {
@@ -35,6 +41,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::about::license_texts,
+            commands::addons::list_addons,
+            commands::addons::addon_packs,
+            commands::addons::addon_install_pack,
+            commands::addons::addon_remove_pack,
+            commands::addons::addon_fetch,
+            commands::addons::addon_pick_file,
+            commands::addons::addon_pick_folder,
+            commands::addons::addon_storage_get,
+            commands::addons::addon_storage_set,
             commands::campaigns::list_campaigns,
             commands::campaigns::create_campaign,
             commands::campaigns::open_campaign,

@@ -8,6 +8,8 @@ export type PackSummary = {
   license: string;
   entries: number;
   enabled: boolean;
+  /** Installed by an addon in the data folder; false for a bundled pack. */
+  installed: boolean;
   errors: string[];
 };
 

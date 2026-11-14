@@ -35,6 +35,17 @@ pub fn check_id(id: &str, what: &str) -> Result<(), StorageError> {
     }
 }
 
+/// The folders in `dir`, sorted by name. A missing `dir` has none.
+pub fn subfolders(dir: &Path) -> io::Result<Vec<fs::DirEntry>> {
+    let mut folders: Vec<_> = match fs::read_dir(dir) {
+        Ok(entries) => entries.filter_map(Result::ok).filter(|e| e.path().is_dir()).collect(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e),
+    };
+    folders.sort_by_key(|e| e.file_name());
+    Ok(folders)
+}
+
 /// The app's data folder, where everything it saves lives.
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
     app.path().app_data_dir().map_err(|e| StorageError::Io(e.to_string()))

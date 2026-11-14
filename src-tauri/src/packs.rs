@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
+use crate::storage::{check_id, subfolders, StorageError};
 use std::path::{Component, Path};
 
 pub const SCHEMA: u32 = 1;
@@ -45,7 +46,7 @@ pub struct DataFile {
 }
 
 /// `images.json`: where the images are, and each downloadable image's path (an entry's `image`) with its size in bytes.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Images {
     pub host: String,
@@ -58,6 +59,8 @@ pub struct Pack {
     /// The entries per type, from all of the pack's files of that type.
     pub entries: BTreeMap<String, Vec<Map<String, Value>>>,
     pub images: Option<Images>,
+    /// Installed in the data folder (by an addon), not bundled with the app.
+    pub installed: bool,
 }
 
 impl Pack {
@@ -77,14 +80,8 @@ pub struct Invalid {
 /// Loads every pack folder in `dir`, sorted by folder name. Folders without a `pack.json` are not packs and are
 /// skipped; an invalid pack is reported, never partly loaded, and doesn't stop the others.
 pub fn load_dir(dir: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
-    let mut folders: Vec<_> = match fs::read_dir(dir) {
-        Ok(entries) => entries.filter_map(Result::ok).filter(|e| e.path().is_dir()).collect(),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
-        Err(e) => return Err(e),
-    };
-    folders.sort_by_key(|e| e.file_name());
     let (mut packs, mut invalid) = (Vec::<Pack>::new(), Vec::new());
-    for folder in folders {
+    for folder in subfolders(dir)? {
         let name = folder.file_name().to_string_lossy().into_owned();
         match load_pack(&folder.path()) {
             Ok(None) => {}
@@ -98,6 +95,100 @@ pub fn load_dir(dir: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
         }
     }
     Ok((packs, invalid))
+}
+
+/// The bundled packs and the ones installed in the data folder, sorted by id. An installed pack is used instead of a
+/// bundled one with the same id (an updated SRD); an invalid installed one doesn't hide the bundled one.
+pub fn load_all(bundled: &Path, installed: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
+    let (mut packs, mut invalid) = load_dir(installed)?;
+    packs.iter_mut().for_each(|p| p.installed = true);
+    let (shipped, shipped_invalid) = load_dir(bundled)?;
+    let replaced: HashSet<String> = packs.iter().map(|p| p.manifest.id.clone()).collect();
+    packs.extend(shipped.into_iter().filter(|p| !replaced.contains(&p.manifest.id)));
+    packs.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
+    invalid.extend(shipped_invalid);
+    Ok((packs, invalid))
+}
+
+/// A pack handed over to be installed: its `pack.json`, each data file by the path the manifest gives it, and
+/// optionally its `images.json` and license text.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewPack {
+    pub manifest: Value,
+    pub files: BTreeMap<String, Value>,
+    pub images: Option<Value>,
+    pub license: Option<String>,
+}
+
+const LICENSE: &str = "LICENSE.md";
+
+/// Writes `new` to `staging`, validates it there completely, then swaps it in as `installed/<id>` (replacing the pack
+/// installed with that id). On any failure `installed` is left as it was. `staging` must be on the same disk.
+pub fn install(installed: &Path, staging: &Path, new: &NewPack) -> Result<Pack, StorageError> {
+    let _ = fs::remove_dir_all(staging); // what a crash left behind
+    let result = write_and_load(staging, new).and_then(|pack| {
+        let target = installed.join(&pack.manifest.id);
+        let old = staging.with_extension("old");
+        let _ = fs::remove_dir_all(&old);
+        fs::create_dir_all(installed)?;
+        let had_one = target.exists();
+        if had_one {
+            fs::rename(&target, &old)?;
+        }
+        if let Err(e) = fs::rename(staging, &target) {
+            if had_one {
+                let _ = fs::rename(&old, &target); // put the previous pack back
+            }
+            return Err(e.into());
+        }
+        let _ = fs::remove_dir_all(&old);
+        Ok(pack)
+    });
+    let _ = fs::remove_dir_all(staging);
+    result.map(|mut pack| {
+        pack.installed = true;
+        pack
+    })
+}
+
+fn write_and_load(staging: &Path, new: &NewPack) -> Result<Pack, StorageError> {
+    let write = |path: &Path, bytes: &[u8]| -> Result<(), StorageError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        Ok(fs::write(path, bytes)?)
+    };
+    let json = |value: &Value| serde_json::to_vec(value).expect("a JSON value serializes");
+    for (path, data) in &new.files {
+        if !safe_path(path) || [MANIFEST, IMAGES, LICENSE].contains(&path.as_str()) {
+            return Err(StorageError::Invalid(format!("{path}: not a data file path a pack can use.")));
+        }
+        write(&staging.join(path), &json(data))?;
+    }
+    write(&staging.join(MANIFEST), &json(&new.manifest))?;
+    if let Some(images) = &new.images {
+        write(&staging.join(IMAGES), &json(images))?;
+    }
+    if let Some(license) = &new.license {
+        write(&staging.join(LICENSE), license.as_bytes())?;
+    }
+    match load_pack(staging) {
+        Ok(Some(pack)) => Ok(pack),
+        Ok(None) => Err(StorageError::Invalid(format!("{MANIFEST} is missing."))),
+        Err((_, errors)) => Err(StorageError::Invalid(errors.join("
+"))),
+    }
+}
+
+/// Removes the pack installed as `installed/<id>`. A bundled pack can't be removed.
+pub fn remove(installed: &Path, id: &str) -> Result<(), StorageError> {
+    check_id(id, "pack")?;
+    let folder = installed.join(id);
+    if !folder.is_dir() {
+        return Err(StorageError::NotFound(format!("\"{id}\" isn't an installed pack; a bundled pack can't be removed.")));
+    }
+    Ok(fs::remove_dir_all(folder)?)
 }
 
 type LoadError = (Option<String>, Vec<String>);
@@ -132,7 +223,7 @@ pub fn load_pack(folder: &Path) -> Result<Option<Pack>, LoadError> {
         }
     };
     if errors.is_empty() {
-        Ok(Some(Pack { manifest, entries, images }))
+        Ok(Some(Pack { manifest, entries, images, installed: false }))
     } else {
         Err((Some(manifest.name), errors))
     }
@@ -188,7 +279,7 @@ fn check_manifest(m: &Manifest) -> Vec<String> {
 }
 
 /// A relative path that can't leave the pack folder.
-fn safe_path(path: &str) -> bool {
+pub fn safe_path(path: &str) -> bool {
     !path.is_empty() && Path::new(path).components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
@@ -400,5 +491,66 @@ mod tests {
         extra["homepage"] = "x".into();
         write_pack(&dir, "q", extra, &[]);
         assert!(load_pack(&dir.join("q")).unwrap_err().1[0].contains("homepage"));
+    }
+
+    fn new_pack(id: &str, version: &str, conditions: Value) -> NewPack {
+        let mut manifest = manifest(id, serde_json::json!([{ "type": "conditions", "path": "data/c.json" }]));
+        manifest["version"] = version.into();
+        NewPack { manifest, files: [("data/c.json".to_string(), conditions)].into(), images: None, license: Some("MIT".into()) }
+    }
+
+    #[test]
+    fn installing_validates_first_then_replaces_the_installed_pack() {
+        let dir = temp_dir("install");
+        let (installed, staging) = (dir.join("packs"), dir.join("staging/new"));
+        let good = serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]);
+        let pack = install(&installed, &staging, &new_pack("home", "1.0.0", good.clone())).unwrap();
+        assert!(pack.installed && installed.join("home/data/c.json").is_file() && installed.join("home/LICENSE.md").is_file());
+
+        // An invalid update is refused with its errors and the installed version stays.
+        let Err(StorageError::Invalid(errors)) = install(&installed, &staging, &new_pack("home", "2.0.0", serde_json::json!([{ "index": "a" }]))) else {
+            panic!("an invalid pack must be refused");
+        };
+        assert!(errors.contains("\"name\" is missing"), "{errors}");
+        assert_eq!(load_pack(&installed.join("home")).unwrap().unwrap().manifest.version, "1.0.0");
+
+        install(&installed, &staging, &new_pack("home", "2.0.0", good)).unwrap();
+        assert_eq!(load_pack(&installed.join("home")).unwrap().unwrap().manifest.version, "2.0.0");
+        assert!(!staging.exists() && !staging.with_extension("old").exists());
+
+        let mut escaping = new_pack("x", "1", serde_json::json!([]));
+        escaping.files.insert("../evil.json".into(), serde_json::json!([]));
+        assert!(matches!(install(&installed, &staging, &escaping), Err(StorageError::Invalid(_))));
+        assert!(!dir.join("evil.json").exists());
+    }
+
+    #[test]
+    fn an_installed_pack_replaces_the_bundled_one_and_removing_it_brings_that_back() {
+        let dir = temp_dir("store");
+        let (bundled, installed) = (dir.join("bundled"), dir.join("installed"));
+        let files = serde_json::json!([{ "type": "conditions", "path": "c.json" }]);
+        let data = serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]);
+        for (root, id, version) in [(&bundled, "srd", "1"), (&bundled, "extra", "1"), (&installed, "srd", "2")] {
+            let mut m = manifest(id, files.clone());
+            m["version"] = version.into();
+            write_pack(root, id, m, &[("c.json", data.clone())]);
+        }
+        let (packs, _) = load_all(&bundled, &installed).unwrap();
+        let got: Vec<_> = packs.iter().map(|p| (p.manifest.id.as_str(), p.manifest.version.as_str(), p.installed)).collect();
+        assert_eq!(got, [("extra", "1", false), ("srd", "2", true)]);
+
+        // An installed pack that no longer validates (say, after a schema change) leaves the bundled one in use.
+        fs::create_dir_all(installed.join("extra")).unwrap();
+        fs::write(installed.join("extra").join(MANIFEST), "{ nope").unwrap();
+        let (packs, invalid) = load_all(&bundled, &installed).unwrap();
+        assert_eq!(packs.iter().find(|p| p.manifest.id == "extra").map(|p| p.installed), Some(false));
+        assert_eq!(invalid.iter().map(|i| i.folder.as_str()).collect::<Vec<_>>(), ["extra"]);
+        fs::remove_dir_all(installed.join("extra")).unwrap();
+
+        assert!(matches!(remove(&installed, "extra"), Err(StorageError::NotFound(_))));
+        assert!(matches!(remove(&installed, "../bundled"), Err(StorageError::Invalid(_))));
+        remove(&installed, "srd").unwrap();
+        let (packs, _) = load_all(&bundled, &installed).unwrap();
+        assert_eq!(packs.iter().find(|p| p.manifest.id == "srd").unwrap().manifest.version, "1");
     }
 }

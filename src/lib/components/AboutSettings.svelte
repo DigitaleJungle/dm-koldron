@@ -1,17 +1,23 @@
 <script lang="ts">
   import { strings } from "$lib/strings";
   import { licenseTexts, type LicenseText } from "$lib/api/about";
+  import { listAddons, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
   import { version } from "../../../package.json";
 
   const t = strings.settings.about;
   let texts = $state<LicenseText[]>();
   let error = $state<string>();
+  let addons = $state<AddonSummary[]>([]);
+  let addonsError = $state<string>();
 
   $effect(() => {
     licenseTexts()
       .then((list) => (texts = list))
       .catch((e) => (error = errorMessage(e)));
+    listAddons()
+      .then((list) => (addons = list))
+      .catch((e) => (addonsError = errorMessage(e)));
   });
 </script>
 
@@ -38,6 +44,31 @@
   <p>{t.tabler}</p>
 </section>
 
+{#if addonsError}
+  <p class="error" role="alert">{t.addonsError(addonsError)}</p>
+{:else if addons.length > 0}
+  <section>
+    <h3>{t.addons}</h3>
+    <ul>
+      {#each addons as addon (addon.id)}
+        <li>
+          <p class="name">{addon.name}</p>
+          {#if addon.errors.length === 0}
+            <p class="muted">{t.addonDetails(addon.version, addon.license)}</p>
+          {:else}
+            <p class="invalid">{t.addonInvalid}</p>
+            <ul class="errors">
+              {#each addon.errors as problem, i (i)}
+                <li>{problem}</li>
+              {/each}
+            </ul>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
+{/if}
+
 <section>
   <h3>{t.texts}</h3>
   {#if error}
@@ -49,6 +80,12 @@
       <details>
         <summary>{t.textNames[license.id] ?? license.id}</summary>
         <pre>{license.text}</pre>
+      </details>
+    {/each}
+    {#each addons.filter((a) => a.licenseText) as addon (addon.id)}
+      <details>
+        <summary>{addon.name}</summary>
+        <pre>{addon.licenseText}</pre>
       </details>
     {/each}
   {/if}
@@ -102,6 +139,30 @@
     font-size: var(--text-xs);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    list-style: none;
+  }
+
+  .name {
+    font-weight: var(--weight-medium);
+  }
+
+  .invalid {
+    color: var(--color-danger);
+    font-weight: var(--weight-medium);
+  }
+
+  .errors {
+    gap: var(--space-1);
+    padding-left: var(--space-4);
+    list-style: disc;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
   }
 
   .error {

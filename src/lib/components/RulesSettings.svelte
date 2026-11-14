@@ -1,7 +1,9 @@
 <script lang="ts">
   import { strings } from "$lib/strings";
   import { cancelImageDownload, deleteImages, listPackImages, type PackImages } from "$lib/api/images";
+  import { listAddons, type AddonSummary } from "$lib/api/addons";
   import { listPacks, type PackSummary } from "$lib/api/packs";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { getSettings, setSettings } from "$lib/api/settings";
   import { errorMessage } from "$lib/api/storage";
   import Switch from "$lib/components/Switch.svelte";
@@ -19,6 +21,9 @@
   let loadError = $state<string>();
   let saveError = $state<string>();
   let saving = $state(false);
+  /** Loaded addons that add a panel to Rules. */
+  let panels = $state<AddonSummary[]>([]);
+  let addonsError = $state<string>();
 
   const byPack = (images: PackImages[]) => Object.fromEntries(images.map((i) => [i.pack, i]));
 
@@ -30,7 +35,18 @@
         packs = list;
       })
       .catch((e) => (loadError = errorMessage(e)));
+    listAddons()
+      .then((list) => (panels = list.filter((a) => a.errors.length === 0 && a.settings?.section === "rules")))
+      .catch((e) => (addonsError = errorMessage(e)));
   });
+
+  /** An addon installed or removed a pack. */
+  function packsChanged() {
+    listPacks()
+      .then((list) => (packs = list))
+      .catch((e) => (loadError = errorMessage(e)));
+    recount();
+  }
 
   /** Recounts the kept images: after a download ends or images are deleted. */
   function recount() {
@@ -149,6 +165,13 @@
     {/each}
   </ul>
 {/if}
+
+{#if addonsError}
+  <p class="error" role="alert">{t.addonsError(addonsError)}</p>
+{/if}
+{#each panels as addon (addon.id)}
+  <AddonFrame {addon} entry={addon.settings!.entry} onpackschange={packsChanged} />
+{/each}
 
 <dialog bind:this={dialog} class="dialog ask" aria-labelledby="images-title" aria-describedby="images-question" onclose={() => asking && answer("cancel")}>
   {#if asking?.turningOn}

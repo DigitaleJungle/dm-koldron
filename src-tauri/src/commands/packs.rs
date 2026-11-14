@@ -1,28 +1,44 @@
-//! The installed packs, loaded once per run, and Settings → Rules: each pack, valid or not, with whether it's switched on.
+//! The packs, loaded on first use and again after an addon changes them, and Settings → Rules: each pack, valid or not, with whether it's switched on.
 
 use crate::commands::settings;
-use crate::packs::{load_dir, Invalid, Pack};
+use crate::commands::search;
+use crate::packs::{load_all, Invalid, Pack};
 use crate::storage::{blocking, data_dir, StorageError};
 use serde::Serialize;
-use std::sync::OnceLock;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
 
-/// At most this many errors per invalid pack; the rest are counted.
+/// At most this many errors per invalid pack or addon; the rest are counted.
 const MAX_ERRORS: usize = 20;
 
 pub type Loaded = (Vec<Pack>, Vec<Invalid>);
 
-// shortcut: the bundled packs can't change while the app runs, so they're read once; reload here when Add pack… (TODO 12) can change them.
-static LOADED: OnceLock<Loaded> = OnceLock::new();
+/// Read once, then again after an addon installs or removes a pack (`reload`).
+static LOADED: Mutex<Option<Arc<Loaded>>> = Mutex::new(None);
 
-/// The bundled packs, read and validated on first use. Blocking: call it inside `blocking`.
-pub fn loaded(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
-    if let Some(loaded) = LOADED.get() {
-        return Ok(loaded);
+/// Where addons install packs, in the data folder.
+pub fn installed_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("packs"))
+}
+
+/// The bundled and installed packs, read and validated on first use. Blocking: call it inside `blocking`.
+pub fn loaded(app: &AppHandle) -> Result<Arc<Loaded>, StorageError> {
+    // Held while loading, so a `reload` can't be undone by a load that read the folders before the change.
+    let mut cache = LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(loaded) = cache.as_ref() {
+        return Ok(loaded.clone());
     }
-    let dir = app.path().resource_dir().map_err(|e| StorageError::Io(e.to_string()))?.join("packs");
-    let packs = load_dir(&dir)?;
-    Ok(LOADED.get_or_init(|| packs))
+    let bundled = app.path().resource_dir().map_err(|e| StorageError::Io(e.to_string()))?.join("packs");
+    let loaded = Arc::new(load_all(&bundled, &installed_dir(app)?)?);
+    *cache = Some(loaded.clone());
+    Ok(loaded)
+}
+
+/// Call after the installed packs changed: they're read again on next use, and the search index is rebuilt.
+pub fn reload() {
+    *LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    search::changed();
 }
 
 /// Pack ids switched off in Settings → Rules. A damaged settings file was already copied aside by `load`; then all are on.
@@ -45,13 +61,25 @@ pub struct PackSummary {
     pub license: String,
     pub entries: usize,
     pub enabled: bool,
+    /// Installed by an addon in the data folder; false for a bundled pack.
+    pub installed: bool,
     /// Empty for a loaded pack. A pack with errors isn't loaded.
     pub errors: Vec<String>,
+}
+
+/// The first `MAX_ERRORS` errors, then how many more there are.
+pub fn capped(errors: &[String]) -> Vec<String> {
+    let mut shown: Vec<String> = errors.iter().take(MAX_ERRORS).cloned().collect();
+    if errors.len() > MAX_ERRORS {
+        shown.push(format!("…and {} more.", errors.len() - MAX_ERRORS));
+    }
+    shown
 }
 
 pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSummary> {
     let valid = packs.iter().map(|p| PackSummary {
         enabled: !disabled.contains(&p.manifest.id),
+        installed: p.installed,
         entries: p.entry_count(),
         id: p.manifest.id.clone(),
         name: p.manifest.name.clone(),
@@ -60,10 +88,7 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
         errors: Vec::new(),
     });
     let invalid = invalid.iter().map(|i| {
-        let mut errors: Vec<String> = i.errors.iter().take(MAX_ERRORS).cloned().collect();
-        if i.errors.len() > MAX_ERRORS {
-            errors.push(format!("…and {} more.", i.errors.len() - MAX_ERRORS));
-        }
+        let errors = capped(&i.errors);
         PackSummary {
             name: i.name.clone().unwrap_or_else(|| i.folder.clone()),
             id: i.folder.clone(),
@@ -71,6 +96,7 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
             license: String::new(),
             entries: 0,
             enabled: false,
+            installed: false,
             errors,
         }
     });
@@ -79,12 +105,13 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
 
 #[tauri::command]
 pub async fn list_packs(app: AppHandle) -> Result<Vec<PackSummary>, StorageError> {
-    blocking(move || Ok(summaries(loaded(&app)?, &disabled(&app)?))).await
+    blocking(move || Ok(summaries(&*loaded(&app)?, &disabled(&app)?))).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packs::load_dir;
     use std::path::Path;
 
     #[test]

@@ -4,7 +4,7 @@
 
 use crate::commands::packs::loaded;
 use crate::commands::settings;
-use crate::packs::{Images, Pack};
+use crate::packs::Images;
 use crate::storage::{blocking, data_dir, write_atomic_bytes, StorageError};
 use serde::Serialize;
 use std::fs;
@@ -149,11 +149,16 @@ fn download(url: &str) -> Option<Vec<u8>> {
 }
 
 /// The pack's listed images and its kept-images folder; an unknown pack or one without images is `NotFound`.
-fn pack_images(app: &AppHandle, pack: &str) -> Result<(&'static Pack, PathBuf), StorageError> {
-    let found = loaded(app)?.0.iter().find(|p| p.manifest.id == pack && p.images.is_some());
-    let found = found.ok_or_else(|| StorageError::NotFound(format!("The pack \"{pack}\" has no images.")))?;
-    // A loaded pack's id is lowercase letters, digits and dashes, so it's one folder name.
-    Ok((found, data_dir(app)?.join(DIR).join(pack)))
+/// On a worker thread: reading the packs can mean parsing them all.
+async fn pack_images(app: &AppHandle, pack: &str) -> Result<(Images, PathBuf), StorageError> {
+    let (app, pack) = (app.clone(), pack.to_string());
+    blocking(move || {
+        let found = loaded(&app)?.0.iter().find(|p| p.manifest.id == pack).and_then(|p| p.images.clone());
+        let found = found.ok_or_else(|| StorageError::NotFound(format!("The pack \"{pack}\" has no images.")))?;
+        // A loaded pack's id is lowercase letters, digits and dashes, so it's one folder name.
+        Ok((found, data_dir(&app)?.join(DIR).join(&pack)))
+    })
+    .await
 }
 
 /// The download running for each pack, so it can be cancelled; one per pack at a time.
@@ -165,10 +170,10 @@ fn running() -> std::sync::MutexGuard<'static, Vec<(String, Arc<AtomicBool>)>> {
 
 #[tauri::command]
 pub async fn list_pack_images(app: AppHandle) -> Result<Vec<PackImages>, StorageError> {
-    let packs = &loaded(&app)?.0;
     let dir = data_dir(&app)?.join(DIR);
     blocking(move || {
-        Ok(packs
+        Ok(loaded(&app)?
+            .0
             .iter()
             .filter_map(|p| {
                 let images = p.images.as_ref()?;
@@ -187,13 +192,13 @@ pub async fn entry_image(app: AppHandle, pack: String, image: String) -> Result<
     if !on {
         return Ok(None);
     }
-    let Ok((found, dir)) = pack_images(&app, &pack) else { return Ok(None) };
-    blocking(move || self::image(&dir, found.images.as_ref().unwrap(), &image, download)).await
+    let Ok((found, dir)) = pack_images(&app, &pack).await else { return Ok(None) };
+    blocking(move || self::image(&dir, &found, &image, download)).await
 }
 
 #[tauri::command]
 pub async fn download_images(app: AppHandle, pack: String, on_progress: Channel<Progress>) -> Result<Progress, StorageError> {
-    let (found, dir) = pack_images(&app, &pack)?;
+    let (found, dir) = pack_images(&app, &pack).await?;
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut running = running();
@@ -203,7 +208,7 @@ pub async fn download_images(app: AppHandle, pack: String, on_progress: Channel<
         running.push((pack.clone(), cancel.clone()));
     }
     let result = blocking(move || {
-        download_all(&dir, found.images.as_ref().unwrap(), download, &cancel, |p| {
+        download_all(&dir, &found, download, &cancel, |p| {
             let _ = on_progress.send(p); // the window may be gone; the download carries on
         })
     })
@@ -223,7 +228,7 @@ pub fn cancel_image_download(pack: String) {
 #[tauri::command]
 pub async fn delete_images(app: AppHandle, pack: String) -> Result<(), StorageError> {
     cancel_image_download(pack.clone());
-    let (_, dir) = pack_images(&app, &pack)?;
+    let (_, dir) = pack_images(&app, &pack).await?;
     // shortcut: an image a cancelled download was writing just then can land after this; harmless, it's re-deleted next time.
     blocking(move || delete(&dir)).await
 }

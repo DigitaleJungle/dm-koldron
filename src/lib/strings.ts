@@ -877,6 +877,7 @@ export const strings = {
       invalid: "Not loaded",
       loadError: (reason: string) => `Couldn't load the packs. ${reason}`,
       saveError: (name: string, reason: string) => `Couldn't switch ${name}. ${reason}`,
+      addonsError: (reason: string) => `Couldn't load the addons. ${reason}`,
       images: {
         enable: "Enable images",
         enableQuestion: (name: string, count: string, size: string) =>
@@ -921,6 +922,10 @@ export const strings = {
       textNames: { app: "DM's Koldron", srd: "SRD pack", "tabler-icons": "Tabler Icons" } as Record<string, string>,
       loading: "Loading license texts…",
       loadError: (reason: string) => `Couldn't load the license texts. ${reason}`,
+      addons: "Addons",
+      addonDetails: (version: string, license: string) => `${version} · ${license}`,
+      addonInvalid: "Not loaded",
+      addonsError: (reason: string) => `Couldn't load the addons. ${reason}`,
     },
   },
 };

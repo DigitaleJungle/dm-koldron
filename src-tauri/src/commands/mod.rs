@@ -1,4 +1,5 @@
 pub mod about;
+pub mod addons;
 pub mod campaigns;
 pub mod catalog;
 pub mod characters;

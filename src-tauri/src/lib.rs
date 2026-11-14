@@ -22,6 +22,10 @@ pub fn run() {
             if cfg!(debug_assertions) && !app.config().identifier.ends_with(".dev") {
                 return Err("Debug builds must run with the dev config: npm run app".into());
             }
+            // So there's a place to put addons from the first launch on (addons/addons.md). Missing just means no addons.
+            if let Ok(dir) = storage::data_dir(app.handle()) {
+                let _ = std::fs::create_dir_all(dir.join("addons"));
+            }
             commands::search::warm(app.handle().clone());
             if let Some(main) = app.get_webview_window("main") {
                 window_state::restore(&main.as_ref().window());

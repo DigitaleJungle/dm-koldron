@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.1] - 2026-11-15
+
+### Changed
+
+- The app creates the empty addons folder in its data folder when it starts, so there's a place to put addons from the first launch on
+
 ## [0.6.0] - 2026-11-15
 
 ### Added

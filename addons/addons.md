@@ -6,7 +6,7 @@ Content packs are not addons (see `packs/packs.md`). An addon can produce packs,
 
 ## Installing
 
-There's no install screen yet. Put the addon's folder in the app's data folder, `addons/<id>/`, and restart the app:
+There's no install screen yet. Put the addon's folder in the app's data folder, `addons/<id>/`, and restart the app. The app creates the empty `addons` folder when it starts:
 
 - Windows: `%APPDATA%\be.digitalejungle.koldron\addons\`
 - macOS: `~/Library/Application Support/be.digitalejungle.koldron/addons/`

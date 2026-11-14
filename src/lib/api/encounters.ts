@@ -85,6 +85,11 @@ export function saveEncounter(campaign: string, encounter: Encounter): Promise<E
   return invoke("save_encounter", { campaign, encounter });
 }
 
+/** Deletes a saved encounter with its map and run, and unlinks it from the sessions' scenes. */
+export function deleteEncounter(campaign: string, id: string): Promise<void> {
+  return invoke("delete_encounter", { campaign, id });
+}
+
 /** Makes the picture file at `path` (from `choosePictureFile`) a saved encounter's map, or removes it (`null`). */
 export function setEncounterMap(campaign: string, id: string, path: string | null): Promise<Picture | null> {
   return invoke("set_encounter_map", { campaign, id, path });

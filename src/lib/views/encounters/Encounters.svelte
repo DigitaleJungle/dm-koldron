@@ -16,6 +16,7 @@
   import { BANDS } from "./difficulty";
   import { encounterCard } from "./card";
   import EncounterCard from "./EncounterCard.svelte";
+  import EncounterPlaceholder from "./EncounterPlaceholder.svelte";
   import { rowsByKey } from "./roster";
 
   const t = strings.encounters;
@@ -115,7 +116,7 @@
       <p class="message error" role="alert">{error}</p>
     {/each}
     {#if list.encounters.length === 0}
-      <p class="message">{t.empty}</p>
+      <ul class="cards"><li><EncounterPlaceholder {base} /></li></ul>
     {:else if shown.length === 0}
       <p class="message" role="status">{t.list.noMatches}</p>
     {:else}

@@ -3,6 +3,7 @@
 
 use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
 use crate::commands::packs::{disabled, enabled, loaded};
+use crate::commands::sessions;
 use crate::packs::Pack;
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
@@ -231,6 +232,32 @@ pub fn set_map(campaign_dir: &Path, id: &str, source: Option<&Path>) -> Result<O
     Ok(picture_at(&path))
 }
 
+/// Deletes the encounter with its map and run, and unlinks it from every session's scenes.
+pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
+    check_id(id, "encounter")?;
+    let folder = campaign_dir.join(FOLDER);
+    let _guard = lock_update();
+    read(&folder, id)?; // only what exists, and never a file that can't be read
+    // Unlinked first: if a session can't be written, the encounter is still there to delete again.
+    // shortcut: a session file that can't be read keeps its link; the scenes only show encounters that exist.
+    // The caller has run world::migrate, so writing a session back drops no locations or NPCs of its own.
+    for mut session in sessions::read_all(campaign_dir)? {
+        let before: usize = session.scenes.iter().map(|sc| sc.encounter_ids.len()).sum();
+        session.scenes.iter_mut().for_each(|sc| sc.encounter_ids.retain(|e| e != id));
+        if session.scenes.iter().map(|sc| sc.encounter_ids.len()).sum::<usize>() != before {
+            sessions::write(campaign_dir, &session)?;
+        }
+    }
+    fs::remove_file(folder.join(format!("{id}.json")))?;
+    for extra in [map_path(&folder, id), run_path(&folder, id)] {
+        match fs::remove_file(extra) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 const MAX_COMBATANTS: usize = 1000;
 const MAX_ID_LEN: usize = 64;
 const MAX_CONDITIONS: usize = 50;
@@ -420,6 +447,13 @@ pub async fn save_encounter(app: AppHandle, campaign: String, encounter: Encount
 
 /// `path`: the picture the DM chose, or none to remove the map.
 #[tauri::command]
+pub async fn delete_encounter(app: AppHandle, campaign: String, id: String) -> Result<(), StorageError> {
+    // Migrated first (outside delete's lock, as migrate takes it too): older sessions still hold their own
+    // locations and NPCs, which writing them back would drop.
+    blocking(move || delete(&sessions::migrated(&app, &campaign)?, &id)).await
+}
+
+#[tauri::command]
 pub async fn set_encounter_map(app: AppHandle, campaign: String, id: String, path: Option<String>) -> Result<Option<Picture>, StorageError> {
     blocking(move || set_map(&active_dir(&dirs(&app)?, &campaign)?, &id, path.as_deref().map(Path::new))).await
 }
@@ -563,6 +597,32 @@ mod tests {
         assert_eq!((listed.encounters.len(), listed.unreadable.len()), (1, 0));
         end_run_at(&dir, &e.id).unwrap();
         assert_eq!(get_run_at(&dir, &e.id).unwrap(), None);
+    }
+
+    #[test]
+    fn deletes_with_its_map_and_run_and_unlinks_it_from_scenes() {
+        let dir = temp_dir("delete");
+        let gone = save(&dir, encounter("Bridge", vec![goblins(2)]), 1).unwrap();
+        let kept = save(&dir, encounter("Crypt", vec![goblins(1)]), 2).unwrap();
+        save_run_at(&dir, &gone.id, run_of(vec![combatant("a")]), 3).unwrap();
+        fs::write(map_path(&dir.join(FOLDER), &gone.id), b"jpg").unwrap();
+        let session: sessions::Session = serde_json::from_value(serde_json::json!({
+            "id": "s1", "number": 1, "title": "Vault",
+            "scenes": [{ "id": "a", "encounterIds": [gone.id, kept.id] }, { "id": "b", "encounterIds": [gone.id] }]
+        }))
+        .unwrap();
+        fs::create_dir_all(sessions::folder(&dir)).unwrap();
+        sessions::write(&dir, &session).unwrap();
+
+        delete(&dir, &gone.id).unwrap();
+        let left: Vec<String> = list(&dir).unwrap().encounters.into_iter().map(|e| e.id).collect();
+        assert_eq!(left, vec![kept.id.clone()]);
+        let folder = dir.join(FOLDER);
+        assert!(!map_path(&folder, &gone.id).exists() && !run_path(&folder, &gone.id).exists());
+        let links: Vec<Vec<String>> = sessions::read_all(&dir).unwrap()[0].scenes.iter().map(|sc| sc.encounter_ids.clone()).collect();
+        assert_eq!(links, vec![vec![kept.id], vec![]]);
+        assert!(matches!(delete(&dir, &gone.id), Err(StorageError::NotFound(_))));
+        assert!(matches!(delete(&dir, "../x"), Err(StorageError::Invalid(_))));
     }
 
     #[test]

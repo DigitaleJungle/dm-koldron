@@ -445,7 +445,7 @@ pub fn delete(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
 }
 
 /// The campaign's folder, once its sessions' own locations and NPCs have moved to the campaign.
-fn migrated(app: &AppHandle, campaign: &str) -> Result<PathBuf, StorageError> {
+pub(crate) fn migrated(app: &AppHandle, campaign: &str) -> Result<PathBuf, StorageError> {
     let dir = active_dir(&dirs(app)?, campaign)?;
     world::migrate(&dir, now_ms())?;
     Ok(dir)

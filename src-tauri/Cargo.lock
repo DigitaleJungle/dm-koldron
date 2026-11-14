@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "dm-koldron"
-version = "0.5.17"
+version = "0.5.18"
 dependencies = [
  "image",
  "pulldown-cmark",

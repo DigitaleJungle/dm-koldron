@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.18] - 2026-11-14
+
+### Added
+
+- Campaign Home: widgets for the party, the next session, the previous session's summary and random encounters, in a three-column grid; drag a grip to move a widget and its right edge to resize it, or use its ⋯ menu
+- Campaign Home: a lock that fixes the layout and hides the widgets' cards; while unlocked, Remove in a widget's ⋯ menu takes it off Home and a dashed Add widget slot puts it back
+- Campaign Home: add or remove party members from the Party widget; the encounters' difficulty follows at once
+- Campaign Home: the Random encounter widget shows one encounter per column of its width, each with a die to pick another
+- Encounter builder: Delete next to Back removes a saved encounter with its map and run, and unlinks it from session scenes
+
+### Changed
+
+- Encounters: with no encounters yet, a dashed Create encounter card shows instead of a message, on the Encounters screen and on Home
+
 ## [0.5.17] - 2026-11-13
 
 ### Added

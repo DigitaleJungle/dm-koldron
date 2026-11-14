@@ -53,3 +53,19 @@ describe("hexcomb", () => {
     expect(combSize(hexcomb(1, "x"))).toEqual({ width: 1, height: HEX_HEIGHT });
   });
 });
+
+describe("one more hexagon", () => {
+  it("leaves the others where they were (Home's party keeps the next one's spot free)", () => {
+    for (const n of [0, 1, 3, 6]) {
+      const now = hexcomb(n, "party", 2.5);
+      const more = hexcomb(n + 1, "party", 2.5);
+      // The same shape, maybe moved as a whole (the comb starts at 0, 0 again when the new one is left or above).
+      const dx = more[0].x - (now[0]?.x ?? more[0].x);
+      const dy = more[0].y - (now[0]?.y ?? more[0].y);
+      now.forEach((c, i) => {
+        expect(more[i].x - dx).toBeCloseTo(c.x);
+        expect(more[i].y - dy).toBeCloseTo(c.y);
+      });
+    }
+  });
+});

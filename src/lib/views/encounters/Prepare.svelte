@@ -4,16 +4,16 @@
   import { beforeNavigate, goto } from "$app/navigation";
   import { flip } from "svelte/animate";
   import { fade, scale } from "svelte/transition";
-  import { flushSync, untrack } from "svelte";
+  import { flushSync, tick, untrack } from "svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
-  import { encounterBudgets, getEncounter, saveEncounter, setEncounterMap, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
+  import { deleteEncounter, encounterBudgets, getEncounter, saveEncounter, setEncounterMap, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { gotoReplacing, isReplacing } from "$lib/stores/history.svelte";
-  import { showHeaderAction, showHeaderBack } from "$lib/stores/header.svelte";
+  import { showHeaderAction, showHeaderBack, showHeaderLead } from "$lib/stores/header.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
@@ -62,6 +62,8 @@
   // Derived, so saving (a new baseline) doesn't refill the header.
   const loaded = $derived(baseline !== null && !loadError);
   showHeaderAction(() => (loaded ? actions : null));
+  // Only a saved encounter can be deleted.
+  showHeaderLead(() => (loaded && encounter ? deleteControls : null));
 
   const snapshot = () => JSON.stringify({ name: name.trim(), roster, party: [...selected].sort(), partyMode, notes });
 
@@ -376,7 +378,53 @@
     roster = roster.map((r) => (r === row ? { ...r, quantity } : r));
   }
 
+  // ---- Delete ------------------------------------------------------------------------------------
+  let confirming = $state(false);
+  let deleting = $state(false);
+
+  async function askDelete() {
+    confirming = true;
+    await tick();
+    document.getElementById("encounter-keep")?.focus();
+  }
+
+  async function keep() {
+    confirming = false;
+    await tick();
+    document.getElementById("encounter-delete")?.focus();
+  }
+
+  async function remove() {
+    if (!encounter) return;
+    [deleting, saveError] = [true, null];
+    try {
+      await deleteEncounter(campaign, encounter.id);
+    } catch (e) {
+      saveError = t.deleteError(encounter.name, errorMessage(e));
+      deleting = false;
+      return;
+    }
+    leaving = true; // nothing left to save
+    await gotoReplacing(base);
+  }
+
 </script>
+
+<!-- Next to the shell's Back: deleting the encounter. -->
+{#snippet deleteControls()}
+  <div class="actions">
+    {#if confirming}
+      <p class="confirm" role="alert">{t.confirmDelete(encounter?.name ?? "")}</p>
+      <button id="encounter-keep" class="btn" onclick={keep}>{t.cancel}</button>
+      <button class="btn btn-danger" disabled={deleting} onclick={remove}>{t.delete}</button>
+    {:else}
+      <button id="encounter-delete" class="btn delete" onclick={askDelete}>
+        <i class="ti ti-trash" aria-hidden="true"></i>
+        {t.delete}
+      </button>
+    {/if}
+  </div>
+{/snippet}
 
 <!-- Shown right of the shell's search bar. -->
 {#snippet actions()}
@@ -728,6 +776,16 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
+  }
+
+  .delete {
+    color: var(--color-danger);
+  }
+
+  .confirm {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--text-sm);
   }
 
   .name-field {

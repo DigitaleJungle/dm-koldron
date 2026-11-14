@@ -199,6 +199,7 @@
   --pin-popup-width: 320px; /* a map pin's text, next to the pin */
   /* Encounter list: the collage's band on each card, and one hexagon's width (smaller when many must fit). */
   --encounter-art-height: 208px;
+  --encounter-placeholder-height: 300px; /* no encounters yet: the dashed card, about a real card's height */
   --encounter-hex-width: 64px;
   /* A scene's links (session prep): smaller cards than the Encounters screen's. */
   --link-card-min-width: 200px;

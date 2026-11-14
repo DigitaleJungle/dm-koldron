@@ -14,3 +14,7 @@ vite.config.ts.timestamp-*
 # Local only, never committed
 /docs/
 TODO.md
+
+# Addons being developed here; only the API doc is committed
+/addons/*
+!/addons/addons.md

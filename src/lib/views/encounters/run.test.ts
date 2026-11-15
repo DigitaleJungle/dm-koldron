@@ -174,12 +174,21 @@ describe("linked characters", () => {
     linked, deathSaves: { successes: 1, failures: 2 }, ...extra,
   });
 
-  it("takes HP, max and temp HP and death saves from a linked character only", () => {
-    const r = run([fighter("Gylbard", 12), fighter("Mira", 8), goblin("Goblin", 5)]);
-    const next = followLinked(r, [sheet("Gylbard", "ddb"), sheet("Mira", null)])!;
+  const all = ["currentHp", "maxHp", "tempHp", "deathSaves"];
+  const ownedBySync = (c: Character) => (c.linked === "sync" ? all : []);
+
+  it("follows the fields a loaded addon owns, for its characters only", () => {
+    const r = run([fighter("Gylbard", 12), fighter("Mira", 8), fighter("Tavi", 4), goblin("Goblin", 5)]);
+    // Tavi is linked to an addon that isn't loaded: it owns nothing, so Tavi fights like any other.
+    const next = followLinked(r, [sheet("Gylbard", "sync"), sheet("Mira", null), sheet("Tavi", "gone")], ownedBySync)!;
     expect(next.combatants[0]).toMatchObject({ hp: 0, maxHp: 30, tempHp: 0, deathSuccesses: 1, deathFailures: 2 });
-    expect(next.combatants[1]).toBe(r.combatants[1]);
-    expect(next.combatants[2]).toBe(r.combatants[2]);
-    expect(followLinked(next, [sheet("Gylbard", "ddb")])).toBeNull(); // nothing changed: nothing to save
+    for (const i of [1, 2, 3]) expect(next.combatants[i]).toBe(r.combatants[i]);
+    expect(followLinked(next, [sheet("Gylbard", "sync")], ownedBySync)).toBeNull(); // nothing changed: nothing to save
+  });
+
+  it("follows only what is owned", () => {
+    const r = run([fighter("Gylbard", 12)]);
+    const next = followLinked(r, [sheet("Gylbard", "sync")], () => ["deathSaves"])!;
+    expect(next.combatants[0]).toMatchObject({ hp: 10, maxHp: 10, deathSuccesses: 1, deathFailures: 2 });
   });
 });

@@ -49,7 +49,7 @@ File names: plain ASCII, no spaces.
 | `name`, `version`, `license` | Required, shown in Settings → About. |
 | `permissions` | Optional. See below. Unknown permissions make the addon invalid. |
 | `settings` | Optional. A page shown as a panel in a Settings section. Only `rules` (below the pack list) for now. |
-| `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. |
+| `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page `entry` in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. `owns`: the fields of the characters it adds that the addon keeps up to date (see below). |
 | `background` | Optional. A page that runs hidden for as long as the app is open. |
 
 ### Permissions
@@ -113,7 +113,7 @@ function koldron(call, ...args) {
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.pickFolder` | | `[{ path, text }]` for every file in the picked folder and its subfolders (`text` is null for a file that isn't UTF-8), or `null` if cancelled. |
 | `characters.list` | campaign id | The campaign's characters linked to this addon. |
-| `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. The app keeps the player and party that were set in the app; everything else is the addon's. A linked character's name, classes, stats and death saves can't be changed in the app, while the addon is installed; without it the character is an ordinary one, and putting the addon back links it again. |
+| `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. When creating, the addon sets everything. After that it changes only the fields its manifest `owns`; everything else is the app's. |
 | `characters.setPicture` | campaign id, character id, image file as `ArrayBuffer` | The character as saved. Only for a character linked to this addon. |
 | `storage.get` | | What `storage.set` saved last, or `null`. |
 | `storage.set` | any JSON value (at most 10 MB) | `null` |
@@ -121,6 +121,10 @@ function koldron(call, ...args) {
 | `ui.theme` | | `"light"` or `"dark"`, the app's current theme. |
 | `ui.close` | | `null`. Closes the dialog the page is in. |
 | `ui.notify` | message | `null`. Shows the message (at most 200 characters) as the app's notification, after the addon's name. |
+
+### Owned fields
+
+`characters.owns` lists the fields an addon keeps up to date on the characters it added: any of `name`, `player`, `classes`, `maxHp`, `currentHp`, `tempHp`, `ac`, `initiative`, `passivePerception`, `passiveInsight`, `passiveInvestigation`, `deathSaves`. While the addon is installed, those can't be changed in the app (its form shows them locked; in a running encounter, owned HP, temp HP and death saves follow the character and aren't written back at the end). The others are the app's. Without the addon, the character is an ordinary one; putting the addon back picks it up again. The picture is never owned: both the app and `characters.setPicture` can change it.
 
 A character is `{ id, name, player, classes: [{ name, level }], maxHp, currentHp, tempHp, ac, initiative, passivePerception, passiveInsight, passiveInvestigation, deathSaves: { successes, failures } | null, onHome, linked }`. Stats are whole numbers or null.
 

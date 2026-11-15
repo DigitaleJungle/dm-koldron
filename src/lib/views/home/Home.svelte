@@ -31,7 +31,7 @@
   /** Shared by Party (which changes it) and Random encounter, so a party change shows in its difficulty at once. */
   let characters = $state<Character[] | null>(null);
   let charactersError = $state<string | null>(null);
-  // Again when an addon saved a character (a D&D Beyond sync).
+  // Again when an addon saved a character (it keeps it up to date).
   $effect(() => {
     void addons.charactersChanged;
     listCharacters(campaign).then(

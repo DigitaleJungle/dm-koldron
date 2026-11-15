@@ -92,22 +92,21 @@ export function update(run: Run, id: string, change: (c: Combatant) => Combatant
 // ---- Hit points ----------------------------------------------------------------------------------
 
 /**
- * A linked character's (D&D Beyond's) HP, max and temp HP and death saves follow the saved character, which its
- * addon keeps up to date. Null when nothing changed.
+ * The fight follows the fields of a character that its addon owns (keeps up to date): HP, max and temp HP and death
+ * saves, each only when owned. `ownedOf` gives a character's owned fields. Null when nothing changed.
  */
-export function followLinked(run: Run, characters: Character[]): Run | null {
+export function followLinked(run: Run, characters: Character[], ownedOf: (c: Character) => string[]): Run | null {
   let changed = false;
   const combatants = run.combatants.map((c) => {
-    const ch = c.kind === "character" ? characters.find((x) => x.id === c.character && x.linked) : undefined;
-    if (!ch) return c;
-    const synced = {
-      hp: Math.max(0, ch.currentHp ?? ch.maxHp ?? 0),
-      maxHp: Math.max(0, ch.maxHp ?? 0),
-      tempHp: Math.max(0, ch.tempHp ?? 0),
-      deathSuccesses: ch.deathSaves?.successes ?? 0,
-      deathFailures: ch.deathSaves?.failures ?? 0,
-    };
-    if ((Object.keys(synced) as (keyof typeof synced)[]).every((k) => c[k] === synced[k])) return c;
+    const ch = c.kind === "character" ? characters.find((x) => x.id === c.character) : undefined;
+    const owned = ch ? ownedOf(ch) : [];
+    if (!ch || owned.length === 0) return c;
+    const synced: Partial<Combatant> = {};
+    if (owned.includes("currentHp")) synced.hp = Math.max(0, ch.currentHp ?? ch.maxHp ?? 0);
+    if (owned.includes("maxHp")) synced.maxHp = Math.max(0, ch.maxHp ?? 0);
+    if (owned.includes("tempHp")) synced.tempHp = Math.max(0, ch.tempHp ?? 0);
+    if (owned.includes("deathSaves")) [synced.deathSuccesses, synced.deathFailures] = [ch.deathSaves?.successes ?? 0, ch.deathSaves?.failures ?? 0];
+    if ((Object.keys(synced) as (keyof Combatant)[]).every((k) => c[k] === synced[k])) return c;
     changed = true;
     return { ...c, ...synced };
   });

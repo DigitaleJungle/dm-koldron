@@ -34,13 +34,16 @@ pub struct Manifest {
     pub background: Option<String>,
 }
 
-/// A page opened from a menu item labelled `label`.
+/// The addon's way to add characters: a menu item labelled `label` opening `entry`, and the fields of the characters it
+/// adds that it owns (keeps up to date): the app can't change those while the addon is loaded.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MenuPage {
     pub label: String,
     /// The page, relative to the addon folder.
     pub entry: String,
+    #[serde(default)]
+    pub owns: Vec<String>,
 }
 
 /// A page of the addon shown inside a Settings section.
@@ -126,6 +129,9 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
             errors.push(format!("characters: the label must be 1 to {MAX_LABEL} characters."));
         }
         check_page("characters", &page.entry, folder, &mut errors);
+        for field in page.owns.iter().filter(|f| !crate::commands::characters::OWNABLE.contains(&f.as_str())) {
+            errors.push(format!("characters: \"{field}\" isn't a character field an addon can own."));
+        }
     }
     if let Some(page) = &m.background {
         check_page("background", page, folder, &mut errors);
@@ -175,7 +181,7 @@ mod tests {
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
             "permissions": ["packs:read", "packs:write", "characters:write", "net:api.github.com"],
             "settings": { "section": "rules", "entry": "ui/settings.html" },
-            "characters": { "label": "D&D Beyond", "entry": "ui/settings.html" },
+            "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html"
         })
     }
@@ -189,15 +195,15 @@ mod tests {
         bad["api"] = (API + 1).into();
         bad["permissions"] = serde_json::json!(["files:write", "net:", "net:Evil.com/x"]);
         bad["settings"] = serde_json::json!({ "section": "ui", "entry": "../x.html" });
-        bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html" });
+        bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
-        // api, id, 3 permissions, section, entry, label, characters page, background page
-        assert_eq!(invalid[0].errors.len(), 10, "{:?}", invalid[0].errors);
+        // api, id, 3 permissions, section, entry, label, characters page, an unknown owned field, background page
+        assert_eq!(invalid[0].errors.len(), 11, "{:?}", invalid[0].errors);
     }
 
     #[test]

@@ -17,6 +17,7 @@
     onsaved,
     ondeleted,
     linkedTo,
+    owned = [],
     oneditlink,
   }: {
     campaign: string;
@@ -27,13 +28,15 @@
     onclose: () => void;
     onsaved: (saved: Character) => void;
     ondeleted: (deleted: Character) => void;
-    /** For a character an addon keeps up to date, while that addon is loaded: where from ("D&D Beyond"). Its name,
-     * classes and stats can't be changed here; Rust keeps them as saved anyway. */
+    /** For a character an addon keeps up to date, while that addon is loaded: where from (the addon's label). */
     linkedTo?: string;
+    /** The fields that addon owns: they can't be changed here (Rust keeps them as saved anyway). */
+    owned?: string[];
     /** Opens the addon's page to change the link. */
     oneditlink?: () => void;
   } = $props();
   const locked = $derived(!!linkedTo);
+  const owns = (field: string) => owned.includes(field);
 
   const t = strings.characters.form;
   const id = $props.id();
@@ -251,11 +254,11 @@
           <label class="field">
             <span>{t.name} <span aria-hidden="true">*</span></span>
             <!-- svelte-ignore a11y_autofocus: the dialog opens to type the name -->
-            <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus={!locked} disabled={locked} />
+            <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus={!owns("name")} disabled={owns("name")} />
           </label>
           <label class="field">
             <span>{t.player}</span>
-            <input bind:value={draft.player} maxlength="100" autocomplete="off" />
+            <input bind:value={draft.player} maxlength="100" autocomplete="off" disabled={owns("player")} />
           </label>
         </div>
       </div>
@@ -267,7 +270,7 @@
         </div>
       {/if}
 
-      <fieldset disabled={locked}>
+      <fieldset disabled={owns("classes")}>
         <legend class="label">{t.classes}</legend>
         <datalist id="{id}-classes">
           {#each classNames as name (name)}<option value={name}></option>{/each}
@@ -276,7 +279,7 @@
           <div class="class-row">
             <input aria-label={t.className(i + 1)} list="{id}-classes" bind:value={row.name} required maxlength="100" autocomplete="off" />
             <input class="level" aria-label={t.classLevel(i + 1)} type="number" min="1" max="20" step="1" bind:value={row.level} required />
-            {#if draft.classes.length > 1 && !locked}
+            {#if draft.classes.length > 1 && !owns("classes")}
               <button type="button" class="icon-btn" aria-label={t.removeClass(i + 1)} onclick={() => draft.classes.splice(i, 1)}>
                 <i class="ti ti-x" aria-hidden="true"></i>
               </button>
@@ -284,7 +287,7 @@
           </div>
         {/each}
         <div class="class-foot">
-          {#if !locked}
+          {#if !owns("classes")}
             <button type="button" class="btn small" onclick={() => draft.classes.push({ name: "", level: 1 })}>
               <i class="ti ti-plus" aria-hidden="true"></i>
               {t.addClass}
@@ -294,13 +297,13 @@
         </div>
       </fieldset>
 
-      <fieldset disabled={locked}>
+      <fieldset>
         <legend class="label">{t.stats}</legend>
         <div class="stats">
           {#each stats as s (s.key)}
             <label class="field">
               <span>{s.label}</span>
-              <input type="number" min={s.min ?? 0} max={MAX_STAT} step="1" bind:value={draft[s.key]} />
+              <input type="number" min={s.min ?? 0} max={MAX_STAT} step="1" bind:value={draft[s.key]} disabled={owns(s.key)} />
             </label>
           {/each}
         </div>

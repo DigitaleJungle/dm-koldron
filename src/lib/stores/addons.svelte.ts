@@ -26,6 +26,11 @@ export function charactersChanged() {
   changedTimer = setTimeout(() => addons.charactersChanged++, CHANGES_SETTLE_MS);
 }
 
+/** The fields of a character its addon owns (keeps up to date), while that addon is loaded; none otherwise. */
+export function ownedFields(character: { linked?: string | null } | undefined): string[] {
+  return addons.list.find((a) => a.id === character?.linked)?.characters?.owns ?? [];
+}
+
 /** For a screen that's live while shown: `$effect(goLive)`. */
 export function goLive(): () => void {
   addons.live++;

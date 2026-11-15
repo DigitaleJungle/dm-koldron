@@ -51,9 +51,14 @@ fn addons(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
     Ok(ADDONS.get_or_init(|| loaded))
 }
 
-/// The ids of the loaded addons (a character linked to an addon that isn't loaded is an ordinary one). Blocking.
-pub fn loaded_ids(app: &AppHandle) -> Result<Vec<String>, StorageError> {
-    Ok(addons(app)?.0.iter().map(|a| a.manifest.id.clone()).collect())
+/// Each loaded addon's id with the character fields it owns (a character linked to an addon that isn't loaded is an
+/// ordinary one). Blocking.
+pub fn owned_fields(app: &AppHandle) -> Result<Vec<(String, Vec<String>)>, StorageError> {
+    Ok(addons(app)?.0.iter().map(|a| (a.manifest.id.clone(), owns(a).to_vec())).collect())
+}
+
+fn owns(addon: &Addon) -> &[String] {
+    addon.manifest.characters.as_ref().map_or(&[], |c| c.owns.as_slice())
 }
 
 fn addon(app: &AppHandle, id: &str) -> Result<&'static Addon, StorageError> {
@@ -267,7 +272,8 @@ pub async fn addon_characters(app: AppHandle, addon: String, campaign: String) -
 pub async fn addon_save_character(app: AppHandle, addon: String, campaign: String, character: Character) -> Result<Character, StorageError> {
     blocking(move || {
         require(self::addon(&app, &addon)?, "characters:write")?;
-        let saved = characters::save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Addon(&addon))?;
+        let found = self::addon(&app, &addon)?;
+        let saved = characters::save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Addon(&addon, owns(found)))?;
         search::changed();
         Ok(saved)
     })
@@ -279,7 +285,7 @@ pub async fn addon_save_character(app: AppHandle, addon: String, campaign: Strin
 pub async fn addon_set_character_picture(app: AppHandle, addon: String, campaign: String, id: String, bytes: Vec<u8>) -> Result<Character, StorageError> {
     blocking(move || {
         require(self::addon(&app, &addon)?, "characters:write")?;
-        characters::set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, Some(&bytes), Editor::Addon(&addon))
+        characters::set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, Some(&bytes), Editor::Addon(&addon, &[]))
     })
     .await
 }

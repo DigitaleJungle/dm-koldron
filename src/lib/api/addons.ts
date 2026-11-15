@@ -9,8 +9,9 @@ export type AddonSummary = {
   version: string;
   license: string;
   settings: { section: string; entry: string } | null;
-  /** An item in the Characters screen's Add character menu, opening `entry` in a dialog. */
-  characters: { label: string; entry: string } | null;
+  /** An item in the Characters screen's Add character menu, opening `entry` in a dialog; `owns`: the fields of the
+   * characters it adds that it keeps up to date (the app can't change those while the addon is loaded). */
+  characters: { label: string; entry: string; owns: string[] } | null;
   /** A page that runs hidden as long as the app is open. */
   background: string | null;
   licenseText: string | null;

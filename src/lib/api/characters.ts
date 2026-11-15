@@ -22,8 +22,8 @@ export type Character = {
   passiveInvestigation: number | null;
   /** Kept up to date by the addon a character is linked to. */
   deathSaves?: DeathSaves | null;
-  /** The id of the addon (D&D Beyond) that keeps this character up to date; set by Rust only. Its classes, stats and
-   * death saves are the addon's: saving from the window keeps them as they are and only changes player and party. */
+  /** The id of the addon that keeps this character up to date; set by Rust only. While that addon is loaded, the
+   * fields its manifest owns (`characters.owns`) are the addon's: saving from the window keeps them as they are. */
   linked?: string | null;
   onHome: boolean;
   createdAt: number;

@@ -54,7 +54,7 @@ pub struct Character {
     pub passive_perception: Option<u32>,
     pub passive_insight: Option<u32>,
     pub passive_investigation: Option<u32>,
-    /// Kept up to date by an addon (D&D Beyond); the window keeps them as saved.
+    /// Death saves, which an addon can own (keep up to date).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub death_saves: Option<DeathSaves>,
     /// The id of the addon this character is linked to. Its name, classes, stats and death saves are that addon's to
@@ -150,18 +150,33 @@ pub fn list(campaign_dir: &Path) -> Result<CharacterList, StorageError> {
     Ok(CharacterList { characters, unreadable })
 }
 
-/// Who is saving: the window (with the ids of the addons that are loaded), or the addon with this id.
+/// The fields an addon may own, as its manifest names them (`characters.owns`).
+pub const OWNABLE: [&str; 12] = [
+    "name", "player", "classes", "maxHp", "currentHp", "tempHp", "ac", "initiative",
+    "passivePerception", "passiveInsight", "passiveInvestigation", "deathSaves",
+];
+
+/// Who is saving: the window (with each loaded addon's id and the fields it owns), or an addon with the fields it owns.
 #[derive(Clone, Copy)]
 pub enum Editor<'a> {
-    Window(&'a [String]),
-    Addon(&'a str),
+    Window(&'a [(String, Vec<String>)]),
+    Addon(&'a str, &'a [String]),
+}
+
+/// `base` with the `fields` (names from `OWNABLE`) taken from `from`.
+fn with_fields(base: &Character, from: &Character, fields: &[String]) -> Result<Character, StorageError> {
+    let (mut base_json, from_json) = (serde_json::to_value(base).expect("serializes"), serde_json::to_value(from).expect("serializes"));
+    for field in fields.iter().filter(|f| OWNABLE.contains(&f.as_str())) {
+        base_json[field] = from_json.get(field).cloned().unwrap_or(serde_json::Value::Null);
+    }
+    serde_json::from_value(base_json).map_err(|e| StorageError::Invalid(e.to_string()))
 }
 
 /// Creates the character (empty `id`) or replaces the saved one, keeping when it was created.
-/// The window can't link a character or change a linked one's synced fields (they're kept as saved); an addon only
-/// creates characters linked to itself and only changes those, keeping the player and party the window set. A link
-/// only counts while its addon is loaded: without it the window changes everything, and the link is kept, so putting
-/// the addon back picks the character up again.
+/// A character an addon created is linked to it, and the addon owns the fields its manifest names: the window can't
+/// change those (they're kept as saved), and the addon can change only those (and only on characters linked to it),
+/// except when it creates the character. A link only counts while its addon is loaded: without it the window changes
+/// everything, and the link is kept, so putting the addon back picks the character up again. The window never links.
 pub fn save(campaign_dir: &Path, mut character: Character, now: u64, editor: Editor) -> Result<Character, StorageError> {
     let folder = campaign_dir.join(FOLDER);
     let _guard = lock_update();
@@ -172,17 +187,19 @@ pub fn save(campaign_dir: &Path, mut character: Character, now: u64, editor: Edi
         Some(read(&folder, &character.id)?)
     };
     match (editor, &saved) {
-        (Editor::Window(loaded), Some(old)) if old.linked.as_ref().is_some_and(|a| loaded.contains(a)) => {
-            character = Character { player: character.player, on_home: character.on_home, ..old.clone() };
+        (Editor::Window(loaded), Some(old)) => {
+            let owned = loaded.iter().find(|(id, _)| Some(id) == old.linked.as_ref()).map(|(_, owns)| owns.as_slice());
+            character = with_fields(&character, old, owned.unwrap_or(&[]))?;
+            character.linked = old.linked.clone();
         }
-        (Editor::Window(_), saved) => character.linked = saved.as_ref().and_then(|old| old.linked.clone()),
-        (Editor::Addon(addon), Some(old)) => {
+        (Editor::Window(_), None) => character.linked = None,
+        (Editor::Addon(addon, owns), Some(old)) => {
             if old.linked.as_deref() != Some(addon) {
                 return Err(StorageError::Invalid("That character isn't linked to this addon.".into()));
             }
-            character = Character { player: old.player.clone(), on_home: old.on_home, linked: old.linked.clone(), ..character };
+            character = Character { id: old.id.clone(), ..with_fields(old, &character, owns)? };
         }
-        (Editor::Addon(addon), None) => character.linked = Some(addon.into()),
+        (Editor::Addon(addon, _), None) => character.linked = Some(addon.into()),
     }
     check(&mut character)?;
     if let Some(old) = saved {
@@ -225,7 +242,7 @@ pub fn set_picture(campaign_dir: &Path, id: &str, bytes: Option<&[u8]>, editor: 
     check_id(id, "character")?;
     let folder = campaign_dir.join(FOLDER);
     let saved = read(&folder, id)?;
-    if let Editor::Addon(addon) = editor
+    if let Editor::Addon(addon, _) = editor
         && saved.linked.as_deref() != Some(addon)
     {
         return Err(StorageError::Invalid("That character isn't linked to this addon.".into()));
@@ -256,7 +273,7 @@ pub async fn list_characters(app: AppHandle, campaign: String) -> Result<Charact
 pub async fn save_character(app: AppHandle, campaign: String, character: Character) -> Result<Character, StorageError> {
     blocking(move || {
         // Addons that can't be read count as none loaded (as in the window); Settings → About shows why.
-        let loaded = crate::commands::addons::loaded_ids(&app).unwrap_or_default();
+        let loaded = crate::commands::addons::owned_fields(&app).unwrap_or_default();
         let saved = save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Window(&loaded))?;
         search::changed();
         Ok(saved)
@@ -320,42 +337,48 @@ mod tests {
         save(dir, character, now, Editor::Window(&[]))
     }
 
-    /// The window while the "ddb" addon is loaded.
-    fn save_with_ddb(dir: &Path, character: Character, now: u64) -> Result<Character, StorageError> {
-        save(dir, character, now, Editor::Window(&["ddb".to_string()]))
+    /// What a syncing addon might own: the numbers, not who the character is.
+    fn owns() -> Vec<String> {
+        ["classes", "maxHp", "currentHp", "tempHp", "ac", "deathSaves"].map(String::from).to_vec()
+    }
+
+    /// The window while the "sync" addon is loaded.
+    fn save_with_sync(dir: &Path, character: Character, now: u64) -> Result<Character, StorageError> {
+        save(dir, character, now, Editor::Window(&[("sync".to_string(), owns())]))
     }
 
     #[test]
     fn a_linked_character_keeps_its_synced_fields_from_the_window_and_other_addons() {
         let dir = temp_dir("linked");
         let synced = Character { death_saves: Some(DeathSaves { successes: 1, failures: 2 }), ..character("Gylbard", &[("Fighter", 4)]) };
-        let made = save(&dir, Character { linked: Some("ignored".into()), ..synced }, 1, Editor::Addon("ddb")).unwrap();
-        assert_eq!(made.linked.as_deref(), Some("ddb"));
+        let made = save(&dir, Character { linked: Some("ignored".into()), ..synced }, 1, Editor::Addon("sync", &owns())).unwrap();
+        assert_eq!(made.linked.as_deref(), Some("sync"));
 
-        // The window changes only the player and the party; it can't unlink or touch HP.
-        let edit = Character { player: "Sam".into(), on_home: false, current_hp: Some(1), linked: None, ..made.clone() };
-        let after = save_with_ddb(&dir, edit.clone(), 2).unwrap();
-        assert_eq!((after.player.as_str(), after.on_home, after.current_hp, after.linked.as_deref()), ("Sam", false, Some(31), Some("ddb")));
+        // The window changes what the addon doesn't own (name, player, party); it can't unlink or touch HP or classes.
+        let edit = Character { name: "Gyl".into(), player: "Sam".into(), on_home: false, current_hp: Some(1), classes: vec![], linked: None, ..made.clone() };
+        let after = save_with_sync(&dir, edit, 2).unwrap();
+        assert_eq!((after.name.as_str(), after.player.as_str(), after.on_home, after.current_hp, after.linked.as_deref()), ("Gyl", "Sam", false, Some(31), Some("sync")));
+        assert_eq!(after.classes, made.classes);
 
-        // The addon updates the stats but keeps the player and party; another addon can't touch it.
-        let sync = Character { current_hp: Some(5), player: "Other".into(), on_home: true, ..after.clone() };
-        let synced = save(&dir, sync.clone(), 3, Editor::Addon("ddb")).unwrap();
-        assert_eq!((synced.current_hp, synced.player.as_str(), synced.on_home), (Some(5), "Sam", false));
-        assert!(matches!(save(&dir, sync, 4, Editor::Addon("other")), Err(StorageError::Invalid(_))));
-        assert!(matches!(set_picture(&dir, &made.id, None, Editor::Addon("other")), Err(StorageError::Invalid(_))));
+        // The addon changes only what it owns, keeping the name, player and party; another addon can't touch it.
+        let sync = Character { current_hp: Some(5), name: "Gylbard".into(), player: "Other".into(), on_home: true, ..after.clone() };
+        let synced = save(&dir, sync.clone(), 3, Editor::Addon("sync", &owns())).unwrap();
+        assert_eq!((synced.current_hp, synced.name.as_str(), synced.player.as_str(), synced.on_home), (Some(5), "Gyl", "Sam", false));
+        assert!(matches!(save(&dir, sync, 4, Editor::Addon("other", &owns())), Err(StorageError::Invalid(_))));
+        assert!(matches!(set_picture(&dir, &made.id, None, Editor::Addon("other", &owns())), Err(StorageError::Invalid(_))));
 
         // With the addon gone it's an ordinary character: everything can be changed, and the link stays for its return.
         let orphan = save_w(&dir, Character { current_hp: Some(1), ..after.clone() }, 3).unwrap();
-        assert_eq!((orphan.current_hp, orphan.linked.as_deref()), (Some(1), Some("ddb")));
-        let back = save(&dir, Character { current_hp: Some(5), ..orphan }, 3, Editor::Addon("ddb")).unwrap();
+        assert_eq!((orphan.current_hp, orphan.linked.as_deref()), (Some(1), Some("sync")));
+        let back = save(&dir, Character { current_hp: Some(5), ..orphan }, 3, Editor::Addon("sync", &owns())).unwrap();
         assert_eq!(back.current_hp, Some(5));
 
         // An addon can't take over the window's own characters, and the window can't link one.
-        let own = save_w(&dir, Character { linked: Some("ddb".into()), ..character("Mira", &[("Rogue", 1)]) }, 5).unwrap();
+        let own = save_w(&dir, Character { linked: Some("sync".into()), ..character("Mira", &[("Rogue", 1)]) }, 5).unwrap();
         assert_eq!(own.linked, None);
-        assert!(matches!(save(&dir, own, 6, Editor::Addon("ddb")), Err(StorageError::Invalid(_))));
+        assert!(matches!(save(&dir, own, 6, Editor::Addon("sync", &owns())), Err(StorageError::Invalid(_))));
         let bad = Character { id: String::new(), death_saves: Some(DeathSaves { successes: 4, failures: 0 }), ..made };
-        assert!(matches!(save(&dir, bad, 7, Editor::Addon("ddb")), Err(StorageError::Invalid(_))));
+        assert!(matches!(save(&dir, bad, 7, Editor::Addon("sync", &owns())), Err(StorageError::Invalid(_))));
     }
 
     #[test]

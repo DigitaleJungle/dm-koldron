@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4] - 2026-11-15
+
+### Changed
+
+- Addons declare which character fields they keep up to date (characters.owns in addon.json); the app locks exactly those fields in the character form and in a running encounter, and everything else stays editable
+- A linked character's name and player can be changed in the app when its addon doesn't own them
+
 ## [0.6.3] - 2026-11-15
 
 ### Changed

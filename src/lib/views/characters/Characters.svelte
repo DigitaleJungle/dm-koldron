@@ -49,7 +49,7 @@
     };
   });
 
-  // An addon saved a character (a D&D Beyond sync): read them again, without the loading state.
+  // An addon saved a character (it keeps it up to date): read them again, without the loading state.
   $effect(() => {
     if (addons.charactersChanged === 0) return;
     listCharacters(campaign).then(
@@ -307,6 +307,7 @@
     character={editing}
     {classNames}
     linkedTo={source ? (source.characters?.label ?? source.name) : undefined}
+    owned={source?.characters?.owns ?? []}
     oneditlink={source?.characters && id ? () => editLink(source, id) : undefined}
     onclose={() => (editing = null)}
     onsaved={saved}

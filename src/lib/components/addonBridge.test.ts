@@ -43,17 +43,17 @@ describe("addon bridge", () => {
 
   it("tells the app when a character changed and sends pictures as bytes", async () => {
     const h = host();
-    await answer("ddb", "characters.list", ["camp"], h);
+    await answer("sync", "characters.list", ["camp"], h);
     expect(h.charactersChanged).not.toHaveBeenCalled();
-    await answer("ddb", "characters.save", ["camp", { name: "Gylbard" }], h);
-    await answer("ddb", "characters.setPicture", ["camp", "c", new Uint8Array([1, 2]).buffer], h);
+    await answer("sync", "characters.save", ["camp", { name: "Gylbard" }], h);
+    await answer("sync", "characters.setPicture", ["camp", "c", new Uint8Array([1, 2]).buffer], h);
     expect(h.charactersChanged).toHaveBeenCalledTimes(2);
-    expect(addonSetCharacterPicture).toHaveBeenCalledWith("ddb", "camp", "c", new Uint8Array([1, 2]));
-    await expect(answer("ddb", "characters.setPicture", ["camp", "c", "nope"], h)).rejects.toThrow("ArrayBuffer");
-    await answer("ddb", "ui.close", [], h);
+    expect(addonSetCharacterPicture).toHaveBeenCalledWith("sync", "camp", "c", new Uint8Array([1, 2]));
+    await expect(answer("sync", "characters.setPicture", ["camp", "c", "nope"], h)).rejects.toThrow("ArrayBuffer");
+    await answer("sync", "ui.close", [], h);
     expect(h.close).toHaveBeenCalled();
-    await answer("ddb", "ui.notify", ["  "], h);
-    await answer("ddb", "ui.notify", ["x".repeat(500)], h);
+    await answer("sync", "ui.notify", ["  "], h);
+    await answer("sync", "ui.notify", ["x".repeat(500)], h);
     expect(h.notify.mock.calls).toEqual([["x".repeat(200)]]); // an empty message shows nothing; a long one is cut
   });
 

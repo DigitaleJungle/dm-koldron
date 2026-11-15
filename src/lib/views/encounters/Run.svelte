@@ -5,7 +5,7 @@
   import { tick } from "svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, saveCharacter, type Character } from "$lib/api/characters";
-  import { addons, goLive } from "$lib/stores/addons.svelte";
+  import { addons, goLive, ownedFields } from "$lib/stores/addons.svelte";
   import { rollDice } from "$lib/api/dice";
   import { endRun, getEncounter, getRun, saveRun, type Combatant, type Encounter, type Run } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
@@ -75,7 +75,7 @@
       }
       if (saved) {
         run = saved;
-        const followed = R.followLinked(saved, synced(list.characters));
+        const followed = R.followLinked(saved, list.characters, ownedFields);
         if (followed) commit(followed);
         changedSince = stale;
         // A fight already under way: continue it, or start it over.
@@ -170,25 +170,23 @@
   let saveError = $state<string | null>(null);
   let saving: Promise<unknown> = Promise.resolve();
 
-  // A running encounter is live: the D&D Beyond addon syncs every 30 seconds while it's shown. When an addon saved a
-  // character, linked PCs take its HP and death saves.
+  // A running encounter is live (addons are told, e.g. to sync more often). When an addon saved a character, the
+  // fight takes the fields that addon owns.
   $effect(goLive);
   $effect(() => {
     if (addons.charactersChanged === 0) return;
     listCharacters(campaign).then(
       (l) => {
         characters = l.characters;
-        const next = run && R.followLinked(run, synced(l.characters));
+        const next = run && R.followLinked(run, l.characters, ownedFields);
         if (next) commit(next);
       },
       () => {}, // the fight goes on with the HP it has; the next sync tries again
     );
   });
-  /** A link counts only while its addon is loaded; without it the character fights like any other. */
-  const isSynced = (c: Character | undefined) => !!c?.linked && addons.list.some((a) => a.id === c.linked);
-  const synced = (list: Character[]) => list.filter(isSynced);
-  /** A character an addon keeps up to date: its HP and death saves are read-only here. */
-  const linkedPc = (c: Combatant) => c.kind === "character" && isSynced(characterById.get(c.character));
+  /** Whether a combatant's character has `field` owned by its addon (kept up to date): then it's read-only here. A
+   * link counts only while its addon is loaded; without it the character fights like any other. */
+  const ownsField = (c: Combatant, field: string) => c.kind === "character" && ownedFields(characterById.get(c.character)).includes(field);
 
   /** Shows the change at once and saves it after the saves before it. */
   function commit(next: Run) {
@@ -470,8 +468,10 @@
   let writeBack = $state(true);
   let ending = $state(false);
   let endError = $state<string | null>(null);
-  // Linked characters aren't written back: D&D Beyond has their HP.
-  const fighting = $derived((run?.combatants ?? []).filter((c) => c.kind === "character" && characterById.has(c.character) && !linkedPc(c)));
+  // What an addon owns isn't written back: it has the character's own numbers.
+  const fighting = $derived(
+    (run?.combatants ?? []).filter((c) => c.kind === "character" && characterById.has(c.character) && !(ownsField(c, "currentHp") && ownsField(c, "tempHp"))),
+  );
 
   async function end() {
     if (!run || ending) return;
@@ -482,7 +482,8 @@
       if (writeBack) {
         for (const c of fighting) {
           const character = characterById.get(c.character)!;
-          await saveCharacter(campaign, { ...$state.snapshot(character), currentHp: c.hp, tempHp: c.tempHp });
+          const back = { ...(ownsField(c, "currentHp") ? {} : { currentHp: c.hp }), ...(ownsField(c, "tempHp") ? {} : { tempHp: c.tempHp }) };
+          await saveCharacter(campaign, { ...$state.snapshot(character), ...back });
         }
       }
       await endRun(campaign, id);
@@ -519,7 +520,7 @@
         class="pip"
         aria-label={success ? t.deathSuccess(n) : t.deathFailure(n)}
         aria-pressed={c[kind] >= n}
-        disabled={linkedPc(c)}
+        disabled={ownsField(c, "deathSaves")}
         onclick={() => changeById(c.id, (x) => R.setDeathSave(x, kind, n))}
       >
         <span class="dot" class:success class:on={c[kind] >= n}></span>
@@ -733,9 +734,9 @@
                   <span class="label">{t.amount}</span>
                   <input class="text-field dice amount-field" type="number" min="0" max={R.MAX_NUMBER} inputmode="numeric" bind:value={amount} />
                 </label>
-                <button class="btn hp-btn hp-damage" disabled={linkedPc(selected)} onclick={() => applyHp("damage")}>{t.damage}</button>
-                <button class="btn hp-btn hp-heal" disabled={linkedPc(selected)} onclick={() => applyHp("heal")}>{t.heal}</button>
-                <button class="btn hp-btn" disabled={linkedPc(selected)} onclick={() => applyHp("temp")}>{t.temp}</button>
+                <button class="btn hp-btn hp-damage" disabled={ownsField(selected, "currentHp")} onclick={() => applyHp("damage")}>{t.damage}</button>
+                <button class="btn hp-btn hp-heal" disabled={ownsField(selected, "currentHp")} onclick={() => applyHp("heal")}>{t.heal}</button>
+                <button class="btn hp-btn" disabled={ownsField(selected, "tempHp")} onclick={() => applyHp("temp")}>{t.temp}</button>
               </div>
             </div>
             <div class="cond-row">

@@ -70,7 +70,7 @@
   let budgets = $state<Budget[]>([]);
   listEncounters(campaign).then((l) => (all = l.encounters), () => {});
   listCharacters(campaign).then((l) => (characters = l.characters), () => {});
-  // A running session is live: the D&D Beyond addon syncs every 30 seconds while it's shown.
+  // A running session is live (addons are told, e.g. to sync more often).
   $effect(goLive);
   catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), () => {});
   encounterBudgets().then((b) => (budgets = b), () => {});

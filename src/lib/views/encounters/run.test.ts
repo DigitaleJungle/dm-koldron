@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { Character } from "$lib/api/characters";
 import type { Combatant, Run } from "$lib/api/encounters";
-import { addCombatant, addLog, carryOver, damage, giveTempHp, heal, health, initiativeNotation, inOrder, MAX_LOG, rosterMonsters, setDeathSave, stepTurn, toggleCondition } from "./run";
+import { addCombatant, addLog, carryOver, damage, followLinked, giveTempHp, heal, health, initiativeNotation, inOrder, MAX_LOG, rosterMonsters, setDeathSave, stepTurn, toggleCondition } from "./run";
 
 const fighter = (name: string, initiative: number | null, extra: Partial<Combatant> = {}): Combatant => ({
   id: name,
@@ -163,5 +164,22 @@ describe("building from the encounter", () => {
       ["Ally", 9],
       ["Wolf", 12],
     ]);
+  });
+});
+
+describe("linked characters", () => {
+  const sheet = (id: string, linked: string | null, extra: Partial<Character> = {}): Character => ({
+    id, name: id, player: "", classes: [], maxHp: 30, currentHp: 0, tempHp: null, ac: 15, initiative: 2,
+    passivePerception: null, passiveInsight: null, passiveInvestigation: null, onHome: true, createdAt: 0, updatedAt: 0,
+    linked, deathSaves: { successes: 1, failures: 2 }, ...extra,
+  });
+
+  it("takes HP, max and temp HP and death saves from a linked character only", () => {
+    const r = run([fighter("Gylbard", 12), fighter("Mira", 8), goblin("Goblin", 5)]);
+    const next = followLinked(r, [sheet("Gylbard", "ddb"), sheet("Mira", null)])!;
+    expect(next.combatants[0]).toMatchObject({ hp: 0, maxHp: 30, tempHp: 0, deathSuccesses: 1, deathFailures: 2 });
+    expect(next.combatants[1]).toBe(r.combatants[1]);
+    expect(next.combatants[2]).toBe(r.combatants[2]);
+    expect(followLinked(next, [sheet("Gylbard", "ddb")])).toBeNull(); // nothing changed: nothing to save
   });
 });

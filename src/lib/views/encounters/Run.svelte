@@ -5,6 +5,7 @@
   import { tick } from "svelte";
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, saveCharacter, type Character } from "$lib/api/characters";
+  import { addons, goLive } from "$lib/stores/addons.svelte";
   import { rollDice } from "$lib/api/dice";
   import { endRun, getEncounter, getRun, saveRun, type Combatant, type Encounter, type Run } from "$lib/api/encounters";
   import { errorMessage } from "$lib/api/storage";
@@ -74,6 +75,8 @@
       }
       if (saved) {
         run = saved;
+        const synced = R.followLinked(saved, list.characters);
+        if (synced) commit(synced);
         changedSince = stale;
         // A fight already under way: continue it, or start it over.
         if (saved.round > 0) await tick().then(() => resumeDialog?.showModal());
@@ -131,6 +134,8 @@
     hp: Math.max(0, c.currentHp ?? c.maxHp ?? 0),
     maxHp: Math.max(0, c.maxHp ?? 0),
     tempHp: Math.max(0, c.tempHp ?? 0),
+    deathSuccesses: c.deathSaves?.successes ?? 0,
+    deathFailures: c.deathSaves?.failures ?? 0,
     ac: c.ac,
     initiativeBonus: c.initiative ?? 0, // breaks initiative ties, as a monster's DEX modifier does
   });
@@ -164,6 +169,23 @@
   // ---- Saving ------------------------------------------------------------------------------------
   let saveError = $state<string | null>(null);
   let saving: Promise<unknown> = Promise.resolve();
+
+  // A running encounter is live: the D&D Beyond addon syncs every 30 seconds while it's shown. When an addon saved a
+  // character, linked PCs take its HP and death saves.
+  $effect(goLive);
+  $effect(() => {
+    if (addons.charactersChanged === 0) return;
+    listCharacters(campaign).then(
+      (l) => {
+        characters = l.characters;
+        const synced = run && R.followLinked(run, l.characters);
+        if (synced) commit(synced);
+      },
+      () => {}, // the fight goes on with the HP it has; the next sync tries again
+    );
+  });
+  /** A character D&D Beyond keeps up to date: its HP and death saves are read-only here. */
+  const linkedPc = (c: Combatant) => c.kind === "character" && !!characterById.get(c.character)?.linked;
 
   /** Shows the change at once and saves it after the saves before it. */
   function commit(next: Run) {
@@ -445,7 +467,8 @@
   let writeBack = $state(true);
   let ending = $state(false);
   let endError = $state<string | null>(null);
-  const fighting = $derived((run?.combatants ?? []).filter((c) => c.kind === "character" && characterById.has(c.character)));
+  // Linked characters aren't written back: D&D Beyond has their HP.
+  const fighting = $derived((run?.combatants ?? []).filter((c) => c.kind === "character" && characterById.has(c.character) && !linkedPc(c)));
 
   async function end() {
     if (!run || ending) return;
@@ -493,6 +516,7 @@
         class="pip"
         aria-label={success ? t.deathSuccess(n) : t.deathFailure(n)}
         aria-pressed={c[kind] >= n}
+        disabled={linkedPc(c)}
         onclick={() => changeById(c.id, (x) => R.setDeathSave(x, kind, n))}
       >
         <span class="dot" class:success class:on={c[kind] >= n}></span>
@@ -706,9 +730,9 @@
                   <span class="label">{t.amount}</span>
                   <input class="text-field dice amount-field" type="number" min="0" max={R.MAX_NUMBER} inputmode="numeric" bind:value={amount} />
                 </label>
-                <button class="btn hp-btn hp-damage" onclick={() => applyHp("damage")}>{t.damage}</button>
-                <button class="btn hp-btn hp-heal" onclick={() => applyHp("heal")}>{t.heal}</button>
-                <button class="btn hp-btn" onclick={() => applyHp("temp")}>{t.temp}</button>
+                <button class="btn hp-btn hp-damage" disabled={linkedPc(selected)} onclick={() => applyHp("damage")}>{t.damage}</button>
+                <button class="btn hp-btn hp-heal" disabled={linkedPc(selected)} onclick={() => applyHp("heal")}>{t.heal}</button>
+                <button class="btn hp-btn" disabled={linkedPc(selected)} onclick={() => applyHp("temp")}>{t.temp}</button>
               </div>
             </div>
             <div class="cond-row">

@@ -36,7 +36,9 @@ File names: plain ASCII, no spaces.
   "version": "1.0.0",
   "license": "MIT",
   "permissions": ["packs:read", "packs:write", "net:api.github.com"],
-  "settings": { "section": "rules", "entry": "ui/settings.html" }
+  "settings": { "section": "rules", "entry": "ui/settings.html" },
+  "characters": { "label": "D&D Beyond", "entry": "ui/add.html" },
+  "background": "ui/background.html"
 }
 ```
 
@@ -47,6 +49,8 @@ File names: plain ASCII, no spaces.
 | `name`, `version`, `license` | Required, shown in Settings → About. |
 | `permissions` | Optional. See below. Unknown permissions make the addon invalid. |
 | `settings` | Optional. A page shown as a panel in a Settings section. Only `rules` (below the pack list) for now. |
+| `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. |
+| `background` | Optional. A page that runs hidden for as long as the app is open. |
 
 ### Permissions
 
@@ -54,6 +58,7 @@ File names: plain ASCII, no spaces.
 |---|---|
 | `packs:read` | `packs.list` |
 | `packs:write` | `packs.install`, `packs.remove` |
+| `characters:write` | `characters.list`, `characters.save`, `characters.setPicture` |
 | `net:<host>` | `net.fetch` to `https://<host>/…`, one permission per host name (no port, no wildcards). Only the address the addon asks for is checked; redirects the host sends are followed, wherever they lead (GitHub release downloads need them). |
 
 Placing the folder is the consent: an addon gets exactly what it declares, and every other call is refused.
@@ -63,6 +68,13 @@ Placing the folder is the consent: an addon gets exactly what it declares, and e
 Pages are served from `koldron-addon://localhost/<id>/…` (on Windows `http://koldron-addon.localhost/<id>/…`). They run with an opaque origin, so there's no cookies, `localStorage` or IndexedDB: use `storage.*` instead. Their Content Security Policy allows scripts, styles, images, fonts, workers and `fetch` from the addon's own files only (plus `data:`/`blob:` images and `blob:` workers). There's no other network access: use `net.fetch`.
 
 Run heavy work (unzipping, converting) in a Web Worker so the app's window stays responsive.
+
+### Context
+
+The app tells a page where it is with a message (not a call, so there's no answer): `{ koldron: 1, event: "context", context }`. It's sent once the page has loaded and again whenever the context changes.
+
+- Background page: `{ campaign, live, screen }`. `campaign` is the open campaign's id, or null. `live` is true while a running encounter or a running session is shown. `screen` is the path of the screen shown, so a new context arrives every time a screen loads.
+- `characters` page: `{ campaign, character }`. `character` is the id of the character whose link is being edited, or null when adding one.
 
 A Settings panel lives only while its section is shown: when the user switches to another section or closes Settings, the page is closed and its work stops. A `packs.install` already sent still finishes (or changes nothing). Keep work short, or save progress with `storage.set` so it can pick up again.
 
@@ -98,10 +110,17 @@ function koldron(call, ...args) {
 | `net.fetch` | `https://` URL | The body as an `ArrayBuffer` (at most 200 MB). A GET; an error status is an error. |
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.pickFolder` | | `[{ path, text }]` for every file in the picked folder and its subfolders (`text` is null for a file that isn't UTF-8), or `null` if cancelled. |
+| `characters.list` | campaign id | The campaign's characters linked to this addon. |
+| `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. The app keeps the player and party that were set in the app; everything else is the addon's. A linked character's name, classes, stats and death saves can't be changed in the app. |
+| `characters.setPicture` | campaign id, character id, image file as `ArrayBuffer` | The character as saved. Only for a character linked to this addon. |
 | `storage.get` | | What `storage.set` saved last, or `null`. |
 | `storage.set` | any JSON value (at most 10 MB) | `null` |
 | `ui.setHeight` | pixels | `null`. The frame's height, at most 4000. |
 | `ui.theme` | | `"light"` or `"dark"`, the app's current theme. |
+| `ui.close` | | `null`. Closes the dialog the page is in. |
+| `ui.notify` | message | `null`. Shows the message (at most 200 characters) as the app's notification, after the addon's name. |
+
+A character is `{ id, name, player, classes: [{ name, level }], maxHp, currentHp, tempHp, ac, initiative, passivePerception, passiveInsight, passiveInvestigation, deathSaves: { successes, failures } | null, onHome, linked }`. Stats are whole numbers or null.
 
 The picked file or folder's path is never handed over.
 

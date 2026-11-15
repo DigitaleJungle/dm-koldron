@@ -5,6 +5,7 @@
   import "../../packs/tabler-icons/tabler-icons.min.css";
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
+  import AddonBackground from "$lib/components/AddonBackground.svelte";
   import Notification from "$lib/components/Notification.svelte";
   import { loadTheme } from "$lib/stores/theme.svelte";
   import { trackHistory } from "$lib/stores/history.svelte";
@@ -24,3 +25,4 @@
 
 {@render children()}
 <Notification />
+<AddonBackground />

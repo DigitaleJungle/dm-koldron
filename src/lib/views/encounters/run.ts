@@ -1,6 +1,7 @@
 // A running encounter: who fights, in which order, whose turn it is, what happens to their hit points, conditions and
 // death saves, and the encounter log. Pure functions over `Run` (saved by Rust as the encounter's run file after every
 // change).
+import type { Character } from "$lib/api/characters";
 import type { Combatant, RosterEntry, Run } from "$lib/api/encounters";
 import { entryKey, rowKeys } from "./roster";
 
@@ -89,6 +90,29 @@ export function update(run: Run, id: string, change: (c: Combatant) => Combatant
 }
 
 // ---- Hit points ----------------------------------------------------------------------------------
+
+/**
+ * A linked character's (D&D Beyond's) HP, max and temp HP and death saves follow the saved character, which its
+ * addon keeps up to date. Null when nothing changed.
+ */
+export function followLinked(run: Run, characters: Character[]): Run | null {
+  let changed = false;
+  const combatants = run.combatants.map((c) => {
+    const ch = c.kind === "character" ? characters.find((x) => x.id === c.character && x.linked) : undefined;
+    if (!ch) return c;
+    const synced = {
+      hp: Math.max(0, ch.currentHp ?? ch.maxHp ?? 0),
+      maxHp: Math.max(0, ch.maxHp ?? 0),
+      tempHp: Math.max(0, ch.tempHp ?? 0),
+      deathSuccesses: ch.deathSaves?.successes ?? 0,
+      deathFailures: ch.deathSaves?.failures ?? 0,
+    };
+    if ((Object.keys(synced) as (keyof typeof synced)[]).every((k) => c[k] === synced[k])) return c;
+    changed = true;
+    return { ...c, ...synced };
+  });
+  return changed ? { ...run, combatants } : null;
+}
 
 /** The most of each kind of death save. */
 export const DEATH_SAVES = 3;

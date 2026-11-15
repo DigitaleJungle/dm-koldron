@@ -72,9 +72,14 @@ export const strings = {
       loadError: (reason: string) => `Couldn't load the encounters. ${reason}`,
     },
   },
+  addons: {
+    close: "Close",
+    notice: (addon: string, message: string) => `${addon}: ${message}`,
+  },
   characters: {
     title: "Characters",
     add: "Add character",
+    newCharacter: "New character",
     search: "Search by name, class or player",
     classFilter: "Class",
     allClasses: "All classes",
@@ -108,6 +113,8 @@ export const strings = {
     form: {
       newTitle: "New character",
       editTitle: "Edit character",
+      linked: (source: string) => `Kept up to date from ${source}.`,
+      editLink: "Edit link",
       close: "Close",
       picture: "Picture",
       choosePicture: "Choose picture",

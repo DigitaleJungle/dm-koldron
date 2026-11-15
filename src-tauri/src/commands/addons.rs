@@ -4,6 +4,9 @@
 
 use crate::addons::{https_host, load_dir, Addon};
 use crate::commands::about::license_in;
+use crate::commands::campaigns::{active_dir, dirs, now_ms};
+use crate::commands::characters::{self, Character, Editor};
+use crate::commands::search;
 use crate::commands::packs::{capped, disabled, installed_dir, loaded, reload, summaries, PackSummary};
 use crate::packs::{self, safe_path, Invalid, NewPack};
 use crate::storage::{blocking, data_dir, write_atomic, StorageError};
@@ -69,6 +72,8 @@ pub struct AddonSummary {
     pub version: String,
     pub license: String,
     pub settings: Option<crate::addons::Panel>,
+    pub characters: Option<crate::addons::MenuPage>,
+    pub background: Option<String>,
     /// The license file in its folder, if it has one.
     pub license_text: Option<String>,
     /// Empty for a loaded addon. An addon with errors isn't loaded.
@@ -82,6 +87,8 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
         version: a.manifest.version.clone(),
         license: a.manifest.license.clone(),
         settings: a.manifest.settings.clone(),
+        characters: a.manifest.characters.clone(),
+        background: a.manifest.background.clone(),
         license_text: license_in(&a.folder),
         errors: Vec::new(),
     });
@@ -93,6 +100,8 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
             version: String::new(),
             license: String::new(),
             settings: None,
+            characters: None,
+            background: None,
             errors: capped(&i.errors),
         }
     });
@@ -235,6 +244,39 @@ fn read_folder(root: &Path) -> Result<Vec<PickedFile>, StorageError> {
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
+}
+
+/// `characters.list`: the campaign's characters linked to this addon.
+#[tauri::command]
+pub async fn addon_characters(app: AppHandle, addon: String, campaign: String) -> Result<Vec<Character>, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "characters:write")?;
+        let list = characters::list(&active_dir(&dirs(&app)?, &campaign)?)?;
+        Ok(list.characters.into_iter().filter(|c| c.linked.as_deref() == Some(addon.as_str())).collect())
+    })
+    .await
+}
+
+/// `characters.save`: creates a character linked to this addon (empty id) or updates one linked to it.
+#[tauri::command]
+pub async fn addon_save_character(app: AppHandle, addon: String, campaign: String, character: Character) -> Result<Character, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "characters:write")?;
+        let saved = characters::save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Addon(&addon))?;
+        search::changed();
+        Ok(saved)
+    })
+    .await
+}
+
+/// `characters.setPicture`: the picture of a character linked to this addon, from an image file's bytes.
+#[tauri::command]
+pub async fn addon_set_character_picture(app: AppHandle, addon: String, campaign: String, id: String, bytes: Vec<u8>) -> Result<Character, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "characters:write")?;
+        characters::set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, Some(&bytes), Editor::Addon(&addon))
+    })
+    .await
 }
 
 fn storage_file(app: &AppHandle, addon: &str) -> Result<PathBuf, StorageError> {

@@ -14,7 +14,11 @@
   import { pictureSrc } from "$lib/api/campaigns";
   import { listCharacters, saveCharacter, type Character, type CharacterList } from "$lib/api/characters";
   import { errorMessage } from "$lib/api/storage";
+  import type { AddonSummary } from "$lib/api/addons";
+  import AddonDialog from "$lib/components/AddonDialog.svelte";
   import HexCollage from "$lib/components/HexCollage.svelte";
+  import Menu from "$lib/components/Menu.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import PartyIcon from "$lib/components/PartyIcon.svelte";
   import { campaigns, setPartyName } from "$lib/stores/campaigns.svelte";
   import { enterMotion, moveMotion } from "$lib/motion";
@@ -44,6 +48,31 @@
       current = false;
     };
   });
+
+  // An addon saved a character (a D&D Beyond sync): read them again, without the loading state.
+  $effect(() => {
+    if (addons.charactersChanged === 0) return;
+    listCharacters(campaign).then(
+      (l) => (list = l),
+      (e) => (loadError = t.loadError(errorMessage(e))),
+    );
+  });
+
+  // Addons that add a way to add characters; with any, Add character becomes a menu.
+  loadAddons();
+  const adders = $derived(addons.list.filter((a) => a.characters));
+  /** An addon's page open in a dialog: adding, or editing the link of a character linked to it. */
+  let addonPage = $state<{ addon: AddonSummary; character: string | null } | null>(null);
+  const addItems = $derived([
+    { label: t.newCharacter, onselect: () => (editing = blankCharacter()) },
+    ...adders.map((addon) => ({ label: addon.characters!.label, onselect: () => (addonPage = { addon, character: null }) })),
+  ]);
+  const linkedAddon = (c: Character) => addons.list.find((a) => a.id === c.linked && a.characters);
+
+  function editLink(addon: AddonSummary, character: string) {
+    editing = null;
+    addonPage = { addon, character };
+  }
 
   // The packs' classes, for the form's class field; without them a class is just typed.
   catalogRows("classes", []).then(
@@ -183,10 +212,22 @@
           </div>
         </dl>
       {/if}
-      <button class="btn btn-primary add" onclick={() => (editing = blankCharacter())}>
-        <i class="ti ti-plus" aria-hidden="true"></i>
-        {t.add}
-      </button>
+      {#if adders.length > 0}
+        <div class="add">
+          <Menu id="add-character" label={t.add} items={addItems} triggerClass="btn btn-primary">
+            {#snippet trigger()}
+              <i class="ti ti-plus" aria-hidden="true"></i>
+              {t.add}
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            {/snippet}
+          </Menu>
+        </div>
+      {:else}
+        <button class="btn btn-primary add" onclick={() => (editing = blankCharacter())}>
+          <i class="ti ti-plus" aria-hidden="true"></i>
+          {t.add}
+        </button>
+      {/if}
     </div>
   </section>
 
@@ -258,7 +299,27 @@
 </div>
 
 {#if editing}
-  <CharacterForm {campaign} character={editing} {classNames} onclose={() => (editing = null)} onsaved={saved} ondeleted={deleted} />
+  {@const source = linkedAddon(editing)}
+  {@const id = editing.id}
+  <CharacterForm
+    {campaign}
+    character={editing}
+    {classNames}
+    linkedTo={source?.characters?.label}
+    oneditlink={source && id ? () => editLink(source, id) : undefined}
+    onclose={() => (editing = null)}
+    onsaved={saved}
+    ondeleted={deleted}
+  />
+{/if}
+{#if addonPage}
+  <AddonDialog
+    addon={addonPage.addon}
+    entry={addonPage.addon.characters!.entry}
+    title={addonPage.addon.characters!.label}
+    context={{ campaign, character: addonPage.character }}
+    onclose={() => (addonPage = null)}
+  />
 {/if}
 
 <style>

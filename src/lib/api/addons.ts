@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Character } from "./characters";
 import type { PackSummary } from "./packs";
 
 /** Mirrors `AddonSummary` in src-tauri/src/commands/addons.rs. An addon with `errors` isn't loaded. */
@@ -8,6 +9,10 @@ export type AddonSummary = {
   version: string;
   license: string;
   settings: { section: string; entry: string } | null;
+  /** An item in the Characters screen's Add character menu, opening `entry` in a dialog. */
+  characters: { label: string; entry: string } | null;
+  /** A page that runs hidden as long as the app is open. */
+  background: string | null;
   licenseText: string | null;
   errors: string[];
 };
@@ -55,6 +60,18 @@ export function addonPickFile(addon: string, extensions: string[]): Promise<Arra
 /** Null when the user cancelled. */
 export function addonPickFolder(addon: string): Promise<PickedFile[] | null> {
   return invoke("addon_pick_folder", { addon });
+}
+
+export function addonCharacters(addon: string, campaign: string): Promise<Character[]> {
+  return invoke("addon_characters", { addon, campaign });
+}
+
+export function addonSaveCharacter(addon: string, campaign: string, character: Character): Promise<Character> {
+  return invoke("addon_save_character", { addon, campaign, character });
+}
+
+export function addonSetCharacterPicture(addon: string, campaign: string, id: string, bytes: Uint8Array): Promise<Character> {
+  return invoke("addon_set_character_picture", { addon, campaign, id, bytes: Array.from(bytes) });
 }
 
 export function addonStorageGet(addon: string): Promise<unknown> {

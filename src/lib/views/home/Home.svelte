@@ -9,6 +9,7 @@
   import { getHomeLayout, setHomeLayout } from "$lib/api/home";
   import { errorMessage } from "$lib/api/storage";
   import Menu from "$lib/components/Menu.svelte";
+  import { addons } from "$lib/stores/addons.svelte";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { showHeaderAction } from "$lib/stores/header.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
@@ -30,10 +31,14 @@
   /** Shared by Party (which changes it) and Random encounter, so a party change shows in its difficulty at once. */
   let characters = $state<Character[] | null>(null);
   let charactersError = $state<string | null>(null);
-  listCharacters(campaign).then(
-    (l) => (characters = l.characters),
-    (e) => (charactersError = t.party.loadError(errorMessage(e))),
-  );
+  // Again when an addon saved a character (a D&D Beyond sync).
+  $effect(() => {
+    void addons.charactersChanged;
+    listCharacters(campaign).then(
+      (l) => (characters = l.characters),
+      (e) => (charactersError = t.party.loadError(errorMessage(e))),
+    );
+  });
   let loadError = $state<string | null>(null);
   let saveError = $state<string | null>(null);
 

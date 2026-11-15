@@ -25,6 +25,15 @@ pub struct ClassLevel {
     pub level: u32,
 }
 
+/// Death saves of a character at 0 HP, each 0 to 3.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DeathSaves {
+    pub successes: u8,
+    pub failures: u8,
+}
+
+const MAX_DEATH_SAVES: u8 = 3;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Character {
@@ -45,6 +54,13 @@ pub struct Character {
     pub passive_perception: Option<u32>,
     pub passive_insight: Option<u32>,
     pub passive_investigation: Option<u32>,
+    /// Kept up to date by an addon (D&D Beyond); the window keeps them as saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub death_saves: Option<DeathSaves>,
+    /// The id of the addon this character is linked to. Its name, classes, stats and death saves are that addon's to
+    /// change; the window only changes its player, picture and party. Set by Rust, never taken from the window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked: Option<String>,
     /// Shown in Home's party.
     #[serde(default)]
     pub on_home: bool,
@@ -90,6 +106,9 @@ fn check(character: &mut Character) -> Result<(), StorageError> {
             problems.push(format!("A class level must be 1 to {MAX_LEVEL}."));
         }
     }
+    if character.death_saves.is_some_and(|d| d.successes > MAX_DEATH_SAVES || d.failures > MAX_DEATH_SAVES) {
+        problems.push(format!("Death saves must be 0 to {MAX_DEATH_SAVES}."));
+    }
     if character.classes.iter().map(|c| c.level).sum::<u32>() > MAX_LEVEL {
         problems.push(format!("The total level must be at most {MAX_LEVEL}."));
     }
@@ -131,12 +150,42 @@ pub fn list(campaign_dir: &Path) -> Result<CharacterList, StorageError> {
     Ok(CharacterList { characters, unreadable })
 }
 
+/// Who is saving: the window, or the addon with this id.
+#[derive(Clone, Copy)]
+pub enum Editor<'a> {
+    Window,
+    Addon(&'a str),
+}
+
 /// Creates the character (empty `id`) or replaces the saved one, keeping when it was created.
-pub fn save(campaign_dir: &Path, mut character: Character, now: u64) -> Result<Character, StorageError> {
-    check(&mut character)?;
+/// The window can't link a character or change a linked one's synced fields (they're kept as saved); an addon only
+/// creates characters linked to itself and only changes those, keeping the player and party the window set.
+pub fn save(campaign_dir: &Path, mut character: Character, now: u64, editor: Editor) -> Result<Character, StorageError> {
     let folder = campaign_dir.join(FOLDER);
     let _guard = lock_update();
-    if character.id.is_empty() {
+    let saved = if character.id.is_empty() {
+        None
+    } else {
+        check_id(&character.id, "character")?;
+        Some(read(&folder, &character.id)?)
+    };
+    match (editor, &saved) {
+        (Editor::Window, Some(old)) if old.linked.is_some() => {
+            character = Character { player: character.player, on_home: character.on_home, ..old.clone() };
+        }
+        (Editor::Window, _) => character.linked = None,
+        (Editor::Addon(addon), Some(old)) => {
+            if old.linked.as_deref() != Some(addon) {
+                return Err(StorageError::Invalid("That character isn't linked to this addon.".into()));
+            }
+            character = Character { player: old.player.clone(), on_home: old.on_home, linked: old.linked.clone(), ..character };
+        }
+        (Editor::Addon(addon), None) => character.linked = Some(addon.into()),
+    }
+    check(&mut character)?;
+    if let Some(old) = saved {
+        character.created_at = old.created_at;
+    } else {
         let base = format!("{now:x}");
         let (mut id, mut n) = (base.clone(), 1);
         while folder.join(format!("{id}.json")).exists() {
@@ -145,9 +194,6 @@ pub fn save(campaign_dir: &Path, mut character: Character, now: u64) -> Result<C
         }
         character.id = id;
         character.created_at = now;
-    } else {
-        check_id(&character.id, "character")?;
-        character.created_at = read(&folder, &character.id)?.created_at;
     }
     character.updated_at = now;
     write_atomic(&folder.join(format!("{}.json", character.id)), &to_json(&Character { picture: None, ..character.clone() })?)?;
@@ -173,10 +219,15 @@ fn remove_file(path: &Path) -> Result<(), StorageError> {
 
 /// Sets the character's picture from an image the window cropped to a square; it's decoded (so only a real picture
 /// is kept), shrunk and stored as JPEG. `None` removes it.
-pub fn set_picture(campaign_dir: &Path, id: &str, bytes: Option<&[u8]>) -> Result<Character, StorageError> {
+pub fn set_picture(campaign_dir: &Path, id: &str, bytes: Option<&[u8]>, editor: Editor) -> Result<Character, StorageError> {
     check_id(id, "character")?;
     let folder = campaign_dir.join(FOLDER);
-    read(&folder, id)?;
+    let saved = read(&folder, id)?;
+    if let Editor::Addon(addon) = editor
+        && saved.linked.as_deref() != Some(addon)
+    {
+        return Err(StorageError::Invalid("That character isn't linked to this addon.".into()));
+    }
     let path = folder.join(format!("{id}.jpg"));
     let Some(bytes) = bytes else {
         remove_file(&path)?;
@@ -202,7 +253,7 @@ pub async fn list_characters(app: AppHandle, campaign: String) -> Result<Charact
 #[tauri::command]
 pub async fn save_character(app: AppHandle, campaign: String, character: Character) -> Result<Character, StorageError> {
     blocking(move || {
-        let saved = save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms())?;
+        let saved = save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Window)?;
         search::changed();
         Ok(saved)
     })
@@ -222,7 +273,7 @@ pub async fn delete_character(app: AppHandle, campaign: String, id: String) -> R
 /// `bytes`: the cropped picture (any format the image decoder reads), or none to remove the picture.
 #[tauri::command]
 pub async fn set_character_picture(app: AppHandle, campaign: String, id: String, bytes: Option<Vec<u8>>) -> Result<Character, StorageError> {
-    blocking(move || set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, bytes.as_deref())).await
+    blocking(move || set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, bytes.as_deref(), Editor::Window)).await
 }
 
 #[cfg(test)]
@@ -252,6 +303,8 @@ mod tests {
             passive_perception: Some(14),
             passive_insight: None,
             passive_investigation: None,
+            death_saves: None,
+            linked: None,
             on_home: true,
             created_at: 0,
             updated_at: 0,
@@ -259,15 +312,46 @@ mod tests {
         }
     }
 
+    fn save_w(dir: &Path, character: Character, now: u64) -> Result<Character, StorageError> {
+        save(dir, character, now, Editor::Window)
+    }
+
+    #[test]
+    fn a_linked_character_keeps_its_synced_fields_from_the_window_and_other_addons() {
+        let dir = temp_dir("linked");
+        let synced = Character { death_saves: Some(DeathSaves { successes: 1, failures: 2 }), ..character("Gylbard", &[("Fighter", 4)]) };
+        let made = save(&dir, Character { linked: Some("ignored".into()), ..synced }, 1, Editor::Addon("ddb")).unwrap();
+        assert_eq!(made.linked.as_deref(), Some("ddb"));
+
+        // The window changes only the player and the party; it can't unlink or touch HP.
+        let edit = Character { player: "Sam".into(), on_home: false, current_hp: Some(1), linked: None, ..made.clone() };
+        let after = save_w(&dir, edit, 2).unwrap();
+        assert_eq!((after.player.as_str(), after.on_home, after.current_hp, after.linked.as_deref()), ("Sam", false, Some(31), Some("ddb")));
+
+        // The addon updates the stats but keeps the player and party; another addon can't touch it.
+        let sync = Character { current_hp: Some(5), player: "Other".into(), on_home: true, ..after.clone() };
+        let synced = save(&dir, sync.clone(), 3, Editor::Addon("ddb")).unwrap();
+        assert_eq!((synced.current_hp, synced.player.as_str(), synced.on_home), (Some(5), "Sam", false));
+        assert!(matches!(save(&dir, sync, 4, Editor::Addon("other")), Err(StorageError::Invalid(_))));
+        assert!(matches!(set_picture(&dir, &made.id, None, Editor::Addon("other")), Err(StorageError::Invalid(_))));
+
+        // An addon can't take over the window's own characters, and the window can't link one.
+        let own = save_w(&dir, Character { linked: Some("ddb".into()), ..character("Mira", &[("Rogue", 1)]) }, 5).unwrap();
+        assert_eq!(own.linked, None);
+        assert!(matches!(save(&dir, own, 6, Editor::Addon("ddb")), Err(StorageError::Invalid(_))));
+        let bad = Character { id: String::new(), death_saves: Some(DeathSaves { successes: 4, failures: 0 }), ..made };
+        assert!(matches!(save(&dir, bad, 7, Editor::Addon("ddb")), Err(StorageError::Invalid(_))));
+    }
+
     #[test]
     fn save_creates_then_replaces_keeping_the_id_and_creation_time() {
         let dir = temp_dir("save");
-        let made = save(&dir, character(" Mira ", &[("Rogue", 3), ("Wizard", 2)]), 10).unwrap();
+        let made = save_w(&dir, character(" Mira ", &[("Rogue", 3), ("Wizard", 2)]), 10).unwrap();
         assert_eq!((made.id.as_str(), made.name.as_str(), made.player.as_str(), made.created_at), ("a", "Mira", "Lotte", 10));
         assert_eq!(class_line(&made), "Rogue 3 / Wizard 2");
-        let twin = save(&dir, character("Brannoc", &[("Fighter", 5)]), 10).unwrap();
+        let twin = save_w(&dir, character("Brannoc", &[("Fighter", 5)]), 10).unwrap();
         assert_eq!(twin.id, "a-2");
-        let edited = save(&dir, Character { name: "Mira Ashvale".into(), created_at: 99, ..made }, 20).unwrap();
+        let edited = save_w(&dir, Character { name: "Mira Ashvale".into(), created_at: 99, ..made }, 20).unwrap();
         assert_eq!((edited.id.as_str(), edited.created_at, edited.updated_at), ("a", 10, 20));
         let list = list(&dir).unwrap();
         assert_eq!(list.characters.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Brannoc", "Mira Ashvale"]);
@@ -281,24 +365,24 @@ mod tests {
     #[test]
     fn rejects_every_broken_rule_and_unknown_or_tricky_ids() {
         let dir = temp_dir("rules");
-        let Err(StorageError::Invalid(all)) = save(&dir, character(" ", &[("Rogue", 15), (" ", 0), ("Wizard", 6)]), 1) else { panic!() };
+        let Err(StorageError::Invalid(all)) = save_w(&dir, character(" ", &[("Rogue", 15), (" ", 0), ("Wizard", 6)]), 1) else { panic!() };
         for want in ["A name is required", "needs a name", "level must be 1 to 20", "total level must be at most 20"] {
             assert!(all.contains(want), "missing \"{want}\" in {all}");
         }
-        assert!(matches!(save(&dir, character("A", &[]), 1), Err(StorageError::Invalid(_))));
-        assert!(matches!(save(&dir, character(&"x".repeat(101), &[("Rogue", 1)]), 1), Err(StorageError::Invalid(_))));
-        assert!(save(&dir, character("A", &[("Rogue", 10), ("Wizard", 10)]), 1).is_ok());
+        assert!(matches!(save_w(&dir, character("A", &[]), 1), Err(StorageError::Invalid(_))));
+        assert!(matches!(save_w(&dir, character(&"x".repeat(101), &[("Rogue", 1)]), 1), Err(StorageError::Invalid(_))));
+        assert!(save_w(&dir, character("A", &[("Rogue", 10), ("Wizard", 10)]), 1).is_ok());
         let ghost = Character { id: "nope".into(), ..character("A", &[("Rogue", 1)]) };
-        assert!(matches!(save(&dir, ghost, 1), Err(StorageError::NotFound(_))));
+        assert!(matches!(save_w(&dir, ghost, 1), Err(StorageError::NotFound(_))));
         let tricky = Character { id: "../x".into(), ..character("A", &[("Rogue", 1)]) };
-        assert!(matches!(save(&dir, tricky, 1), Err(StorageError::Invalid(_))));
+        assert!(matches!(save_w(&dir, tricky, 1), Err(StorageError::Invalid(_))));
         assert!(matches!(delete(&dir, "nope"), Err(StorageError::NotFound(_))));
     }
 
     #[test]
     fn a_damaged_file_is_listed_as_unreadable_and_left_alone() {
         let dir = temp_dir("damaged");
-        save(&dir, character("Mira", &[("Rogue", 1)]), 1).unwrap();
+        save_w(&dir, character("Mira", &[("Rogue", 1)]), 1).unwrap();
         fs::write(dir.join(FOLDER).join("b.json"), "{ nope").unwrap();
         let list = list(&dir).unwrap();
         assert_eq!((list.characters.len(), list.unreadable.as_slice()), (1, &["b.json".to_string()][..]));
@@ -308,15 +392,15 @@ mod tests {
     #[test]
     fn pictures_are_decoded_shrunk_and_removed_with_the_character() {
         let dir = temp_dir("picture");
-        let id = save(&dir, character("Mira", &[("Rogue", 1)]), 1).unwrap().id;
-        assert!(matches!(set_picture(&dir, &id, Some(b"not a picture")), Err(StorageError::Invalid(_))));
+        let id = save_w(&dir, character("Mira", &[("Rogue", 1)]), 1).unwrap().id;
+        assert!(matches!(set_picture(&dir, &id, Some(b"not a picture"), Editor::Window), Err(StorageError::Invalid(_))));
         let mut png = vec![];
         image::RgbImage::new(900, 900).write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
-        let with = set_picture(&dir, &id, Some(&png)).unwrap();
+        let with = set_picture(&dir, &id, Some(&png), Editor::Window).unwrap();
         let path = with.picture.unwrap().path;
         assert_eq!(image::image_dimensions(&path).unwrap(), (512, 512));
-        assert!(set_picture(&dir, &id, None).unwrap().picture.is_none());
-        set_picture(&dir, &id, Some(&png)).unwrap();
+        assert!(set_picture(&dir, &id, None, Editor::Window).unwrap().picture.is_none());
+        set_picture(&dir, &id, Some(&png), Editor::Window).unwrap();
         delete(&dir, &id).unwrap();
         assert!(!Path::new(&path).exists());
         assert!(list(&dir).unwrap().characters.is_empty());

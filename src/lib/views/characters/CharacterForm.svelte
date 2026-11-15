@@ -16,6 +16,8 @@
     onclose,
     onsaved,
     ondeleted,
+    linkedTo,
+    oneditlink,
   }: {
     campaign: string;
     /** The character to edit, or a blank one to add. */
@@ -25,7 +27,13 @@
     onclose: () => void;
     onsaved: (saved: Character) => void;
     ondeleted: (deleted: Character) => void;
+    /** For a character an addon keeps up to date: where from ("D&D Beyond"). Its name, classes and stats can't be
+     * changed here; Rust keeps them as saved anyway. */
+    linkedTo?: string;
+    /** Opens the addon's page to change the link. */
+    oneditlink?: () => void;
   } = $props();
+  const locked = $derived(!!character.linked);
 
   const t = strings.characters.form;
   const id = $props.id();
@@ -243,7 +251,7 @@
           <label class="field">
             <span>{t.name} <span aria-hidden="true">*</span></span>
             <!-- svelte-ignore a11y_autofocus: the dialog opens to type the name -->
-            <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus />
+            <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus={!locked} disabled={locked} />
           </label>
           <label class="field">
             <span>{t.player}</span>
@@ -252,7 +260,14 @@
         </div>
       </div>
 
-      <fieldset>
+      {#if locked}
+        <div class="linked">
+          <span>{t.linked(linkedTo ?? character.linked ?? "")}</span>
+          {#if oneditlink}<button type="button" class="btn small" onclick={oneditlink}>{t.editLink}</button>{/if}
+        </div>
+      {/if}
+
+      <fieldset disabled={locked}>
         <legend class="label">{t.classes}</legend>
         <datalist id="{id}-classes">
           {#each classNames as name (name)}<option value={name}></option>{/each}
@@ -261,7 +276,7 @@
           <div class="class-row">
             <input aria-label={t.className(i + 1)} list="{id}-classes" bind:value={row.name} required maxlength="100" autocomplete="off" />
             <input class="level" aria-label={t.classLevel(i + 1)} type="number" min="1" max="20" step="1" bind:value={row.level} required />
-            {#if draft.classes.length > 1}
+            {#if draft.classes.length > 1 && !locked}
               <button type="button" class="icon-btn" aria-label={t.removeClass(i + 1)} onclick={() => draft.classes.splice(i, 1)}>
                 <i class="ti ti-x" aria-hidden="true"></i>
               </button>
@@ -269,15 +284,17 @@
           </div>
         {/each}
         <div class="class-foot">
-          <button type="button" class="btn small" onclick={() => draft.classes.push({ name: "", level: 1 })}>
-            <i class="ti ti-plus" aria-hidden="true"></i>
-            {t.addClass}
-          </button>
+          {#if !locked}
+            <button type="button" class="btn small" onclick={() => draft.classes.push({ name: "", level: 1 })}>
+              <i class="ti ti-plus" aria-hidden="true"></i>
+              {t.addClass}
+            </button>
+          {/if}
           <span class:error={total > 20} role={total > 20 ? "alert" : undefined}>{total > 20 ? t.tooHigh : t.total(total)}</span>
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset disabled={locked}>
         <legend class="label">{t.stats}</legend>
         <div class="stats">
           {#each stats as s (s.key)}
@@ -317,6 +334,15 @@
 </dialog>
 
 <style>
+  .linked {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
   dialog {
     width: min(var(--character-form-width), calc(100vw - 2 * var(--space-4)));
     max-height: calc(100vh - 2 * var(--space-4));

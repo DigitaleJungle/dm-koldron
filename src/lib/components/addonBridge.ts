@@ -1,12 +1,16 @@
 // The window's side of the addon message API (addons/addons.md): maps an addon frame's call to a command. Permissions
 // are checked in Rust, so nothing here decides what an addon may do.
+import type { Character } from "$lib/api/characters";
 import {
+  addonCharacters,
   addonFetch,
   addonInstallPack,
   addonPacks,
   addonPickFile,
   addonPickFolder,
   addonRemovePack,
+  addonSaveCharacter,
+  addonSetCharacterPicture,
   addonStorageGet,
   addonStorageSet,
   type NewPack,
@@ -21,10 +25,19 @@ export function isCall(data: unknown): data is AddonCall {
 }
 
 /** What the frame around the addon does for it. */
-export type FrameHost = { setHeight: (px: number) => void; packsChanged: () => void; theme: () => string };
+export type FrameHost = {
+  setHeight: (px: number) => void;
+  packsChanged: () => void;
+  charactersChanged: () => void;
+  theme: () => string;
+  close: () => void;
+  notify: (message: string) => void;
+};
 
 /** The tallest an addon can make its frame, in pixels. */
 const MAX_HEIGHT = 4000;
+/** The longest message an addon can show. */
+const MAX_NOTICE = 200;
 
 export async function answer(addon: string, call: string, args: unknown[], host: FrameHost): Promise<unknown> {
   switch (call) {
@@ -47,6 +60,20 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     }
     case "files.pickFolder":
       return addonPickFolder(addon);
+    case "characters.list":
+      return addonCharacters(addon, String(args[0]));
+    case "characters.save": {
+      const saved = await addonSaveCharacter(addon, String(args[0]), args[1] as Character);
+      host.charactersChanged();
+      return saved;
+    }
+    case "characters.setPicture": {
+      const bytes = args[2] instanceof ArrayBuffer ? new Uint8Array(args[2]) : args[2];
+      if (!(bytes instanceof Uint8Array)) throw new Error("characters.setPicture needs the picture as an ArrayBuffer.");
+      const saved = await addonSetCharacterPicture(addon, String(args[0]), String(args[1]), bytes);
+      host.charactersChanged();
+      return saved;
+    }
     case "storage.get":
       return addonStorageGet(addon);
     case "storage.set":
@@ -60,6 +87,14 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     }
     case "ui.theme":
       return host.theme();
+    case "ui.close":
+      host.close();
+      return null;
+    case "ui.notify": {
+      const message = String(args[0] ?? "").trim();
+      if (message) host.notify([...message].slice(0, MAX_NOTICE).join(""));
+      return null;
+    }
     default:
       throw new Error(`Unknown call "${call}".`);
   }

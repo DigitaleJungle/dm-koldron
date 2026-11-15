@@ -10,6 +10,7 @@
   import { pictureSrc } from "$lib/api/campaigns";
   import { catalogRows, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
+  import { goLive } from "$lib/stores/addons.svelte";
   import { encounterBudgets, listEncounters, type Budget, type Encounter } from "$lib/api/encounters";
   import { getSession, saveSession, type Session } from "$lib/api/sessions";
   import { errorMessage } from "$lib/api/storage";
@@ -69,6 +70,8 @@
   let budgets = $state<Budget[]>([]);
   listEncounters(campaign).then((l) => (all = l.encounters), () => {});
   listCharacters(campaign).then((l) => (characters = l.characters), () => {});
+  // A running session is live: the D&D Beyond addon syncs every 30 seconds while it's shown.
+  $effect(goLive);
   catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), () => {});
   encounterBudgets().then((b) => (budgets = b), () => {});
 

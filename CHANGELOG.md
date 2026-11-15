@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.2] - 2026-11-15
+
+### Added
+
+- Addons can keep characters up to date: a characters API (characters:write), an item in the Characters screen's Add character menu (a menu only when an addon adds one), a hidden background page, and short notifications shown after the addon's name
+- Linked characters: a character an addon keeps up to date shows where it comes from with Edit link; its name, classes and stats can't be changed in the app, its player, picture and party can; death saves are kept with it
+
+### Changed
+
+- Running an encounter: a linked character's HP, max and temp HP and death saves follow what its addon syncs, its HP controls are disabled, and End encounter doesn't write its HP back
+
 ## [0.6.1] - 2026-11-15
 
 ### Changed

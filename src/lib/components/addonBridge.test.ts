@@ -9,12 +9,15 @@ vi.mock("$lib/api/addons", () => ({
   addonPickFolder: vi.fn(async () => null),
   addonStorageGet: vi.fn(async () => ({ saved: true })),
   addonStorageSet: vi.fn(async () => undefined),
+  addonCharacters: vi.fn(async () => []),
+  addonSaveCharacter: vi.fn(async (_a: string, _c: string, character: object) => character),
+  addonSetCharacterPicture: vi.fn(async () => ({ id: "c" })),
 }));
 
-import { addonStorageSet } from "$lib/api/addons";
+import { addonSetCharacterPicture, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), theme: () => "dark" });
+const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn() });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -36,6 +39,22 @@ describe("addon bridge", () => {
     expect(h.packsChanged).toHaveBeenCalledTimes(2);
     await answer("importer", "storage.set", [], h);
     expect(addonStorageSet).toHaveBeenCalledWith("importer", null);
+  });
+
+  it("tells the app when a character changed and sends pictures as bytes", async () => {
+    const h = host();
+    await answer("ddb", "characters.list", ["camp"], h);
+    expect(h.charactersChanged).not.toHaveBeenCalled();
+    await answer("ddb", "characters.save", ["camp", { name: "Gylbard" }], h);
+    await answer("ddb", "characters.setPicture", ["camp", "c", new Uint8Array([1, 2]).buffer], h);
+    expect(h.charactersChanged).toHaveBeenCalledTimes(2);
+    expect(addonSetCharacterPicture).toHaveBeenCalledWith("ddb", "camp", "c", new Uint8Array([1, 2]));
+    await expect(answer("ddb", "characters.setPicture", ["camp", "c", "nope"], h)).rejects.toThrow("ArrayBuffer");
+    await answer("ddb", "ui.close", [], h);
+    expect(h.close).toHaveBeenCalled();
+    await answer("ddb", "ui.notify", ["  "], h);
+    await answer("ddb", "ui.notify", ["x".repeat(500)], h);
+    expect(h.notify.mock.calls).toEqual([["x".repeat(200)]]); // an empty message shows nothing; a long one is cut
   });
 
   it("maps a cancelled file pick to null and keeps the frame height in bounds", async () => {

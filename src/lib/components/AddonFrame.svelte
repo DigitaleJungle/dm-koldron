@@ -1,13 +1,38 @@
 <script lang="ts">
   import { addonUrl, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
+  import { charactersChanged } from "$lib/stores/addons.svelte";
+  import { notify } from "$lib/stores/notifications.svelte";
+  import { strings } from "$lib/strings";
   import { answer, isCall } from "./addonBridge";
 
   // One page of an addon, in a sandboxed frame: scripts run, but with an opaque origin, so it can't reach this window,
-  // Tauri or storage. It talks to the app only through postMessage calls, answered by `answer`.
-  let { addon, entry, onpackschange }: { addon: AddonSummary; entry: string; onpackschange?: () => void } = $props();
+  // Tauri or storage. It talks to the app only through postMessage calls, answered by `answer`. `context` is sent to
+  // the page once it has loaded and again whenever it changes: `{ koldron: 1, event: "context", context }`.
+  let {
+    addon,
+    entry,
+    context,
+    hidden = false,
+    onpackschange,
+    onclose,
+  }: {
+    addon: AddonSummary;
+    entry: string;
+    context?: Record<string, unknown>;
+    /** A background page: kept out of sight (display: none also keeps it out of the Tab order). */
+    hidden?: boolean;
+    onpackschange?: () => void;
+    onclose?: () => void;
+  } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
+  let loaded = $state(false);
+
+  $effect(() => {
+    const sent = $state.snapshot(context);
+    if (loaded && sent) frame?.contentWindow?.postMessage({ koldron: 1, event: "context", context: sent }, "*");
+  });
 
   function onmessage(event: MessageEvent) {
     // Only this frame's own window: the sender decides which addon's permissions apply, never the message.
@@ -18,7 +43,11 @@
     const host = {
       setHeight: (px: number) => (height = px),
       packsChanged: () => onpackschange?.(),
+      charactersChanged,
       theme: () => document.documentElement.dataset.theme ?? "light",
+      close: () => onclose?.(),
+      // Always says which addon speaks, so its words can't pass for the app's.
+      notify: (message: string) => notify(strings.addons.notice(addon.name, message)),
     };
     answer(addon.id, call, args ?? [], host)
       .then((result) => reply({ ok: true, result }, result instanceof ArrayBuffer ? [result] : []))
@@ -33,6 +62,9 @@
   src={addonUrl(addon.id, entry)}
   title={addon.name}
   sandbox="allow-scripts"
+  class:hidden
+  aria-hidden={hidden || undefined}
+  onload={() => (loaded = true)}
   style:height={height === undefined ? undefined : `${height}px`}
 ></iframe>
 
@@ -41,5 +73,9 @@
     width: 100%;
     border: none;
     background: transparent;
+  }
+
+  .hidden {
+    display: none;
   }
 </style>

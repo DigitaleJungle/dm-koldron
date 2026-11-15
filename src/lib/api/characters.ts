@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Picture } from "./campaigns";
 
 export type ClassLevel = { name: string; level: number };
+export type DeathSaves = { successes: number; failures: number };
 
 /** Mirrors `Character` in src-tauri/src/commands/characters.rs. Stats are whole numbers or null; times are ms. */
 export type Character = {
@@ -19,6 +20,11 @@ export type Character = {
   passivePerception: number | null;
   passiveInsight: number | null;
   passiveInvestigation: number | null;
+  /** Kept up to date by the addon a character is linked to. */
+  deathSaves?: DeathSaves | null;
+  /** The id of the addon (D&D Beyond) that keeps this character up to date; set by Rust only. Its classes, stats and
+   * death saves are the addon's: saving from the window keeps them as they are and only changes player and party. */
+  linked?: string | null;
   onHome: boolean;
   createdAt: number;
   updatedAt: number;

@@ -14,6 +14,8 @@ export type AddonSummary = {
   characters: { label: string; entry: string; owns: string[] } | null;
   /** A page that runs hidden as long as the app is open. */
   background: string | null;
+  /** A tab in the app-wide Library labelled `label`, showing the page `entry`. */
+  library: { label: string; entry: string } | null;
   licenseText: string | null;
   errors: string[];
 };
@@ -81,4 +83,35 @@ export function addonStorageGet(addon: string): Promise<unknown> {
 
 export function addonStorageSet(addon: string, value: unknown): Promise<void> {
   return invoke("addon_storage_set", { addon, value });
+}
+
+/** Mirrors `FolderSummary`: a folder the user gave the addon; its path stays in Rust. */
+export type AddonFolder = { id: string; name: string };
+/** Mirrors `ScannedFile`. */
+export type ScannedFile = { path: string; size: number; modified: number };
+
+export function addonFolders(addon: string): Promise<AddonFolder[]> {
+  return invoke("addon_folders", { addon });
+}
+
+/** Null when the user cancelled. */
+export function addonAddFolder(addon: string): Promise<AddonFolder | null> {
+  return invoke("addon_add_folder", { addon });
+}
+
+export function addonRemoveFolder(addon: string, folder: string): Promise<void> {
+  return invoke("addon_remove_folder", { addon, folder });
+}
+
+export function addonScanFolder(addon: string, folder: string): Promise<ScannedFile[]> {
+  return invoke("addon_scan_folder", { addon, folder });
+}
+
+export function addonReadFile(addon: string, folder: string, path: string, offset: number, length: number): Promise<ArrayBuffer> {
+  return invoke("addon_read_file", { addon, folder, path, offset, length });
+}
+
+/** False when the user cancelled. */
+export function addonSaveFile(addon: string, name: string, bytes: Uint8Array): Promise<boolean> {
+  return invoke("addon_save_file", { addon, name, bytes: Array.from(bytes) });
 }

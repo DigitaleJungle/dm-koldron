@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type SectionId = "ui" | "campaigns" | "rules" | "about";
+  export type SectionId = "ui" | "campaigns" | "rules" | "library" | "about";
 
   /** Counts every time any Settings dialog closes (packs may have been switched on or off there): screens showing
    *  pack content read it to load again, whichever gear opened Settings (theirs or the campaign sidebar's). */
@@ -13,17 +13,23 @@
   import CampaignSettings from "$lib/components/CampaignSettings.svelte";
   import AboutSettings from "$lib/components/AboutSettings.svelte";
   import RulesSettings from "$lib/components/RulesSettings.svelte";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
 
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
 
   const t = strings.settings;
-  const sections: { id: SectionId; label: string }[] = [
+  loadAddons();
+  // Library is a section only when an addon adds a panel to it.
+  const libraryPanels = $derived(addons.list.filter((a) => a.settings?.section === "library"));
+  const sections: { id: SectionId; label: string }[] = $derived([
     { id: "ui", label: t.ui.title },
     { id: "campaigns", label: t.campaigns.title },
     { id: "rules", label: t.rules.title },
+    ...(libraryPanels.length ? [{ id: "library" as const, label: t.library.title }] : []),
     { id: "about", label: t.about.title },
-  ];
+  ]);
   let active = $state<SectionId>("ui");
 
   // Vertical tabs: Up/Down (and Home/End) move between sections; only the selected tab is in the Tab order.
@@ -123,6 +129,12 @@
     {:else if active === "rules"}
       <div id="settings-panel-rules" class="panel" role="tabpanel" aria-labelledby="settings-tab-rules">
         <RulesSettings />
+      </div>
+    {:else if active === "library"}
+      <div id="settings-panel-library" class="panel" role="tabpanel" aria-labelledby="settings-tab-library">
+        {#each libraryPanels as addon (addon.id)}
+          <AddonFrame {addon} entry={addon.settings!.entry} />
+        {/each}
       </div>
     {:else if active === "about"}
       <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about">

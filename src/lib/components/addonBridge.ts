@@ -2,7 +2,13 @@
 // are checked in Rust, so nothing here decides what an addon may do.
 import type { Character } from "$lib/api/characters";
 import {
+  addonAddFolder,
   addonCharacters,
+  addonFolders,
+  addonReadFile,
+  addonRemoveFolder,
+  addonSaveFile,
+  addonScanFolder,
   addonFetch,
   addonInstallPack,
   addonPacks,
@@ -60,6 +66,24 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     }
     case "files.pickFolder":
       return addonPickFolder(addon);
+    case "files.saveFile": {
+      if (!(args[1] instanceof ArrayBuffer)) throw new Error("files.saveFile needs the file as an ArrayBuffer.");
+      return addonSaveFile(addon, String(args[0] ?? ""), new Uint8Array(args[1]));
+    }
+    case "folders.list":
+      return addonFolders(addon);
+    case "folders.add":
+      return addonAddFolder(addon);
+    case "folders.remove":
+      await addonRemoveFolder(addon, String(args[0]));
+      return null;
+    case "folders.scan":
+      return addonScanFolder(addon, String(args[0]));
+    case "folders.read": {
+      const [offset, length] = [Number(args[2]), Number(args[3])];
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) throw new Error("folders.read needs a byte offset and length.");
+      return addonReadFile(addon, String(args[0]), String(args[1]), offset, length);
+    }
     case "characters.list":
       return addonCharacters(addon, String(args[0]));
     case "characters.save": {

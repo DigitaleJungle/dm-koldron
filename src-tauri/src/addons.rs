@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 pub const API: u32 = 1;
 const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
-const SETTINGS_SECTIONS: [&str; 1] = ["rules"];
-const PERMISSIONS: [&str; 3] = ["packs:read", "packs:write", "characters:write"];
-/// The longest label an addon's item in the Add character menu may have.
+const SETTINGS_SECTIONS: [&str; 2] = ["rules", "library"];
+const PERMISSIONS: [&str; 4] = ["packs:read", "packs:write", "characters:write", "folders:read"];
+/// The longest label an addon's Add character item or Library tab may have.
 const MAX_LABEL: usize = 40;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -32,6 +32,17 @@ pub struct Manifest {
     pub characters: Option<MenuPage>,
     /// A page that runs hidden as long as the app is open.
     pub background: Option<String>,
+    /// A tab in the app-wide Library labelled `label`, showing the page `entry`.
+    pub library: Option<Tab>,
+}
+
+/// An addon's tab in the Library.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Tab {
+    pub label: String,
+    /// The page, relative to the addon folder.
+    pub entry: String,
 }
 
 /// The addon's way to add characters: a menu item labelled `label` opening `entry`, and the fields of the characters it
@@ -124,10 +135,7 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
         check_page("settings", &panel.entry, folder, &mut errors);
     }
     if let Some(page) = &m.characters {
-        let label = page.label.trim();
-        if label.is_empty() || label.chars().count() > MAX_LABEL {
-            errors.push(format!("characters: the label must be 1 to {MAX_LABEL} characters."));
-        }
+        check_label("characters", &page.label, &mut errors);
         check_page("characters", &page.entry, folder, &mut errors);
         for field in page.owns.iter().filter(|f| !crate::commands::characters::OWNABLE.contains(&f.as_str())) {
             errors.push(format!("characters: \"{field}\" isn't a character field an addon can own."));
@@ -136,7 +144,18 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
     if let Some(page) = &m.background {
         check_page("background", page, folder, &mut errors);
     }
+    if let Some(tab) = &m.library {
+        check_label("library", &tab.label, &mut errors);
+        check_page("library", &tab.entry, folder, &mut errors);
+    }
     errors
+}
+
+fn check_label(field: &str, label: &str, errors: &mut Vec<String>) {
+    let label = label.trim();
+    if label.is_empty() || label.chars().count() > MAX_LABEL {
+        errors.push(format!("{field}: the label must be 1 to {MAX_LABEL} characters."));
+    }
 }
 
 /// `page` must be an existing .html file inside the addon folder.
@@ -179,10 +198,11 @@ mod tests {
     fn manifest(id: &str) -> serde_json::Value {
         serde_json::json!({
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
-            "permissions": ["packs:read", "packs:write", "characters:write", "net:api.github.com"],
+            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "net:api.github.com"],
             "settings": { "section": "rules", "entry": "ui/settings.html" },
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
-            "background": "ui/settings.html"
+            "background": "ui/settings.html",
+            "library": { "label": "Tab", "entry": "ui/settings.html" }
         })
     }
 
@@ -197,13 +217,15 @@ mod tests {
         bad["settings"] = serde_json::json!({ "section": "ui", "entry": "../x.html" });
         bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
+        bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
-        // api, id, 3 permissions, section, entry, label, characters page, an unknown owned field, background page
-        assert_eq!(invalid[0].errors.len(), 11, "{:?}", invalid[0].errors);
+        // api, id, 3 permissions, section, entry, label, characters page, an unknown owned field, background page,
+        // library label and page
+        assert_eq!(invalid[0].errors.len(), 13, "{:?}", invalid[0].errors);
     }
 
     #[test]

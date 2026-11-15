@@ -9,14 +9,14 @@ use crate::commands::characters::{self, Character, Editor};
 use crate::commands::search;
 use crate::commands::packs::{capped, disabled, installed_dir, loaded, reload, summaries, PackSummary};
 use crate::packs::{self, safe_path, Invalid, NewPack};
-use crate::storage::{blocking, data_dir, write_atomic, StorageError};
-use serde::Serialize;
+use crate::storage::{blocking, data_dir, write_atomic, write_atomic_bytes, StorageError};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::ipc;
 use tauri::{AppHandle, Manager};
@@ -84,6 +84,7 @@ pub struct AddonSummary {
     pub settings: Option<crate::addons::Panel>,
     pub characters: Option<crate::addons::MenuPage>,
     pub background: Option<String>,
+    pub library: Option<crate::addons::Tab>,
     /// The license file in its folder, if it has one.
     pub license_text: Option<String>,
     /// Empty for a loaded addon. An addon with errors isn't loaded.
@@ -99,6 +100,7 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
         settings: a.manifest.settings.clone(),
         characters: a.manifest.characters.clone(),
         background: a.manifest.background.clone(),
+        library: a.manifest.library.clone(),
         license_text: license_in(&a.folder),
         errors: Vec::new(),
     });
@@ -112,6 +114,7 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
             settings: None,
             characters: None,
             background: None,
+            library: None,
             errors: capped(&i.errors),
         }
     });
@@ -231,7 +234,23 @@ pub async fn addon_pick_folder(app: AppHandle, addon: String) -> Result<Option<V
 }
 
 fn read_folder(root: &Path) -> Result<Vec<PickedFile>, StorageError> {
-    let (mut files, mut total, mut todo) = (Vec::new(), 0u64, vec![root.to_path_buf()]);
+    let (mut files, mut total) = (Vec::new(), 0u64);
+    walk(root, |path, entry| {
+        total += entry.metadata()?.len();
+        if files.len() == MAX_FILES || total > MAX_BYTES {
+            return Err(StorageError::Invalid(format!("The folder has more than {MAX_FILES} files or {} MB.", MAX_BYTES / 1024 / 1024)));
+        }
+        files.push(PickedFile { path, text: String::from_utf8(fs::read(entry.path())?).ok() });
+        Ok(())
+    })?;
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(files)
+}
+
+/// Calls `visit` with every file under `root`, with its path inside `root` (with `/`). Links are skipped: they could
+/// lead out of the folder the user picked.
+fn walk(root: &Path, mut visit: impl FnMut(String, &fs::DirEntry) -> Result<(), StorageError>) -> Result<(), StorageError> {
+    let mut todo = vec![root.to_path_buf()];
     while let Some(dir) = todo.pop() {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
@@ -239,21 +258,12 @@ fn read_folder(root: &Path) -> Result<Vec<PickedFile>, StorageError> {
             if kind.is_dir() {
                 todo.push(entry.path());
             } else if kind.is_file() {
-                total += entry.metadata()?.len();
-                if files.len() == MAX_FILES || total > MAX_BYTES {
-                    return Err(StorageError::Invalid(format!(
-                        "The folder has more than {MAX_FILES} files or {} MB.",
-                        MAX_BYTES / 1024 / 1024
-                    )));
-                }
                 let relative = entry.path().strip_prefix(root).expect("found under root").to_owned();
-                let path = relative.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
-                files.push(PickedFile { path, text: String::from_utf8(fs::read(entry.path())?).ok() });
-            } // symlinks are skipped: they could lead out of the folder the user picked
+                visit(relative.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"), &entry)?;
+            }
         }
     }
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(files)
+    Ok(())
 }
 
 /// `characters.list`: the campaign's characters linked to this addon.
@@ -324,6 +334,148 @@ pub async fn addon_storage_set(app: AppHandle, addon: String, value: Value) -> R
     .await
 }
 
+/// `folders.read`: the most bytes one call reads.
+const MAX_READ: u64 = 16 * 1024 * 1024;
+/// `folders.scan`: at most this many files per folder.
+const MAX_SCAN: usize = 50_000;
+
+/// A folder the user gave an addon (`folders:read`). Its path stays in the app; the addon only gets `id` and `name`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct Granted {
+    id: String,
+    name: String,
+    path: PathBuf,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct FolderSummary {
+    id: String,
+    name: String,
+}
+
+/// A file `folders.scan` found: its path inside the folder (with `/`), its size, and its last change in ms.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct ScannedFile {
+    path: String,
+    size: u64,
+    modified: u64,
+}
+
+/// The addon's folders file and the folders in it, once the addon is checked for `folders:read`. Kept apart from
+/// `storage.*`, which the addon writes itself.
+fn granted(app: &AppHandle, addon: &str) -> Result<(PathBuf, Vec<Granted>), StorageError> {
+    require(self::addon(app, addon)?, "folders:read")?;
+    let file = data_dir(app)?.join("addon-data").join(addon).join("folders.json");
+    let list = match fs::read_to_string(&file) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(e.to_string()))?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e.into()),
+    };
+    Ok((file, list))
+}
+
+fn save_granted(file: &Path, list: &[Granted]) -> Result<(), StorageError> {
+    fs::create_dir_all(file.parent().expect("has a folder"))?;
+    write_atomic(file, &serde_json::to_string_pretty(list).expect("folders serialize"))
+}
+
+fn folder_summary(g: &Granted) -> FolderSummary {
+    FolderSummary { id: g.id.clone(), name: g.name.clone() }
+}
+
+fn find_folder<'a>(list: &'a [Granted], id: &str) -> Result<&'a Granted, StorageError> {
+    list.iter().find(|g| g.id == id).ok_or_else(|| StorageError::NotFound(format!("No folder \"{id}\".")))
+}
+
+/// Every file under `root`, sorted by path.
+fn scan(root: &Path) -> Result<Vec<ScannedFile>, StorageError> {
+    let mut files = Vec::new();
+    walk(root, |path, entry| {
+        if files.len() == MAX_SCAN {
+            return Err(StorageError::Invalid(format!("The folder has more than {MAX_SCAN} files.")));
+        }
+        let meta = entry.metadata()?;
+        let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
+        files.push(ScannedFile { path, size: meta.len(), modified });
+        Ok(())
+    })?;
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(files)
+}
+
+/// `folders.list`
+#[tauri::command]
+pub async fn addon_folders(app: AppHandle, addon: String) -> Result<Vec<FolderSummary>, StorageError> {
+    blocking(move || Ok(granted(&app, &addon)?.1.iter().map(folder_summary).collect())).await
+}
+
+/// `folders.add`: the user picks a folder, which the addon may read from then on. Null when cancelled; a folder
+/// given before comes back as it was.
+#[tauri::command]
+pub async fn addon_add_folder(app: AppHandle, addon: String) -> Result<Option<FolderSummary>, StorageError> {
+    blocking(move || {
+        let (file, mut list) = granted(&app, &addon)?;
+        let Some(path) = picked_path(dialog(&app).blocking_pick_folder())? else { return Ok(None) };
+        if let Some(known) = list.iter().find(|g| g.path == path) {
+            return Ok(Some(folder_summary(known)));
+        }
+        let name = path.file_name().map_or_else(|| path.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned());
+        let added = Granted { id: now_ms().to_string(), name, path };
+        let result = folder_summary(&added);
+        list.push(added);
+        save_granted(&file, &list)?;
+        Ok(Some(result))
+    })
+    .await
+}
+
+/// `folders.remove`: the addon can't read the folder any more. Its files are never touched.
+#[tauri::command]
+pub async fn addon_remove_folder(app: AppHandle, addon: String, folder: String) -> Result<(), StorageError> {
+    blocking(move || {
+        let (file, mut list) = granted(&app, &addon)?;
+        list.retain(|g| g.id != folder);
+        save_granted(&file, &list)
+    })
+    .await
+}
+
+/// `folders.scan`
+#[tauri::command]
+pub async fn addon_scan_folder(app: AppHandle, addon: String, folder: String) -> Result<Vec<ScannedFile>, StorageError> {
+    blocking(move || scan(&find_folder(&granted(&app, &addon)?.1, &folder)?.path)).await
+}
+
+/// `folders.read`: at most `length` bytes of a file in the folder, from `offset` (fewer at its end).
+#[tauri::command]
+pub async fn addon_read_file(app: AppHandle, addon: String, folder: String, path: String, offset: u64, length: u64) -> Result<ipc::Response, StorageError> {
+    blocking(move || {
+        if length > MAX_READ {
+            return Err(StorageError::Invalid(format!("At most {} MB can be read at once.", MAX_READ / 1024 / 1024)));
+        }
+        let root = find_folder(&granted(&app, &addon)?.1, &folder)?.path.clone();
+        let full = file_inside(&root, &path).ok_or_else(|| StorageError::NotFound(format!("\"{path}\" isn't a file in the folder.")))?;
+        let mut file = fs::File::open(full)?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut bytes = Vec::new();
+        file.take(length).read_to_end(&mut bytes)?;
+        Ok(ipc::Response::new(bytes))
+    })
+    .await
+}
+
+/// `files.saveFile`: the user picks where the bytes go (`name` suggested). False when cancelled.
+#[tauri::command]
+pub async fn addon_save_file(app: AppHandle, addon: String, name: String, bytes: Vec<u8>) -> Result<bool, StorageError> {
+    blocking(move || {
+        self::addon(&app, &addon)?;
+        let Some(path) = picked_path(dialog(&app).set_file_name(&name).blocking_save_file())? else { return Ok(false) };
+        write_atomic_bytes(&path, &bytes)?;
+        Ok(true)
+    })
+    .await
+}
+
 /// The addon pages' own policy: scripts, styles and images from the addon scheme only; no network (`net.fetch` is the
 /// way out), no frames, no forms.
 const ADDON_CSP: &str = "default-src 'none'; \
@@ -360,15 +512,17 @@ pub fn serve(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
 /// The file at `path` inside `folder`, never outside it (no `..`, no link leading out).
 // shortcut: no percent-decoding, so addon file names are plain ASCII without spaces; decode here if one needs more.
 fn read_inside(folder: &Path, path: &str) -> Result<Vec<u8>, StatusCode> {
+    fs::read(file_inside(folder, path).ok_or(StatusCode::NOT_FOUND)?).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// The file at `path` inside `folder`, if it is one there (no `..`, no link leading out).
+fn file_inside(folder: &Path, path: &str) -> Option<PathBuf> {
     if !safe_path(path) {
-        return Err(StatusCode::NOT_FOUND);
+        return None;
     }
-    let root = folder.canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
-    let file = root.join(path).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
-    if !file.starts_with(&root) || !file.is_file() {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    fs::read(file).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    let root = folder.canonicalize().ok()?;
+    let file = root.join(path).canonicalize().ok()?;
+    (file.starts_with(&root) && file.is_file()).then_some(file)
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -411,6 +565,23 @@ mod tests {
         }
         assert_eq!(content_type("ui/page.HTML"), "text/html; charset=utf-8");
         assert_eq!(content_type("data"), "application/octet-stream");
+    }
+
+    #[test]
+    fn a_folder_scans_every_file_and_reads_only_inside() {
+        let dir = temp_dir("granted");
+        let lib = dir.join("lib");
+        fs::create_dir_all(lib.join("sub")).unwrap();
+        for f in ["a.md", "sub/b.json", "notes.txt"] {
+            fs::write(lib.join(f), "x").unwrap();
+        }
+        fs::write(dir.join("outside.txt"), "x").unwrap();
+        let found: Vec<_> = scan(&lib).unwrap().into_iter().map(|f| f.path).collect();
+        assert_eq!(found, ["a.md", "notes.txt", "sub/b.json"]);
+        assert!(file_inside(&lib, "sub/b.json").is_some());
+        for bad in ["../outside.txt", "sub", "", "/a.md", "missing.md"] {
+            assert!(file_inside(&lib, bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

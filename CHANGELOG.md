@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.5] - 2026-11-15
+
+### Added
+
+- Addons can add a tab to the Library (library in addon.json), shown after Catalog
+- Addons can add a panel to a new Settings → Library section, shown only when an addon uses it
+- Addons can read folders the user picks (folders:read permission: folders.add, list, remove, scan and read); the addon never sees where a folder is, and reads stay inside it
+- Addons can save a file where the user picks (files.saveFile)
+
+### Changed
+
+- An addon's Library tab is closed while Settings is open and loads again when Settings closes
+
 ## [0.6.4] - 2026-11-15
 
 ### Changed

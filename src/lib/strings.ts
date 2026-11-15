@@ -909,6 +909,9 @@ export const strings = {
         saveError: (name: string, reason: string) => `Couldn't change images for ${name}. ${reason}`,
       },
     },
+    library: {
+      title: "Library",
+    },
     about: {
       title: "About",
       version: (v: string) => `Version ${v}`,

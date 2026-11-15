@@ -38,7 +38,8 @@ File names: plain ASCII, no spaces.
   "permissions": ["packs:read", "packs:write", "net:api.github.com"],
   "settings": { "section": "rules", "entry": "ui/settings.html" },
   "characters": { "label": "D&D Beyond", "entry": "ui/add.html" },
-  "background": "ui/background.html"
+  "background": "ui/background.html",
+  "library": { "label": "My tab", "entry": "ui/tab.html" }
 }
 ```
 
@@ -48,9 +49,10 @@ File names: plain ASCII, no spaces.
 | `id` | Lowercase letters, digits and dashes; the same as the folder name. |
 | `name`, `version`, `license` | Required, shown in Settings → About. |
 | `permissions` | Optional. See below. Unknown permissions make the addon invalid. |
-| `settings` | Optional. A page shown as a panel in a Settings section. Only `rules` (below the pack list) for now. |
+| `settings` | Optional. A page shown as a panel in a Settings section: `rules` (below the pack list) or `library` (a Library section, shown only when an addon adds a panel to it). The addon's `library` page is closed while Settings is open and loads again when it closes. |
 | `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page `entry` in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. `owns`: the fields of the characters it adds that the addon keeps up to date (see below). |
 | `background` | Optional. A page that runs hidden for as long as the app is open. |
+| `library` | Optional. A tab labelled `label` (at most 40 characters) in the app-wide Library, after Catalog, showing the page `entry` across the whole pane (not inside a campaign's Library). The page scrolls itself; keep its bottom-left corner clear, where the Settings gear sits. |
 
 ### Permissions
 
@@ -58,6 +60,7 @@ File names: plain ASCII, no spaces.
 |---|---|
 | `packs:read` | `packs.list` |
 | `packs:write` | `packs.install`, `packs.remove` |
+| `folders:read` | `folders.list`, `folders.add`, `folders.remove`, `folders.scan`, `folders.read` |
 | `characters:write` | `characters.list`, `characters.save`, `characters.setPicture` |
 | `net:<host>` | `net.fetch` to `https://<host>/…`, one permission per host name (no port, no wildcards). Only the address the addon asks for is checked; redirects the host sends are followed, wherever they lead (GitHub release downloads need them). |
 
@@ -112,6 +115,12 @@ function koldron(call, ...args) {
 | `net.fetch` | `https://` URL | The body as an `ArrayBuffer` (at most 200 MB). A GET; an error status is an error. |
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.pickFolder` | | `[{ path, text }]` for every file in the picked folder and its subfolders (`text` is null for a file that isn't UTF-8), or `null` if cancelled. |
+| `files.saveFile` | suggested file name, the file as an `ArrayBuffer` | `true`, or `false` if the user cancelled. The user picks where in the system dialog. |
+| `folders.list` | | The folders the user gave the addon: `[{ id, name }]`. |
+| `folders.add` | | The folder the user picked, `{ id, name }`, or `null` if they cancelled. The addon may read it from then on. |
+| `folders.remove` | folder id | `null`. The addon can't read it any more; its files are never touched. |
+| `folders.scan` | folder id | `[{ path, size, modified }]` for every file in the folder and its subfolders (`modified` in ms). |
+| `folders.read` | folder id, path, offset, length | Those bytes of the file as an `ArrayBuffer` (fewer at its end; at most 16 MB per call). |
 | `characters.list` | campaign id | The campaign's characters linked to this addon. |
 | `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. When creating, the addon sets everything. After that it changes only the fields its manifest `owns`; everything else is the app's. |
 | `characters.setPicture` | campaign id, character id, image file as `ArrayBuffer` | The character as saved. Only for a character linked to this addon. |
@@ -128,7 +137,7 @@ function koldron(call, ...args) {
 
 A character is `{ id, name, player, classes: [{ name, level }], maxHp, currentHp, tempHp, ac, initiative, passivePerception, passiveInsight, passiveInvestigation, deathSaves: { successes, failures } | null, onHome, linked }`. Stats are whole numbers or null.
 
-The picked file or folder's path is never handed over.
+The picked file or folder's path is never handed over. A folder from `folders.add` is known to the addon only by its id and name.
 
 ### packs.install
 

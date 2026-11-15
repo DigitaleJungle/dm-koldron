@@ -4,6 +4,8 @@
   import { gotoReplacing } from "$lib/stores/history.svelte";
   import { showHeaderBack } from "$lib/stores/header.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import SettingsDialog, { settingsClosed, type SectionId } from "$lib/components/SettingsDialog.svelte";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
@@ -20,8 +22,15 @@
   const base = $derived(embedded ? libraryHome() : "/library");
   const COLLAPSED_KEY = "library.contentsCollapsed";
 
-  // ?tab=catalog, else the Rules tab.
-  const tab = $derived(page.url.searchParams.get("tab") === "catalog" ? "catalog" : "rules");
+  loadAddons();
+  // Addons' tabs come after Catalog, in the app-wide Library only.
+  const addonTabs = $derived(embedded ? [] : addons.list.filter((a) => a.library));
+  // ?tab=catalog, ?tab=<addon id>, else the Rules tab (also for an addon that's gone).
+  const tab = $derived.by(() => {
+    const asked = page.url.searchParams.get("tab");
+    return asked === "catalog" || addonTabs.some((a) => a.id === asked) ? asked! : "rules";
+  });
+  const addonTab = $derived(addonTabs.find((a) => a.id === tab));
   // Back goes back through history, like the mouse's back button (tabs and chapters take the current place, so they
   // aren't steps). Where there's nothing to go back to (the app was opened here): from a Catalog entry its list,
   // else the Start screen.
@@ -97,11 +106,20 @@
       <!-- Switching tabs takes the current place in the history, so Back never steps between them. -->
       <a href={base} aria-current={tab === "rules" ? "page" : undefined} onclick={switchTab}>{t.rulesTab}</a>
       <a href="{base}?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined} onclick={switchTab}>{strings.catalog.title}</a>
+      {#each addonTabs as addon (addon.id)}
+        <a href="{base}?tab={addon.id}" aria-current={tab === addon.id ? "page" : undefined} onclick={switchTab}>{addon.library!.label}</a>
+      {/each}
     </nav>
     {#if !embedded}<div class="search"><SearchBar /></div>{/if}
   </header>
 
-  {#if tab === "catalog"}
+  {#if addonTab}
+    <!-- Keyed, so switching between addons' tabs loads the other page. Left out while Settings is open: the addon's
+         panel there may save, and this page must not save its older copy over it; closing Settings loads it fresh. -->
+    {#key addonTab.id}
+      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} />{/if}</div>
+    {/key}
+  {:else if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} />
   {:else}
     <RulesReader collapsed={collapsed && !embedded} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} bottom={gearInContents ? gear : undefined} />
@@ -166,6 +184,17 @@
   .search {
     flex: 0 1 var(--search-width);
     margin-left: auto;
+  }
+
+  /* The addon's page fills the pane and scrolls inside its own frame. */
+  .addon-tab {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .addon-tab :global(iframe) {
+    display: block;
+    height: 100%;
   }
 
   .corner {

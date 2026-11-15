@@ -67,6 +67,8 @@ Placing the folder is the consent: an addon gets exactly what it declares, and e
 
 Pages are served from `koldron-addon://localhost/<id>/…` (on Windows `http://koldron-addon.localhost/<id>/…`). They run with an opaque origin, so there's no cookies, `localStorage` or IndexedDB: use `storage.*` instead. Their Content Security Policy allows scripts, styles, images, fonts, workers and `fetch` from the addon's own files only (plus `data:`/`blob:` images and `blob:` workers). There's no other network access: use `net.fetch`.
 
+Forms work as usual: listen for `submit` and call `preventDefault()`. A form can't be sent anywhere (the policy has `form-action 'none'`).
+
 Run heavy work (unzipping, converting) in a Web Worker so the app's window stays responsive.
 
 ### Context
@@ -111,7 +113,7 @@ function koldron(call, ...args) {
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.pickFolder` | | `[{ path, text }]` for every file in the picked folder and its subfolders (`text` is null for a file that isn't UTF-8), or `null` if cancelled. |
 | `characters.list` | campaign id | The campaign's characters linked to this addon. |
-| `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. The app keeps the player and party that were set in the app; everything else is the addon's. A linked character's name, classes, stats and death saves can't be changed in the app. |
+| `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. The app keeps the player and party that were set in the app; everything else is the addon's. A linked character's name, classes, stats and death saves can't be changed in the app, while the addon is installed; without it the character is an ordinary one, and putting the addon back links it again. |
 | `characters.setPicture` | campaign id, character id, image file as `ArrayBuffer` | The character as saved. Only for a character linked to this addon. |
 | `storage.get` | | What `storage.set` saved last, or `null`. |
 | `storage.set` | any JSON value (at most 10 MB) | `null` |

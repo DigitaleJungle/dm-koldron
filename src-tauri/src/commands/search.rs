@@ -248,7 +248,7 @@ mod tests {
             max_hp: None, current_hp: None, temp_hp: None, ac: None, passive_perception: None,
             passive_insight: None, passive_investigation: None, initiative: None, death_saves: None, linked: None, on_home: false, created_at: 0, updated_at: 0, picture: None,
         };
-        characters::save(&active_dir(&dirs, &a.id).unwrap(), mira, 5, characters::Editor::Window).unwrap();
+        characters::save(&active_dir(&dirs, &a.id).unwrap(), mira, 5, characters::Editor::Window(&[])).unwrap();
         let (packs, _) = crate::packs::load_dir(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs")).unwrap();
         let mut docs = pack_docs(&packs.iter().collect::<Vec<_>>());
         docs.extend(character_docs(&dirs));

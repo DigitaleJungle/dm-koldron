@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.3] - 2026-11-15
+
+### Changed
+
+- A character linked to an addon that isn't installed behaves like any other (editable, normal HP in encounters); putting the addon back links it again
+
+### Fixed
+
+- Addon pages: forms work (submitting a form in an addon did nothing)
+- Saving a character no longer fails when the addons folder can't be read
+
 ## [0.6.2] - 2026-11-15
 
 ### Added

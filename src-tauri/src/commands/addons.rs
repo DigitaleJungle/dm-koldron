@@ -51,6 +51,11 @@ fn addons(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
     Ok(ADDONS.get_or_init(|| loaded))
 }
 
+/// The ids of the loaded addons (a character linked to an addon that isn't loaded is an ordinary one). Blocking.
+pub fn loaded_ids(app: &AppHandle) -> Result<Vec<String>, StorageError> {
+    Ok(addons(app)?.0.iter().map(|a| a.manifest.id.clone()).collect())
+}
+
 fn addon(app: &AppHandle, id: &str) -> Result<&'static Addon, StorageError> {
     addons(app)?.0.iter().find(|a| a.manifest.id == id).ok_or_else(|| StorageError::NotFound(format!("No addon \"{id}\" is loaded.")))
 }

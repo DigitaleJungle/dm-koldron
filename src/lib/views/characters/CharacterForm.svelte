@@ -27,13 +27,13 @@
     onclose: () => void;
     onsaved: (saved: Character) => void;
     ondeleted: (deleted: Character) => void;
-    /** For a character an addon keeps up to date: where from ("D&D Beyond"). Its name, classes and stats can't be
-     * changed here; Rust keeps them as saved anyway. */
+    /** For a character an addon keeps up to date, while that addon is loaded: where from ("D&D Beyond"). Its name,
+     * classes and stats can't be changed here; Rust keeps them as saved anyway. */
     linkedTo?: string;
     /** Opens the addon's page to change the link. */
     oneditlink?: () => void;
   } = $props();
-  const locked = $derived(!!character.linked);
+  const locked = $derived(!!linkedTo);
 
   const t = strings.characters.form;
   const id = $props.id();
@@ -262,7 +262,7 @@
 
       {#if locked}
         <div class="linked">
-          <span>{t.linked(linkedTo ?? character.linked ?? "")}</span>
+          <span>{t.linked(linkedTo ?? "")}</span>
           {#if oneditlink}<button type="button" class="btn small" onclick={oneditlink}>{t.editLink}</button>{/if}
         </div>
       {/if}

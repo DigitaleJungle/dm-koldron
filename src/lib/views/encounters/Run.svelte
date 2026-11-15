@@ -75,8 +75,8 @@
       }
       if (saved) {
         run = saved;
-        const synced = R.followLinked(saved, list.characters);
-        if (synced) commit(synced);
+        const followed = R.followLinked(saved, synced(list.characters));
+        if (followed) commit(followed);
         changedSince = stale;
         // A fight already under way: continue it, or start it over.
         if (saved.round > 0) await tick().then(() => resumeDialog?.showModal());
@@ -178,14 +178,17 @@
     listCharacters(campaign).then(
       (l) => {
         characters = l.characters;
-        const synced = run && R.followLinked(run, l.characters);
-        if (synced) commit(synced);
+        const next = run && R.followLinked(run, synced(l.characters));
+        if (next) commit(next);
       },
       () => {}, // the fight goes on with the HP it has; the next sync tries again
     );
   });
-  /** A character D&D Beyond keeps up to date: its HP and death saves are read-only here. */
-  const linkedPc = (c: Combatant) => c.kind === "character" && !!characterById.get(c.character)?.linked;
+  /** A link counts only while its addon is loaded; without it the character fights like any other. */
+  const isSynced = (c: Character | undefined) => !!c?.linked && addons.list.some((a) => a.id === c.linked);
+  const synced = (list: Character[]) => list.filter(isSynced);
+  /** A character an addon keeps up to date: its HP and death saves are read-only here. */
+  const linkedPc = (c: Combatant) => c.kind === "character" && isSynced(characterById.get(c.character));
 
   /** Shows the change at once and saves it after the saves before it. */
   function commit(next: Run) {

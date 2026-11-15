@@ -7,7 +7,8 @@
   import { answer, isCall } from "./addonBridge";
 
   // One page of an addon, in a sandboxed frame: scripts run, but with an opaque origin, so it can't reach this window,
-  // Tauri or storage. It talks to the app only through postMessage calls, answered by `answer`. `context` is sent to
+  // Tauri or storage. Forms are allowed only so their submit event fires (without allow-forms the browser drops a
+  // submit before the event); the page's own CSP has form-action 'none', so a form can't send anything anywhere. It talks to the app only through postMessage calls, answered by `answer`. `context` is sent to
   // the page once it has loaded and again whenever it changes: `{ koldron: 1, event: "context", context }`.
   let {
     addon,
@@ -61,7 +62,7 @@
   bind:this={frame}
   src={addonUrl(addon.id, entry)}
   title={addon.name}
-  sandbox="allow-scripts"
+  sandbox="allow-scripts allow-forms"
   class:hidden
   aria-hidden={hidden || undefined}
   onload={() => (loaded = true)}

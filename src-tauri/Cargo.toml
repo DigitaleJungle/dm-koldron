@@ -1,6 +1,6 @@
 [package]
 name = "dm-koldron"
-version = "0.6.2"
+version = "0.6.3"
 description = "Desktop companion for Dungeon Masters running in-person sessions"
 authors = ["David Delanoye"]
 license = "MPL-2.0"

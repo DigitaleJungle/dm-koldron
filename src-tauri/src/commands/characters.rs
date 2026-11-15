@@ -150,16 +150,18 @@ pub fn list(campaign_dir: &Path) -> Result<CharacterList, StorageError> {
     Ok(CharacterList { characters, unreadable })
 }
 
-/// Who is saving: the window, or the addon with this id.
+/// Who is saving: the window (with the ids of the addons that are loaded), or the addon with this id.
 #[derive(Clone, Copy)]
 pub enum Editor<'a> {
-    Window,
+    Window(&'a [String]),
     Addon(&'a str),
 }
 
 /// Creates the character (empty `id`) or replaces the saved one, keeping when it was created.
 /// The window can't link a character or change a linked one's synced fields (they're kept as saved); an addon only
-/// creates characters linked to itself and only changes those, keeping the player and party the window set.
+/// creates characters linked to itself and only changes those, keeping the player and party the window set. A link
+/// only counts while its addon is loaded: without it the window changes everything, and the link is kept, so putting
+/// the addon back picks the character up again.
 pub fn save(campaign_dir: &Path, mut character: Character, now: u64, editor: Editor) -> Result<Character, StorageError> {
     let folder = campaign_dir.join(FOLDER);
     let _guard = lock_update();
@@ -170,10 +172,10 @@ pub fn save(campaign_dir: &Path, mut character: Character, now: u64, editor: Edi
         Some(read(&folder, &character.id)?)
     };
     match (editor, &saved) {
-        (Editor::Window, Some(old)) if old.linked.is_some() => {
+        (Editor::Window(loaded), Some(old)) if old.linked.as_ref().is_some_and(|a| loaded.contains(a)) => {
             character = Character { player: character.player, on_home: character.on_home, ..old.clone() };
         }
-        (Editor::Window, _) => character.linked = None,
+        (Editor::Window(_), saved) => character.linked = saved.as_ref().and_then(|old| old.linked.clone()),
         (Editor::Addon(addon), Some(old)) => {
             if old.linked.as_deref() != Some(addon) {
                 return Err(StorageError::Invalid("That character isn't linked to this addon.".into()));
@@ -253,7 +255,9 @@ pub async fn list_characters(app: AppHandle, campaign: String) -> Result<Charact
 #[tauri::command]
 pub async fn save_character(app: AppHandle, campaign: String, character: Character) -> Result<Character, StorageError> {
     blocking(move || {
-        let saved = save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Window)?;
+        // Addons that can't be read count as none loaded (as in the window); Settings → About shows why.
+        let loaded = crate::commands::addons::loaded_ids(&app).unwrap_or_default();
+        let saved = save(&active_dir(&dirs(&app)?, &campaign)?, character, now_ms(), Editor::Window(&loaded))?;
         search::changed();
         Ok(saved)
     })
@@ -273,7 +277,7 @@ pub async fn delete_character(app: AppHandle, campaign: String, id: String) -> R
 /// `bytes`: the cropped picture (any format the image decoder reads), or none to remove the picture.
 #[tauri::command]
 pub async fn set_character_picture(app: AppHandle, campaign: String, id: String, bytes: Option<Vec<u8>>) -> Result<Character, StorageError> {
-    blocking(move || set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, bytes.as_deref(), Editor::Window)).await
+    blocking(move || set_picture(&active_dir(&dirs(&app)?, &campaign)?, &id, bytes.as_deref(), Editor::Window(&[]))).await
 }
 
 #[cfg(test)]
@@ -313,7 +317,12 @@ mod tests {
     }
 
     fn save_w(dir: &Path, character: Character, now: u64) -> Result<Character, StorageError> {
-        save(dir, character, now, Editor::Window)
+        save(dir, character, now, Editor::Window(&[]))
+    }
+
+    /// The window while the "ddb" addon is loaded.
+    fn save_with_ddb(dir: &Path, character: Character, now: u64) -> Result<Character, StorageError> {
+        save(dir, character, now, Editor::Window(&["ddb".to_string()]))
     }
 
     #[test]
@@ -325,7 +334,7 @@ mod tests {
 
         // The window changes only the player and the party; it can't unlink or touch HP.
         let edit = Character { player: "Sam".into(), on_home: false, current_hp: Some(1), linked: None, ..made.clone() };
-        let after = save_w(&dir, edit, 2).unwrap();
+        let after = save_with_ddb(&dir, edit.clone(), 2).unwrap();
         assert_eq!((after.player.as_str(), after.on_home, after.current_hp, after.linked.as_deref()), ("Sam", false, Some(31), Some("ddb")));
 
         // The addon updates the stats but keeps the player and party; another addon can't touch it.
@@ -334,6 +343,12 @@ mod tests {
         assert_eq!((synced.current_hp, synced.player.as_str(), synced.on_home), (Some(5), "Sam", false));
         assert!(matches!(save(&dir, sync, 4, Editor::Addon("other")), Err(StorageError::Invalid(_))));
         assert!(matches!(set_picture(&dir, &made.id, None, Editor::Addon("other")), Err(StorageError::Invalid(_))));
+
+        // With the addon gone it's an ordinary character: everything can be changed, and the link stays for its return.
+        let orphan = save_w(&dir, Character { current_hp: Some(1), ..after.clone() }, 3).unwrap();
+        assert_eq!((orphan.current_hp, orphan.linked.as_deref()), (Some(1), Some("ddb")));
+        let back = save(&dir, Character { current_hp: Some(5), ..orphan }, 3, Editor::Addon("ddb")).unwrap();
+        assert_eq!(back.current_hp, Some(5));
 
         // An addon can't take over the window's own characters, and the window can't link one.
         let own = save_w(&dir, Character { linked: Some("ddb".into()), ..character("Mira", &[("Rogue", 1)]) }, 5).unwrap();
@@ -393,14 +408,14 @@ mod tests {
     fn pictures_are_decoded_shrunk_and_removed_with_the_character() {
         let dir = temp_dir("picture");
         let id = save_w(&dir, character("Mira", &[("Rogue", 1)]), 1).unwrap().id;
-        assert!(matches!(set_picture(&dir, &id, Some(b"not a picture"), Editor::Window), Err(StorageError::Invalid(_))));
+        assert!(matches!(set_picture(&dir, &id, Some(b"not a picture"), Editor::Window(&[])), Err(StorageError::Invalid(_))));
         let mut png = vec![];
         image::RgbImage::new(900, 900).write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
-        let with = set_picture(&dir, &id, Some(&png), Editor::Window).unwrap();
+        let with = set_picture(&dir, &id, Some(&png), Editor::Window(&[])).unwrap();
         let path = with.picture.unwrap().path;
         assert_eq!(image::image_dimensions(&path).unwrap(), (512, 512));
-        assert!(set_picture(&dir, &id, None, Editor::Window).unwrap().picture.is_none());
-        set_picture(&dir, &id, Some(&png), Editor::Window).unwrap();
+        assert!(set_picture(&dir, &id, None, Editor::Window(&[])).unwrap().picture.is_none());
+        set_picture(&dir, &id, Some(&png), Editor::Window(&[])).unwrap();
         delete(&dir, &id).unwrap();
         assert!(!Path::new(&path).exists());
         assert!(list(&dir).unwrap().characters.is_empty());

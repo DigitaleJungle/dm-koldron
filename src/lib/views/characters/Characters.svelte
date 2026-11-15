@@ -67,7 +67,8 @@
     { label: t.newCharacter, onselect: () => (editing = blankCharacter()) },
     ...adders.map((addon) => ({ label: addon.characters!.label, onselect: () => (addonPage = { addon, character: null }) })),
   ]);
-  const linkedAddon = (c: Character) => addons.list.find((a) => a.id === c.linked && a.characters);
+  // A link counts only while its addon is loaded; without it the character is an ordinary one.
+  const linkedAddon = (c: Character) => addons.list.find((a) => a.id === c.linked);
 
   function editLink(addon: AddonSummary, character: string) {
     editing = null;
@@ -305,8 +306,8 @@
     {campaign}
     character={editing}
     {classNames}
-    linkedTo={source?.characters?.label}
-    oneditlink={source && id ? () => editLink(source, id) : undefined}
+    linkedTo={source ? (source.characters?.label ?? source.name) : undefined}
+    oneditlink={source?.characters && id ? () => editLink(source, id) : undefined}
     onclose={() => (editing = null)}
     onsaved={saved}
     ondeleted={deleted}

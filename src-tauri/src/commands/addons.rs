@@ -85,13 +85,17 @@ pub struct AddonSummary {
     pub characters: Option<crate::addons::MenuPage>,
     pub background: Option<String>,
     pub library: Option<crate::addons::Tab>,
+    /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
+    pub library_visible: bool,
     /// The license file in its folder, if it has one.
     pub license_text: Option<String>,
     /// Empty for a loaded addon. An addon with errors isn't loaded.
     pub errors: Vec<String>,
 }
 
-fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
+/// `data`: the data folder.
+fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
+    let dir = data.join("addons");
     let valid = addons.iter().map(|a| AddonSummary {
         id: a.manifest.id.clone(),
         name: a.manifest.name.clone(),
@@ -101,6 +105,7 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
         characters: a.manifest.characters.clone(),
         background: a.manifest.background.clone(),
         library: a.manifest.library.clone(),
+        library_visible: library_visible(data, &a.manifest.id),
         license_text: license_in(&a.folder),
         errors: Vec::new(),
     });
@@ -115,6 +120,7 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
             characters: None,
             background: None,
             library: None,
+            library_visible: true,
             errors: capped(&i.errors),
         }
     });
@@ -123,7 +129,7 @@ fn summaries_of((addons, invalid): &Loaded, dir: &Path) -> Vec<AddonSummary> {
 
 #[tauri::command]
 pub async fn list_addons(app: AppHandle) -> Result<Vec<AddonSummary>, StorageError> {
-    blocking(move || Ok(summaries_of(addons(&app)?, &data_dir(&app)?.join("addons")))).await
+    blocking(move || Ok(summaries_of(addons(&app)?, &data_dir(&app)?))).await
 }
 
 /// `packs.list`: every pack, valid or not.
@@ -334,6 +340,149 @@ pub async fn addon_storage_set(app: AppHandle, addon: String, value: Value) -> R
     .await
 }
 
+/// `storage.putFile`: the largest file an addon can keep.
+const MAX_STORED_FILE: usize = 50 * 1024 * 1024;
+
+/// A name `storage.*File` accepts: 1–200 ASCII letters, digits, `.`, `_`, `-`, not starting with `.`. Also refused,
+/// so a name always means one plain file in the addon's folder: a trailing `.` (Windows drops it), `.tmp` (the
+/// temp file of an atomic write) and Windows device names (`CON`, `nul.txt`…).
+fn stored_name_ok(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or_default().to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
+    (1..=200).contains(&name.len())
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !name.to_ascii_lowercase().ends_with(".tmp")
+        && !device
+}
+
+fn files_dir(app: &AppHandle, addon: &str) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("addon-data").join(addon).join("files"))
+}
+
+/// The addon's stored file called `name`, once the addon and the name are checked.
+fn stored_file(app: &AppHandle, addon: &str, name: &str) -> Result<PathBuf, StorageError> {
+    self::addon(app, addon)?;
+    if !stored_name_ok(name) {
+        return Err(StorageError::Invalid(format!("\"{name}\" isn't a valid file name: 1–200 letters, digits, '.', '_' or '-', not starting with '.'.")));
+    }
+    Ok(files_dir(app, addon)?.join(name))
+}
+
+/// `storage.putFile`: keeps the bytes as the addon's file `name`, atomically. The bytes come as the raw request body
+/// (the addon and name in headers), not as JSON: covers and cached pages are saved while reading.
+#[tauri::command]
+pub async fn addon_put_file(app: AppHandle, request: ipc::Request<'_>) -> Result<(), StorageError> {
+    let header = |key: &str| request.headers().get(key).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let (Some(addon), Some(name)) = (header("addon"), header("name")) else {
+        return Err(StorageError::Invalid("storage.putFile needs the addon and file name.".into()));
+    };
+    let ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(StorageError::Invalid("storage.putFile needs the file as raw bytes.".into()));
+    };
+    let bytes = bytes.clone();
+    blocking(move || {
+        let file = stored_file(&app, &addon, &name)?;
+        if bytes.len() > MAX_STORED_FILE {
+            return Err(StorageError::Invalid(format!("A stored file can be at most {} MB.", MAX_STORED_FILE / 1024 / 1024)));
+        }
+        write_atomic_bytes(&file, &bytes)
+    })
+    .await
+}
+
+/// `storage.getFile`: the file's bytes after a leading 1, or nothing at all when there's no such file (so an empty
+/// file and a missing one differ; the bridge strips the 1).
+#[tauri::command]
+pub async fn addon_get_file(app: AppHandle, addon: String, name: String) -> Result<ipc::Response, StorageError> {
+    blocking(move || match fs::read(stored_file(&app, &addon, &name)?) {
+        Ok(bytes) => Ok(ipc::Response::new([&[1u8][..], &bytes].concat())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(ipc::Response::new(Vec::new())),
+        Err(e) => Err(e.into()),
+    })
+    .await
+}
+
+/// `storage.deleteFile`: a missing file is fine.
+#[tauri::command]
+pub async fn addon_delete_file(app: AppHandle, addon: String, name: String) -> Result<(), StorageError> {
+    blocking(move || match fs::remove_file(stored_file(&app, &addon, &name)?) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    })
+    .await
+}
+
+/// A file `storage.listFiles` found: its name, size, and last change in ms.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct StoredFile {
+    name: String,
+    size: u64,
+    modified: u64,
+}
+
+/// `storage.listFiles`: the addon's stored files, sorted by name.
+#[tauri::command]
+pub async fn addon_list_files(app: AppHandle, addon: String) -> Result<Vec<StoredFile>, StorageError> {
+    blocking(move || {
+        self::addon(&app, &addon)?;
+        list_stored(&files_dir(&app, &addon)?)
+    })
+    .await
+}
+
+/// The valid-named files in `dir` (a temp file of an interrupted write isn't one); none when it doesn't exist.
+fn list_stored(dir: &Path) -> Result<Vec<StoredFile>, StorageError> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !entry.file_type()?.is_file() || !stored_name_ok(&name) {
+            continue;
+        }
+        let meta = entry.metadata()?;
+        files.push(StoredFile { name, size: meta.len(), modified: modified_ms(&meta) });
+    }
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(files)
+}
+
+fn modified_ms(meta: &fs::Metadata) -> u64 {
+    meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Whether the addon's `library` tab is shown. Missing or unreadable means shown: that's the default, and
+/// `library.setVisible` writes the file again.
+fn library_visible(data: &Path, addon: &str) -> bool {
+    #[derive(Deserialize)]
+    struct Saved {
+        visible: bool,
+    }
+    let file = data.join("addon-data").join(addon).join("library.json");
+    fs::read_to_string(file).ok().and_then(|t| serde_json::from_str::<Saved>(&t).ok()).is_none_or(|s| s.visible)
+}
+
+/// `library.setVisible`: shows or hides the addon's `library` tab, kept across restarts.
+#[tauri::command]
+pub async fn addon_set_library_visible(app: AppHandle, addon: String, visible: bool) -> Result<(), StorageError> {
+    blocking(move || {
+        let found = self::addon(&app, &addon)?;
+        if found.manifest.library.is_none() {
+            return Err(StorageError::Invalid(format!("{} has no Library tab.", found.manifest.name)));
+        }
+        let file = data_dir(&app)?.join("addon-data").join(&addon).join("library.json");
+        write_atomic(&file, &serde_json::json!({ "visible": visible }).to_string())
+    })
+    .await
+}
+
 /// `folders.read`: the most bytes one call reads.
 const MAX_READ: u64 = 16 * 1024 * 1024;
 /// `folders.scan`: at most this many files per folder.
@@ -395,8 +544,7 @@ fn scan(root: &Path) -> Result<Vec<ScannedFile>, StorageError> {
             return Err(StorageError::Invalid(format!("The folder has more than {MAX_SCAN} files.")));
         }
         let meta = entry.metadata()?;
-        let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
-        files.push(ScannedFile { path, size: meta.len(), modified });
+        files.push(ScannedFile { path, size: meta.len(), modified: modified_ms(&meta) });
         Ok(())
     })?;
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -462,6 +610,47 @@ pub async fn addon_read_file(app: AppHandle, addon: String, folder: String, path
         Ok(ipc::Response::new(bytes))
     })
     .await
+}
+
+/// `folders.reveal`: shows the file in the system file manager, selected.
+#[tauri::command]
+pub async fn addon_reveal_file(app: AppHandle, addon: String, folder: String, path: String) -> Result<(), StorageError> {
+    blocking(move || {
+        let root = find_folder(&granted(&app, &addon)?.1, &folder)?.path.clone();
+        reveal(&revealable(&root, &path)?)
+    })
+    .await
+}
+
+/// The file to reveal: inside the folder only, as a path the file manager reads (without Windows' `\\?\` prefix,
+/// which `canonicalize` adds and Explorer doesn't understand).
+fn revealable(root: &Path, path: &str) -> Result<PathBuf, StorageError> {
+    let full = file_inside(root, path).ok_or_else(|| StorageError::NotFound(format!("\"{path}\" isn't a file in the folder.")))?;
+    let text = full.to_string_lossy();
+    Ok(match text.strip_prefix(r"\\?\UNC\") {
+        Some(share) => PathBuf::from(format!(r"\\{share}")),
+        None => PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text)),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn reveal(file: &Path) -> Result<(), StorageError> {
+    use std::os::windows::process::CommandExt;
+    // Raw, because Explorer wants `/select,"<path>"` as is; a Windows path can't hold a `"`. Its exit code means
+    // nothing (1 on success), so only failing to start counts.
+    std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", file.display())).status()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal(file: &Path) -> Result<(), StorageError> {
+    std::process::Command::new("open").arg("-R").arg(file).status()?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn reveal(_file: &Path) -> Result<(), StorageError> {
+    Err(StorageError::Invalid("Showing a file in the file manager isn't supported on this system.".into()))
 }
 
 /// `files.saveFile`: the user picks where the bytes go (`name` suggested). False when cancelled.
@@ -582,6 +771,56 @@ mod tests {
         for bad in ["../outside.txt", "sub", "", "/a.md", "missing.md"] {
             assert!(file_inside(&lib, bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn stored_file_names_are_plain_names_only() {
+        let longest = "x".repeat(200);
+        for good in ["a", "notes.json", "Cover_01-b.png", "a.b.c", "console", "com10", longest.as_str()] {
+            assert!(stored_name_ok(good), "{good}");
+        }
+        let long = "x".repeat(201);
+        for bad in ["", ".hidden", "..", "../x", "a/b", r"a\b", "c:x", "a b", "é", "a.", "x.tmp", "x.TMP", "CON", "nul.txt", "com1", "Lpt9.log", long.as_str()] {
+            assert!(!stored_name_ok(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn stored_files_list_sorted_without_temp_files_or_folders() {
+        let dir = temp_dir("stored");
+        fs::write(dir.join("b.bin"), "12").unwrap();
+        fs::write(dir.join("a.json"), "1").unwrap();
+        fs::write(dir.join("a.json.tmp"), "half").unwrap();
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        let got: Vec<_> = list_stored(&dir).unwrap().into_iter().map(|f| (f.name, f.size)).collect();
+        assert_eq!(got, [("a.json".to_string(), 1), ("b.bin".to_string(), 2)]);
+        assert!(list_stored(&dir.join("missing")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn reveal_stays_inside_the_folder_and_drops_the_verbatim_prefix() {
+        let dir = temp_dir("reveal");
+        let lib = dir.join("lib");
+        fs::create_dir_all(lib.join("sub")).unwrap();
+        fs::write(lib.join("sub/a.txt"), "x").unwrap();
+        fs::write(dir.join("outside.txt"), "x").unwrap();
+        let shown = revealable(&lib, "sub/a.txt").unwrap();
+        assert!(!shown.to_string_lossy().starts_with(r"\\?\"), "{}", shown.display());
+        assert!(shown.ends_with("sub/a.txt") && shown.is_file(), "{}", shown.display());
+        for bad in ["../outside.txt", "sub", "", "/sub/a.txt", "missing.txt"] {
+            assert!(matches!(revealable(&lib, bad), Err(StorageError::NotFound(_))), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_library_tab_is_visible_unless_saved_hidden() {
+        let data = temp_dir("visible");
+        assert!(library_visible(&data, "tabbed"));
+        fs::create_dir_all(data.join("addon-data/tabbed")).unwrap();
+        fs::write(data.join("addon-data/tabbed/library.json"), r#"{ "visible": false }"#).unwrap();
+        assert!(!library_visible(&data, "tabbed"));
+        fs::write(data.join("addon-data/tabbed/library.json"), "not json").unwrap();
+        assert!(library_visible(&data, "tabbed"));
     }
 
     #[test]

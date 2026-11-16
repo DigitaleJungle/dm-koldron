@@ -26,6 +26,12 @@ export function charactersChanged() {
   changedTimer = setTimeout(() => addons.charactersChanged++, CHANGES_SETTLE_MS);
 }
 
+/** An addon showed or hid its Library tab: the tab bar follows at once. */
+export function setLibraryVisible(addon: string, visible: boolean) {
+  const found = addons.list.find((a) => a.id === addon);
+  if (found) found.libraryVisible = visible;
+}
+
 /** The fields of a character its addon owns (keeps up to date), while that addon is loaded; none otherwise. */
 export function ownedFields(character: { linked?: string | null } | undefined): string[] {
   return addons.list.find((a) => a.id === character?.linked)?.characters?.owns ?? [];

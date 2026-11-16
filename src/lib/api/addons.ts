@@ -16,6 +16,8 @@ export type AddonSummary = {
   background: string | null;
   /** A tab in the app-wide Library labelled `label`, showing the page `entry`. */
   library: { label: string; entry: string } | null;
+  /** Whether that tab is shown (the addon's `library.setVisible`). */
+  libraryVisible: boolean;
   licenseText: string | null;
   errors: string[];
 };
@@ -114,4 +116,34 @@ export function addonReadFile(addon: string, folder: string, path: string, offse
 /** False when the user cancelled. */
 export function addonSaveFile(addon: string, name: string, bytes: Uint8Array): Promise<boolean> {
   return invoke("addon_save_file", { addon, name, bytes: Array.from(bytes) });
+}
+
+/** Mirrors `StoredFile`: one of the addon's own files (`storage.putFile`). */
+export type StoredFile = { name: string; size: number; modified: number };
+
+/** The bytes go as the raw request body, not JSON (they're saved while reading); the name passed the bridge's
+ *  checks in Rust, and both header values are plain ASCII. */
+export function addonPutFile(addon: string, name: string, bytes: Uint8Array): Promise<void> {
+  return invoke("addon_put_file", bytes, { headers: { addon, name } });
+}
+
+/** The file after a leading 1 byte, or empty when there's no such file (so an empty file still differs). */
+export function addonGetFile(addon: string, name: string): Promise<ArrayBuffer> {
+  return invoke("addon_get_file", { addon, name });
+}
+
+export function addonDeleteFile(addon: string, name: string): Promise<void> {
+  return invoke("addon_delete_file", { addon, name });
+}
+
+export function addonListFiles(addon: string): Promise<StoredFile[]> {
+  return invoke("addon_list_files", { addon });
+}
+
+export function addonRevealFile(addon: string, folder: string, path: string): Promise<void> {
+  return invoke("addon_reveal_file", { addon, folder, path });
+}
+
+export function addonSetLibraryVisible(addon: string, visible: boolean): Promise<void> {
+  return invoke("addon_set_library_visible", { addon, visible });
 }

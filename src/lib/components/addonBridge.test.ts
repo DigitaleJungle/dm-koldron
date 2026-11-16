@@ -12,12 +12,15 @@ vi.mock("$lib/api/addons", () => ({
   addonCharacters: vi.fn(async () => []),
   addonSaveCharacter: vi.fn(async (_a: string, _c: string, character: object) => character),
   addonSetCharacterPicture: vi.fn(async () => ({ id: "c" })),
+  addonPutFile: vi.fn(async () => undefined),
+  addonGetFile: vi.fn(async (_a: string, name: string) => (name === "gone" ? new ArrayBuffer(0) : new Uint8Array([1, 7, 8]).buffer)),
+  addonSetLibraryVisible: vi.fn(async () => undefined),
 }));
 
-import { addonSetCharacterPicture, addonStorageSet } from "$lib/api/addons";
+import { addonPutFile, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn() });
+const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn() });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -66,5 +69,23 @@ describe("addon bridge", () => {
     await expect(answer("a", "ui.setHeight", ["tall"], h)).rejects.toThrow("number");
     expect(await answer("a", "ui.theme", [], h)).toBe("dark");
     await expect(answer("a", "app.exec", [], h)).rejects.toThrow('Unknown call "app.exec"');
+  });
+
+  it("keeps stored files apart from missing ones and checks navigate and visibility arguments", async () => {
+    const h = host();
+    await answer("a", "storage.putFile", ["a.bin", new Uint8Array([5]).buffer], h);
+    expect(addonPutFile).toHaveBeenCalledWith("a", "a.bin", new Uint8Array([5]));
+    await expect(answer("a", "storage.putFile", ["a.bin", "text"], h)).rejects.toThrow("ArrayBuffer");
+    expect(new Uint8Array((await answer("a", "storage.getFile", ["a.bin"], h)) as ArrayBuffer)).toEqual(new Uint8Array([7, 8]));
+    expect(await answer("a", "storage.getFile", ["gone"], h)).toBeNull();
+    await answer("a", "ui.navigate", ["page=3"], h);
+    await answer("a", "ui.navigate", [null, true], h);
+    expect(h.navigate.mock.calls).toEqual([["page=3", false], [null, true]]);
+    await expect(answer("a", "ui.navigate", [5], h)).rejects.toThrow("string or null");
+    await expect(answer("a", "ui.navigate", ["x".repeat(2001)], h)).rejects.toThrow("2000");
+    await answer("a", "library.setVisible", [false], h);
+    expect(addonSetLibraryVisible).toHaveBeenCalledWith("a", false);
+    expect(h.libraryVisible).toHaveBeenCalledWith(false);
+    await expect(answer("a", "library.setVisible", ["no"], h)).rejects.toThrow("true or false");
   });
 });

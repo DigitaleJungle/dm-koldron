@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
@@ -24,13 +25,21 @@
 
   loadAddons();
   // Addons' tabs come after Catalog, in the app-wide Library only.
-  const addonTabs = $derived(embedded ? [] : addons.list.filter((a) => a.library));
-  // ?tab=catalog, ?tab=<addon id>, else the Rules tab (also for an addon that's gone).
+  const addonTabs = $derived(embedded ? [] : addons.list.filter((a) => a.library && a.libraryVisible));
+  // ?tab=catalog, ?tab=<addon id>, else the Rules tab (also for an addon that's gone or whose tab is hidden).
   const tab = $derived.by(() => {
     const asked = page.url.searchParams.get("tab");
     return asked === "catalog" || addonTabs.some((a) => a.id === asked) ? asked! : "rules";
   });
   const addonTab = $derived(addonTabs.find((a) => a.id === tab));
+  // The addon's own place in its tab (`ui.navigate`), `&state=` in the address, so Back and Forward reach it too.
+  const addonContext = $derived({ state: page.url.searchParams.get("state") });
+  function addonNavigate(state: string | null, replace: boolean): Promise<void> {
+    const params = new URLSearchParams({ tab });
+    if (state !== null) params.set("state", state);
+    const options = { keepFocus: true, noScroll: true };
+    return replace ? gotoReplacing(`${base}?${params}`, options) : goto(`${base}?${params}`, options);
+  }
   // Back goes back through history, like the mouse's back button (tabs and chapters take the current place, so they
   // aren't steps). Where there's nothing to go back to (the app was opened here): from a Catalog entry its list,
   // else the Start screen.
@@ -114,10 +123,10 @@
   </header>
 
   {#if addonTab}
-    <!-- Keyed, so switching between addons' tabs loads the other page. Left out while Settings is open: the addon's
+    <!-- Keyed on the addon only, so switching between addons' tabs loads the other page, and its own states don't. Left out while Settings is open: the addon's
          panel there may save, and this page must not save its older copy over it; closing Settings loads it fresh. -->
     {#key addonTab.id}
-      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} />{/if}</div>
+      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} />{/if}</div>
     {/key}
   {:else if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} />

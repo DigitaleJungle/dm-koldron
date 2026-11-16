@@ -4,6 +4,12 @@ import type { Character } from "$lib/api/characters";
 import {
   addonAddFolder,
   addonCharacters,
+  addonDeleteFile,
+  addonGetFile,
+  addonListFiles,
+  addonPutFile,
+  addonRevealFile,
+  addonSetLibraryVisible,
   addonFolders,
   addonReadFile,
   addonRemoveFolder,
@@ -38,12 +44,18 @@ export type FrameHost = {
   theme: () => string;
   close: () => void;
   notify: (message: string) => void;
+  /** `ui.navigate`: moves the app to this state of the addon's Library tab. Only that page's host can; others throw. */
+  navigate: (state: string | null, replace: boolean) => Promise<void>;
+  /** The addon's Library tab was shown or hidden. */
+  libraryVisible: (visible: boolean) => void;
 };
 
 /** The tallest an addon can make its frame, in pixels. */
 const MAX_HEIGHT = 4000;
 /** The longest message an addon can show. */
 const MAX_NOTICE = 200;
+/** The longest state `ui.navigate` keeps in the address. */
+const MAX_STATE = 2000;
 
 export async function answer(addon: string, call: string, args: unknown[], host: FrameHost): Promise<unknown> {
   switch (call) {
@@ -84,6 +96,9 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) throw new Error("folders.read needs a byte offset and length.");
       return addonReadFile(addon, String(args[0]), String(args[1]), offset, length);
     }
+    case "folders.reveal":
+      await addonRevealFile(addon, String(args[0]), String(args[1]));
+      return null;
     case "characters.list":
       return addonCharacters(addon, String(args[0]));
     case "characters.save": {
@@ -103,6 +118,33 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     case "storage.set":
       await addonStorageSet(addon, args[0] ?? null);
       return null;
+    case "storage.putFile": {
+      if (!(args[1] instanceof ArrayBuffer)) throw new Error("storage.putFile needs the file as an ArrayBuffer.");
+      await addonPutFile(addon, String(args[0]), new Uint8Array(args[1]));
+      return null;
+    }
+    case "storage.getFile": {
+      const bytes = await addonGetFile(addon, String(args[0]));
+      return bytes.byteLength > 0 ? bytes.slice(1) : null;
+    }
+    case "storage.deleteFile":
+      await addonDeleteFile(addon, String(args[0]));
+      return null;
+    case "storage.listFiles":
+      return addonListFiles(addon);
+    case "library.setVisible": {
+      if (typeof args[0] !== "boolean") throw new Error("library.setVisible needs true or false.");
+      await addonSetLibraryVisible(addon, args[0]);
+      host.libraryVisible(args[0]);
+      return null;
+    }
+    case "ui.navigate": {
+      const state = args[0] ?? null;
+      if (state !== null && typeof state !== "string") throw new Error("ui.navigate needs a string or null.");
+      if (state !== null && state.length > MAX_STATE) throw new Error(`ui.navigate takes at most ${MAX_STATE} characters.`);
+      await host.navigate(state, args[1] === true);
+      return null;
+    }
     case "ui.setHeight": {
       const px = Number(args[0]);
       if (!Number.isFinite(px)) throw new Error("ui.setHeight needs a number of pixels.");

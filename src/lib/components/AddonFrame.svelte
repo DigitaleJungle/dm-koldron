@@ -1,7 +1,7 @@
 <script lang="ts">
   import { addonUrl, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
-  import { charactersChanged } from "$lib/stores/addons.svelte";
+  import { charactersChanged, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { strings } from "$lib/strings";
   import { answer, isCall } from "./addonBridge";
@@ -17,6 +17,7 @@
     hidden = false,
     onpackschange,
     onclose,
+    onnavigate,
   }: {
     addon: AddonSummary;
     entry: string;
@@ -25,6 +26,8 @@
     hidden?: boolean;
     onpackschange?: () => void;
     onclose?: () => void;
+    /** Only the addon's Library tab page: `ui.navigate` moves the app to this state of the tab. */
+    onnavigate?: (state: string | null, replace: boolean) => Promise<void>;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
@@ -49,6 +52,11 @@
       close: () => onclose?.(),
       // Always says which addon speaks, so its words can't pass for the app's.
       notify: (message: string) => notify(strings.addons.notice(addon.name, message)),
+      navigate: async (state: string | null, replace: boolean) => {
+        if (!onnavigate) throw new Error("ui.navigate works only from the addon's Library tab.");
+        await onnavigate(state, replace);
+      },
+      libraryVisible: (visible: boolean) => setLibraryVisible(addon.id, visible),
     };
     answer(addon.id, call, args ?? [], host)
       .then((result) => reply({ ok: true, result }, result instanceof ArrayBuffer ? [result] : []))

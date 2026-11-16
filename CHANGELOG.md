@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.6] - 2026-11-16
+
+### Added
+
+- Addons can keep their own files (storage.putFile, getFile, deleteFile, listFiles)
+- Addons can show a file of a picked folder in the system file manager (folders.reveal)
+- An addon's Library tab can add steps to the app's history (ui.navigate), so Back and Forward move through it
+- An addon can hide or show its own Library tab (library.setVisible), remembered across restarts
+
+### Changed
+
+- Addon docs: heavy work runs in a classic Web Worker started from a blob URL; module workers are refused in the sandbox
+
 ## [0.6.5] - 2026-11-15
 
 ### Added

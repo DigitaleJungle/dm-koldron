@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.7] - 2026-11-16
+
+### Changed
+
+- Addon pages receive the app's theme in their address (?theme=light|dark), so they can open in the right theme without a light flash
+
 ## [0.6.6] - 2026-11-16
 
 ### Added

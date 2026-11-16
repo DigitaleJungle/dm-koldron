@@ -70,6 +70,8 @@ Placing the folder is the consent: an addon gets exactly what it declares, and e
 
 Pages are served from `koldron-addon://localhost/<id>/…` (on Windows `http://koldron-addon.localhost/<id>/…`). They run with an opaque origin, so there's no cookies, `localStorage` or IndexedDB: use `storage.*` instead. Their Content Security Policy allows scripts, styles, images, fonts, workers and `fetch` from the addon's own files only (plus `data:`/`blob:` images and `blob:` workers). There's no other network access: use `net.fetch`.
 
+The page's address ends in `?theme=light` or `?theme=dark`, the app's theme when the page opened. Read it in a plain `<script src>` in the `<head>` (not a module, which runs after the first paint) to show the right theme from the start; `ui.theme` gives the same answer later.
+
 Forms work as usual: listen for `submit` and call `preventDefault()`. A form can't be sent anywhere (the policy has `form-action 'none'`).
 
 Run heavy work (unzipping, converting) in a Web Worker so the app's window stays responsive. Start it as a classic worker from a `blob:` URL (fetch the script and wrap it in a `Blob`): a worker from the addon's own URL, or a module worker (`{ type: "module" }`), is refused in the sandboxed frame.

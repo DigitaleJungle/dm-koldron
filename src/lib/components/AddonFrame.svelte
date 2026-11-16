@@ -32,6 +32,8 @@
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
   let loaded = $state(false);
+  // Also in the page's address (?theme=), so the page can show it before its first paint.
+  const theme = () => document.documentElement.dataset.theme ?? "light";
 
   $effect(() => {
     const sent = $state.snapshot(context);
@@ -48,7 +50,7 @@
       setHeight: (px: number) => (height = px),
       packsChanged: () => onpackschange?.(),
       charactersChanged,
-      theme: () => document.documentElement.dataset.theme ?? "light",
+      theme,
       close: () => onclose?.(),
       // Always says which addon speaks, so its words can't pass for the app's.
       notify: (message: string) => notify(strings.addons.notice(addon.name, message)),
@@ -68,7 +70,7 @@
 
 <iframe
   bind:this={frame}
-  src={addonUrl(addon.id, entry)}
+  src="{addonUrl(addon.id, entry)}?theme={theme()}"
   title={addon.name}
   sandbox="allow-scripts allow-forms"
   class:hidden

@@ -15,6 +15,9 @@
   import RulesSettings from "$lib/components/RulesSettings.svelte";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { addons, loadAddons } from "$lib/stores/addons.svelte";
+  import { libraryTabList, libraryTabs, loadLibraryTabs, setLibraryTabs } from "$lib/stores/libraryTabs.svelte";
+  import { moveTo } from "$lib/components/sidebarOrder";
+  import OrderList from "$lib/components/OrderList.svelte";
 
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
@@ -52,6 +55,16 @@
     { value: "on", label: t.ui.animationsOn },
     { value: "off", label: t.ui.animationsOff },
   ];
+
+  // Library tabs: one order for the app-wide Library (and Rules/Catalog inside a campaign), moved as the sidebar's screens.
+  loadLibraryTabs();
+  const tabs = $derived(libraryTabList());
+
+  function moveTab(from: number, to: number) {
+    const ids = tabs.map((item) => item.id);
+    const next = moveTo(ids, from, to);
+    if (next !== ids) setLibraryTabs(next);
+  }
 
   const themes: { value: Theme; label: string }[] = [
     { value: "system", label: t.ui.system },
@@ -121,6 +134,16 @@
           </select>
         </div>
         {#if theme.error}<p class="error" role="alert">{theme.error}</p>{/if}
+        <div class="field">
+          <span class="field-name" id="library-tabs-label">{t.ui.libraryTabs}</span>
+          <div class="order">
+            <OrderList items={tabs} onmove={moveTab} aria-labelledby="library-tabs-label" aria-describedby="library-tabs-hint">
+              {#snippet row(item)}<span>{item.label}</span>{/snippet}
+            </OrderList>
+          </div>
+          <span class="hint" id="library-tabs-hint">{t.ui.libraryTabsHint}</span>
+          {#if libraryTabs.error}<p class="error" role="alert">{libraryTabs.error}</p>{/if}
+        </div>
       </div>
     {:else if active === "campaigns"}
       <div id="settings-panel-campaigns" class="panel" role="tabpanel" aria-labelledby="settings-tab-campaigns">
@@ -224,9 +247,35 @@
     gap: var(--space-2);
   }
 
-  .field label {
+  .field label,
+  .field-name {
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
+  }
+
+  .hint {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  /* The list and its grips are OrderList's. */
+  .order {
+    width: min(100%, var(--select-width));
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  .order :global(li) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+  }
+
+  .order :global(li + li) {
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   select {

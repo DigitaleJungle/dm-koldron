@@ -863,6 +863,8 @@ export const strings = {
       light: "Light",
       dark: "Dark",
       system: "System",
+      libraryTabs: "Library tabs",
+      libraryTabsHint: "The Library opens on the first tab.",
       loadError: (reason: string) => `Couldn't load your saved UI settings. ${reason}`,
       saveError: (reason: string) => `Couldn't save your UI settings. ${reason}`,
     },

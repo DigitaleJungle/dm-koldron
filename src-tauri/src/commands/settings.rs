@@ -40,6 +40,9 @@ pub struct AppSettings {
     pub disabled_packs: Vec<String>,
     /// Pack ids with Enable images ticked in Settings → Rules; images are off unless listed.
     pub image_packs: Vec<String>,
+    /// The app-wide Library's tab ids ("rules", "catalog", addon ids) in the order set in Settings → UI; tabs not
+    /// listed follow in their default order.
+    pub library_tabs: Vec<String>,
 }
 
 /// Merges the given fields into the saved settings and saves them; the rest stay as they are.
@@ -114,9 +117,10 @@ mod tests {
     #[test]
     fn update_only_changes_the_given_fields_and_survives_a_reload() {
         let path = temp_file("patch");
-        update(&path, serde_json::json!({ "animations": "off" })).unwrap();
+        update(&path, serde_json::json!({ "animations": "off", "libraryTabs": ["catalog", "rules"] })).unwrap();
         let after = update(&path, serde_json::json!({ "theme": "dark" })).unwrap();
-        assert_eq!(after, AppSettings { theme: Theme::Dark, animations: Animations::Off, ..AppSettings::default() });
+        let tabs = vec!["catalog".to_string(), "rules".to_string()];
+        assert_eq!(after, AppSettings { theme: Theme::Dark, animations: Animations::Off, library_tabs: tabs, ..AppSettings::default() });
         assert_eq!(load(&path).unwrap(), after);
         assert!(fs::read_to_string(&path).unwrap().contains("\"dark\""));
     }

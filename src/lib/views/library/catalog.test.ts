@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
-import { categoryById, crText, entryAddress, filterOptions, rarities, refKind, sectionAddress, selectRows } from "./catalog";
+import { categoryById, crText, entryAddress, filterOptions, pickTab, rarities, refKind, sectionAddress, selectRows } from "./catalog";
+
+describe("pickTab", () => {
+  const ids = ["catalog", "rules", "local-pdfs"];
+  const pick = (query: string) => pickTab(ids, new URLSearchParams(query));
+  it("shows the asked tab, else the first", () => {
+    expect(pick("tab=local-pdfs")).toBe("local-pdfs");
+    expect(pick("")).toBe("catalog");
+    expect(pick("tab=gone-addon")).toBe("catalog");
+  });
+  it("opens a rule section link in Rules, wherever Rules sits", () => {
+    expect(pick(sectionAddress("srd", "combat", "actions", "").slice(1))).toBe("rules");
+  });
+});
 
 const row = (name: string, fields: Record<string, any>, source = "SRD 5.2.1", kind = "spells"): CatalogRow => ({ kind, pack: "srd", source, index: name.toLowerCase(), name, fields, others: [] });
 const spells = categoryById("spells");

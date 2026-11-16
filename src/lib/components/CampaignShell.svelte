@@ -4,12 +4,13 @@
   // (remembered on this device); in a narrow one it's a drawer behind a menu button. While open, each screen's grip
   // (on hover or focus) moves it, by dragging or the arrow keys; one order for all campaigns, on this device.
   import type { Snippet } from "svelte";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Campaign } from "$lib/api/campaigns";
   import BackButton from "$lib/components/BackButton.svelte";
   import Menu from "$lib/components/Menu.svelte";
+  import OrderList from "$lib/components/OrderList.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
@@ -101,19 +102,6 @@
     const next = moveTo(ids, from, to);
     if (next !== ids) setOrder(next);
   }
-
-  // Dragging: a grip starts it, each row is a drop place.
-  let dragging = $state<number | null>(null);
-  let over = $state<number | null>(null);
-
-  async function onGripKey(event: KeyboardEvent, i: number, id: string) {
-    const to = event.key === "ArrowUp" ? i - 1 : event.key === "ArrowDown" ? i + 1 : null;
-    if (to === null) return;
-    event.preventDefault();
-    move(i, to);
-    await tick();
-    document.querySelector<HTMLElement>(`[data-grip="${id}"]`)?.focus();
-  }
 </script>
 
 <svelte:window {onkeydown} />
@@ -156,44 +144,14 @@
     <!-- The sidebar's items, between the switcher and the buttons at the bottom: a layout container only. -->
     <div class="items">
       <nav aria-label={t.navigation}>
-        <ul>
-          {#each links as link, i (link.id)}
-            <li
-              class:dragging={dragging === i}
-              class:over={over === i && dragging !== null && dragging !== i}
-              ondragover={(ev) => {
-                if (dragging === null) return;
-                ev.preventDefault();
-                over = i;
-              }}
-              ondrop={(ev) => {
-                ev.preventDefault();
-                if (dragging !== null) move(dragging, i);
-                dragging = over = null;
-              }}
-            >
-              <a href={link.href} aria-current={link.current ? "page" : undefined} aria-label={link.label}>
-                <i class="ti {link.icon}" aria-hidden="true"></i>
-                <span class="text">{link.label}</span>
-              </a>
-              <button
-                  class="icon-btn grip"
-                  data-grip={link.id}
-                  draggable="true"
-                  aria-label={t.move(link.label)}
-                  onkeydown={(ev) => onGripKey(ev, i, link.id)}
-                  ondragstart={(ev) => {
-                    dragging = i;
-                    ev.dataTransfer?.setData("text/plain", link.id);
-                    if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
-                  }}
-                  ondragend={() => (dragging = over = null)}
-                >
-                  <i class="ti ti-grip-vertical" aria-hidden="true"></i>
-                </button>
-            </li>
-          {/each}
-        </ul>
+        <OrderList items={links} onmove={move}>
+          {#snippet row(link)}
+            <a href={link.href} aria-current={link.current ? "page" : undefined} aria-label={link.label}>
+              <i class="ti {link.icon}" aria-hidden="true"></i>
+              <span class="text">{link.label}</span>
+            </a>
+          {/snippet}
+        </OrderList>
       </nav>
     </div>
 
@@ -314,46 +272,34 @@
     white-space: nowrap;
   }
 
-  nav ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  /* The list and its grips are OrderList's. */
+  nav :global(ul) {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
   }
 
-  nav li {
+  nav :global(li) {
     position: relative;
     display: flex;
     align-items: center;
     border-radius: var(--radius-md);
   }
 
-  nav li.dragging {
-    opacity: 0.5;
-  }
-
-  /* Where a dragged screen will land. */
-  nav li.over {
-    outline: var(--border-width) solid var(--color-accent);
-  }
-
   /* The grip shows on the row's hover or focus. */
-  .grip {
+  nav :global(.grip) {
     position: absolute;
     right: var(--space-1);
     opacity: 0;
-    cursor: grab;
   }
 
-  nav li:hover .grip,
-  nav li:focus-within .grip {
+  nav :global(li:hover .grip),
+  nav :global(li:focus-within .grip) {
     opacity: 1;
   }
 
   /* Not in the icon strip (the drawer shows it again, below). */
-  .collapsed .grip {
+  .collapsed :global(.grip) {
     display: none;
   }
 
@@ -524,7 +470,7 @@
     }
 
     .collapsed aside .text,
-    .collapsed .grip {
+    .collapsed :global(.grip) {
       display: revert;
     }
 

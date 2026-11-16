@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.8] - 2026-11-16
+
+### Added
+
+- Settings → UI → Library tabs: put the Library's tabs (Rules, Catalog, addon tabs) in any order by dragging a grip or with the arrow keys; saved app-wide, and the Library opens on the first tab
+
 ## [0.6.7] - 2026-11-16
 
 ### Changed

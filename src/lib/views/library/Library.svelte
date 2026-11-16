@@ -7,11 +7,13 @@
   import SearchBar from "$lib/components/SearchBar.svelte";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { addons, loadAddons } from "$lib/stores/addons.svelte";
+  import { libraryTabList, libraryTabs, loadLibraryTabs } from "$lib/stores/libraryTabs.svelte";
   import SettingsDialog, { settingsClosed, type SectionId } from "$lib/components/SettingsDialog.svelte";
   import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
   import Catalog from "./Catalog.svelte";
+  import { pickTab } from "./catalog";
   import RulesReader from "./RulesReader.svelte";
 
   // `embedded`: inside a campaign's screens (/campaign/<id>/library), whose shell has the sidebar, the search bar and
@@ -24,14 +26,11 @@
   const COLLAPSED_KEY = "library.contentsCollapsed";
 
   loadAddons();
-  // Addons' tabs come after Catalog, in the app-wide Library only.
-  const addonTabs = $derived(embedded ? [] : addons.list.filter((a) => a.library && a.libraryVisible));
-  // ?tab=catalog, ?tab=<addon id>, else the Rules tab (also for an addon that's gone or whose tab is hidden).
-  const tab = $derived.by(() => {
-    const asked = page.url.searchParams.get("tab");
-    return asked === "catalog" || addonTabs.some((a) => a.id === asked) ? asked! : "rules";
-  });
-  const addonTab = $derived(addonTabs.find((a) => a.id === tab));
+  loadLibraryTabs();
+  // In the order set in Settings → UI; addons' tabs in the app-wide Library only.
+  const tabs = $derived(libraryTabList(!embedded));
+  const tab = $derived(pickTab(tabs.map((item) => item.id), page.url.searchParams));
+  const addonTab = $derived(embedded ? undefined : addons.list.find((a) => a.id === tab && a.library));
   // The addon's own place in its tab (`ui.navigate`), `&state=` in the address, so Back and Forward reach it too.
   const addonContext = $derived({ state: page.url.searchParams.get("state") });
   function addonNavigate(state: string | null, replace: boolean): Promise<void> {
@@ -113,16 +112,17 @@
     {/if}
     <nav class="tabs" aria-label={t.tabs}>
       <!-- Switching tabs takes the current place in the history, so Back never steps between them. -->
-      <a href={base} aria-current={tab === "rules" ? "page" : undefined} onclick={switchTab}>{t.rulesTab}</a>
-      <a href="{base}?tab=catalog" aria-current={tab === "catalog" ? "page" : undefined} onclick={switchTab}>{strings.catalog.title}</a>
-      {#each addonTabs as addon (addon.id)}
-        <a href="{base}?tab={addon.id}" aria-current={tab === addon.id ? "page" : undefined} onclick={switchTab}>{addon.library!.label}</a>
+      {#each tabs as item (item.id)}
+        <a href="{base}?tab={item.id}" aria-current={tab === item.id ? "page" : undefined} onclick={switchTab}>{item.label}</a>
       {/each}
     </nav>
     {#if !embedded}<div class="search"><SearchBar /></div>{/if}
   </header>
 
-  {#if addonTab}
+  <!-- Until the saved order is read, so the Library doesn't open one tab and jump to another. -->
+  {#if !libraryTabs.loaded}
+    <!-- nothing yet: reading one small local file -->
+  {:else if addonTab}
     <!-- Keyed on the addon only, so switching between addons' tabs loads the other page, and its own states don't. Left out while Settings is open: the addon's
          panel there may save, and this page must not save its older copy over it; closing Settings loads it fresh. -->
     {#key addonTab.id}

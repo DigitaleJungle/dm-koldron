@@ -213,6 +213,13 @@ export function refKind(url: unknown): string | null {
   return kind && ENTRY_CATEGORIES.some((cat) => cat.id === kind) ? kind : null;
 }
 
+/** The Library tab an address shows (`ids`: the tabs shown, in order): its ?tab= when shown, else the first tab. A
+ * link to a rule section (search, notes) has no tab: it opens Rules wherever that sits. */
+export function pickTab(ids: string[], params: URLSearchParams): string {
+  const asked = params.get("tab");
+  return asked !== null && ids.includes(asked) ? asked : params.has("chapter") ? "rules" : ids[0];
+}
+
 /** Library addresses: a Catalog entry page, and a rule section in the Rules tab. `base`: which Library (a campaign's
  * own, `libraryHome()`, or the one outside any campaign). */
 export const entryAddress = (kind: string, pack: string, index: string, base = "/library") =>

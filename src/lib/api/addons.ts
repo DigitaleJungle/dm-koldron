@@ -14,8 +14,9 @@ export type AddonSummary = {
   characters: { label: string; entry: string; owns: string[] } | null;
   /** A page that runs hidden as long as the app is open. */
   background: string | null;
-  /** A tab in the app-wide Library labelled `label`, showing the page `entry`. */
-  library: { label: string; entry: string } | null;
+  /** A tab in the app-wide Library labelled `label`, showing the page `entry`; `sidebar`: the header can hide its side
+   * column (`sidebarHidden` in the page's context). */
+  library: { label: string; entry: string; sidebar: boolean } | null;
   /** Whether that tab is shown (the addon's `library.setVisible`). */
   libraryVisible: boolean;
   licenseText: string | null;

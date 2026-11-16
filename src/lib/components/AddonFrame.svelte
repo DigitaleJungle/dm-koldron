@@ -18,6 +18,7 @@
     onpackschange,
     onclose,
     onnavigate,
+    onsidebarbutton,
   }: {
     addon: AddonSummary;
     entry: string;
@@ -28,6 +29,8 @@
     onclose?: () => void;
     /** Only the addon's Library tab page: `ui.navigate` moves the app to this state of the tab. */
     onnavigate?: (state: string | null, replace: boolean) => Promise<void>;
+    /** Only a Library tab page with `sidebar`: `ui.setSidebarButton` shows or hides the header's sidebar button. */
+    onsidebarbutton?: (shown: boolean) => void;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
@@ -59,6 +62,10 @@
         await onnavigate(state, replace);
       },
       libraryVisible: (visible: boolean) => setLibraryVisible(addon.id, visible),
+      sidebarButton: (shown: boolean) => {
+        if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab with a sidebar.");
+        onsidebarbutton(shown);
+      },
     };
     answer(addon.id, call, args ?? [], host)
       .then((result) => reply({ ok: true, result }, result instanceof ArrayBuffer ? [result] : []))

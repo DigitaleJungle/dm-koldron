@@ -31,8 +31,6 @@
   const tabs = $derived(libraryTabList(!embedded));
   const tab = $derived(pickTab(tabs.map((item) => item.id), page.url.searchParams));
   const addonTab = $derived(embedded ? undefined : addons.list.find((a) => a.id === tab && a.library));
-  // The addon's own place in its tab (`ui.navigate`), `&state=` in the address, so Back and Forward reach it too.
-  const addonContext = $derived({ state: page.url.searchParams.get("state") });
   function addonNavigate(state: string | null, replace: boolean): Promise<void> {
     const params = new URLSearchParams({ tab });
     if (state !== null) params.set("state", state);
@@ -61,23 +59,37 @@
   const reloadKey = $derived(settingsClosed.count);
   let rulesHasContents = $state(false);
 
-  // Remembered on this device only; storage can be unavailable, then the contents show.
-  let collapsed = $state(readCollapsed());
-  function readCollapsed() {
+  // Rules' contents column, or an addon tab's side column (`library.sidebar`), hidden by the header's button.
+  // Remembered per tab on this device only; storage can be unavailable, then the column shows.
+  const collapseKey = $derived(tab === "rules" ? COLLAPSED_KEY : `library.sidebarHidden.${tab}`);
+  let changed = $state<Record<string, boolean>>({});
+  const collapsed = $derived(changed[collapseKey] ?? readCollapsed(collapseKey));
+  function readCollapsed(key: string) {
     try {
-      return localStorage.getItem(COLLAPSED_KEY) === "1";
+      return localStorage.getItem(key) === "1";
     } catch {
       return false;
     }
   }
   function setCollapsed(value: boolean) {
-    collapsed = value;
+    changed[collapseKey] = value;
     try {
-      localStorage.setItem(COLLAPSED_KEY, value ? "1" : "0");
+      localStorage.setItem(collapseKey, value ? "1" : "0");
     } catch {
       // not remembered, nothing else lost
     }
   }
+  // An addon tab with a side column; its page can take the button away while it has no column to show
+  // (`ui.setSidebarButton`). Each time a tab opens, its page starts with the button.
+  const sidebarTab = $derived(!!addonTab?.library?.sidebar);
+  let sidebarButton = $state(true);
+  $effect(() => {
+    void tab;
+    sidebarButton = true;
+  });
+  // The addon's own place in its tab (`ui.navigate`), `&state=` in the address, so Back and Forward reach it too. A
+  // tab with a side column also hears whether the header's button hides it.
+  const addonContext = $derived({ state: page.url.searchParams.get("state"), ...(sidebarTab ? { sidebarHidden: collapsed } : {}) });
 
   // Outside a campaign the gear sits at the foot of the shown contents column, else in the corner.
   const gearInContents = $derived(!embedded && tab === "rules" && rulesHasContents && !collapsed);
@@ -98,18 +110,19 @@
 <div class="library" class:embedded>
   <header class="top">
     {#if !embedded}<BackButton fallback={backTo} />{/if}
-    <!-- Inside a campaign the contents column is always shown. -->
-    {#if !embedded && tab === "rules" && rulesHasContents}
+    <!-- Inside a campaign the contents column is always shown (and there are no addon tabs). Outside, the button keeps
+         its place even when a tab has none, so the tabs never move. -->
+    {#if !embedded}<span class="column-slot">{#if (tab === "rules" && rulesHasContents) || (sidebarTab && sidebarButton)}
       <button
         class="icon-btn icon-btn-lg"
         aria-expanded={!collapsed}
-        aria-controls="library-contents"
-        aria-label={collapsed ? t.showContents : t.hideContents}
+        aria-controls={sidebarTab ? undefined : "library-contents"}
+        aria-label={sidebarTab ? (collapsed ? t.showSidebar : t.hideSidebar) : collapsed ? t.showContents : t.hideContents}
         onclick={() => setCollapsed(!collapsed)}
       >
         <i class="ti {collapsed ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}" aria-hidden="true"></i>
       </button>
-    {/if}
+    {/if}</span>{/if}
     <nav class="tabs" aria-label={t.tabs}>
       <!-- Switching tabs takes the current place in the history, so Back never steps between them. -->
       {#each tabs as item (item.id)}
@@ -126,7 +139,7 @@
     <!-- Keyed on the addon only, so switching between addons' tabs loads the other page, and its own states don't. Left out while Settings is open: the addon's
          panel there may save, and this page must not save its older copy over it; closing Settings loads it fresh. -->
     {#key addonTab.id}
-      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} />{/if}</div>
+      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} onsidebarbutton={sidebarTab ? (shown) => (sidebarButton = shown) : undefined} />{/if}</div>
     {/key}
   {:else if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} />
@@ -167,6 +180,13 @@
     padding: var(--space-3) var(--space-5);
     border-bottom: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
+  }
+
+  /* Always as wide as the column button, shown or not. */
+  .column-slot {
+    flex: none;
+    display: flex;
+    width: var(--control-height);
   }
 
   .tabs {

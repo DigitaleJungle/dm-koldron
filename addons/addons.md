@@ -52,7 +52,7 @@ File names: plain ASCII, no spaces.
 | `settings` | Optional. A page shown as a panel in a Settings section: `rules` (below the pack list) or `library` (a Library section, shown only when an addon adds a panel to it). The addon's `library` page is closed while Settings is open and loads again when it closes. |
 | `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page `entry` in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. `owns`: the fields of the characters it adds that the addon keeps up to date (see below). |
 | `background` | Optional. A page that runs hidden for as long as the app is open. |
-| `library` | Optional. A tab labelled `label` (at most 40 characters) in the app-wide Library, after Catalog, showing the page `entry` across the whole pane (not inside a campaign's Library). The page scrolls itself; keep its bottom-left corner clear, where the Settings gear sits. The addon can hide and show the tab (`library.setVisible`); a hidden tab isn't in the tab bar, and an address to it shows the Rules tab. |
+| `library` | Optional. A tab labelled `label` (at most 40 characters) in the app-wide Library, after Catalog unless reordered in Settings → UI, showing the page `entry` across the whole pane (not inside a campaign's Library). The page scrolls itself; keep its bottom-left corner clear, where the Settings gear sits. With `"sidebar": true` the page has a side column: the Library's header then shows a button to hide or show it (remembered per addon on this device), and the page hears which in its context. The addon can hide and show the tab (`library.setVisible`); a hidden tab isn't in the tab bar, and an address to it shows the first tab. |
 
 ### Permissions
 
@@ -82,7 +82,7 @@ The app tells a page where it is with a message (not a call, so there's no answe
 
 - Background page: `{ campaign, live, screen }`. `campaign` is the open campaign's id, or null. `live` is true while a running encounter or a running session is shown. `screen` is the path of the screen shown, so a new context arrives every time a screen loads.
 - `characters` page: `{ campaign, character }`. `character` is the id of the character whose link is being edited, or null when adding one.
-- `library` page: `{ state }`, the state the page last moved to with `ui.navigate` (a string), or null. It's in the address (`?tab=<id>&state=…`), so Back and Forward send it again as a new context; the page stays loaded and shows that state.
+- `library` page: `{ state }`, the state the page last moved to with `ui.navigate` (a string), or null; with `"sidebar": true` also `sidebarHidden` (true or false), set by the header's button: hide or show the side column when it changes. It's in the address (`?tab=<id>&state=…`), so Back and Forward send it again as a new context; the page stays loaded and shows that state.
 
 A Settings panel lives only while its section is shown: when the user switches to another section or closes Settings, the page is closed and its work stops. A `packs.install` already sent still finishes (or changes nothing). Keep work short, or save progress with `storage.set` so it can pick up again.
 
@@ -140,6 +140,7 @@ function koldron(call, ...args) {
 | `ui.close` | | `null`. Closes the dialog the page is in. |
 | `ui.notify` | message | `null`. Shows the message (at most 200 characters) as the app's notification, after the addon's name. |
 | `ui.navigate` | state (a string of at most 2000 characters, or `null`), optional `replace` | `null`. From the `library` page only: moves the app to that state of the tab as a step Back returns from, or in place of the current one with `replace: true`. The page then gets the new context. |
+| `ui.setSidebarButton` | `true` or `false` | `null`. From a `library` page with `"sidebar": true` only: shows or hides the Library header's sidebar button, for while the page has no side column to show (the button's place stays, so the tabs don't move). Each time the tab opens, the button shows. |
 
 ### Owned fields
 

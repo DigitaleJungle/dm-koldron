@@ -180,6 +180,8 @@ export const strings = {
     contents: "Contents",
     hideContents: "Hide contents",
     showContents: "Show contents",
+    hideSidebar: "Hide sidebar",
+    showSidebar: "Show sidebar",
     showSections: (chapter: string) => `Sections of ${chapter}`,
     loading: "Loading…",
     empty: "No rules loaded",

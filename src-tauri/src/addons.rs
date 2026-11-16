@@ -43,6 +43,9 @@ pub struct Tab {
     pub label: String,
     /// The page, relative to the addon folder.
     pub entry: String,
+    /// The page has a side column: the Library's header gets a button to hide it, sent as `sidebarHidden` in the context.
+    #[serde(default)]
+    pub sidebar: bool,
 }
 
 /// The addon's way to add characters: a menu item labelled `label` opening `entry`, and the fields of the characters it
@@ -202,7 +205,7 @@ mod tests {
             "settings": { "section": "rules", "entry": "ui/settings.html" },
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
-            "library": { "label": "Tab", "entry": "ui/settings.html" }
+            "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true }
         })
     }
 
@@ -222,6 +225,7 @@ mod tests {
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
+        assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
         // api, id, 3 permissions, section, entry, label, characters page, an unknown owned field, background page,
         // library label and page

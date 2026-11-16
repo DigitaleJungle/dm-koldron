@@ -48,6 +48,8 @@ export type FrameHost = {
   navigate: (state: string | null, replace: boolean) => Promise<void>;
   /** The addon's Library tab was shown or hidden. */
   libraryVisible: (visible: boolean) => void;
+  /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
+  sidebarButton: (shown: boolean) => void;
 };
 
 /** The tallest an addon can make its frame, in pixels. */
@@ -143,6 +145,11 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       if (state !== null && typeof state !== "string") throw new Error("ui.navigate needs a string or null.");
       if (state !== null && state.length > MAX_STATE) throw new Error(`ui.navigate takes at most ${MAX_STATE} characters.`);
       await host.navigate(state, args[1] === true);
+      return null;
+    }
+    case "ui.setSidebarButton": {
+      if (typeof args[0] !== "boolean") throw new Error("ui.setSidebarButton needs true or false.");
+      host.sidebarButton(args[0]);
       return null;
     }
     case "ui.setHeight": {

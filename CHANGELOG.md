@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.9] - 2026-11-17
+
+### Added
+
+- Addon Library tabs can declare a side column ("sidebar": true): the Library header then shows a Hide sidebar / Show sidebar button, remembered per addon; pages hear it as sidebarHidden and can hide the button with ui.setSidebarButton
+
+### Changed
+
+- The Library header keeps the column button's space on every tab, so the tabs no longer shift when the button appears or disappears
+
 ## [0.6.8] - 2026-11-16
 
 ### Added

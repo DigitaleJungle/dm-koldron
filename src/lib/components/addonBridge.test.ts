@@ -20,7 +20,7 @@ vi.mock("$lib/api/addons", () => ({
 import { addonPutFile, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn() });
+const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn() });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -87,5 +87,8 @@ describe("addon bridge", () => {
     expect(addonSetLibraryVisible).toHaveBeenCalledWith("a", false);
     expect(h.libraryVisible).toHaveBeenCalledWith(false);
     await expect(answer("a", "library.setVisible", ["no"], h)).rejects.toThrow("true or false");
+    await answer("a", "ui.setSidebarButton", [false], h);
+    expect(h.sidebarButton).toHaveBeenCalledWith(false);
+    await expect(answer("a", "ui.setSidebarButton", [1], h)).rejects.toThrow("true or false");
   });
 });

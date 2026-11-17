@@ -1,17 +1,32 @@
 <script lang="ts">
   import { strings } from "$lib/strings";
   import { cancelImageDownload, deleteImages, listPackImages, type PackImages } from "$lib/api/images";
-  import { listAddons, type AddonSummary } from "$lib/api/addons";
+  import { listAddons, panelIn, type AddonSummary } from "$lib/api/addons";
   import { listPacks, type PackSummary } from "$lib/api/packs";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { getSettings, setSettings } from "$lib/api/settings";
   import { errorMessage } from "$lib/api/storage";
   import Switch from "$lib/components/Switch.svelte";
+  import { applyPending } from "./rulesPending";
   import { imageDownloads, startImageDownload } from "$lib/stores/imageDownloads.svelte";
   import { forgetPictures } from "$lib/stores/monsterPictures";
 
+  // Pack switches and Enable images wait for the Settings dialog's Save (`save`) or Cancel (`discard`); `dirty` says
+  // there's something to save.
+  let { dirty = $bindable(false) }: { dirty?: boolean } = $props();
+
   const t = strings.settings.rules;
   const ti = t.images;
+  type ImageChoice = "now" | "browsing" | "keep" | "delete";
+  /** Switches changed since the last save: pack id → on. */
+  let pendingPacks = $state<Record<string, boolean>>({});
+  /** Enable images answered since the last save: pack id → the answer. */
+  let pendingImages = $state<Record<string, ImageChoice>>({});
+  $effect(() => {
+    dirty = Object.keys(pendingPacks).length + Object.keys(pendingImages).length > 0;
+  });
+  const packOn = (pack: PackSummary) => pendingPacks[pack.id] ?? pack.enabled;
+  const imagesOn = (id: string) => (id in pendingImages ? pendingImages[id] === "now" || pendingImages[id] === "browsing" : imagePacks.includes(id));
   const count = new Intl.NumberFormat();
   let packs = $state<PackSummary[]>();
   /** The packs that list images, by id. */
@@ -36,7 +51,7 @@
       })
       .catch((e) => (loadError = errorMessage(e)));
     listAddons()
-      .then((list) => (panels = list.filter((a) => a.errors.length === 0 && a.settings?.section === "rules")))
+      .then((list) => (panels = list.filter((a) => a.errors.length === 0 && panelIn(a, "rules"))))
       .catch((e) => (addonsError = errorMessage(e)));
   });
 
@@ -63,19 +78,45 @@
     running = now;
   });
 
-  async function toggle(pack: PackSummary, on: boolean) {
+  function toggle(pack: PackSummary, on: boolean) {
+    if (on === pack.enabled) delete pendingPacks[pack.id];
+    else pendingPacks[pack.id] = on;
+  }
+
+  /** The dialog's Save: the switches and Enable images answers, then the downloads or deletions they ask for. Throws
+   *  what went wrong; what was saved stays saved. */
+  export async function save() {
+    if (!dirty) return;
     saving = true;
     saveError = undefined;
     try {
-      // From the saved list, so packs not loaded right now keep their setting.
-      const saved = (await getSettings()).disabledPacks;
-      await setSettings({ disabledPacks: on ? saved.filter((id) => id !== pack.id) : [...new Set([...saved, pack.id])] });
-      pack.enabled = on;
+      // From the saved lists, so packs not loaded right now keep their setting.
+      const imagesWanted = Object.fromEntries(Object.entries(pendingImages).map(([id, choice]) => [id, choice === "now" || choice === "browsing"]));
+      imagePacks = (await setSettings(applyPending(await getSettings(), pendingPacks, imagesWanted))).imagePacks;
+      for (const pack of packs ?? []) if (pack.id in pendingPacks) pack.enabled = pendingPacks[pack.id];
+      pendingPacks = {};
+      const answered = Object.entries(pendingImages);
+      pendingImages = {};
+      if (answered.length) forgetPictures(); // the encounter screens ask again: pictures on, or gone
+      for (const [id, choice] of answered) {
+        const name = packs?.find((p) => p.id === id)?.name ?? id;
+        if (choice === "now") startImageDownload(id, name);
+        if (choice === "keep") await cancelImageDownload(id);
+        if (choice === "delete") await deleteImages(id);
+      }
+      if (answered.some(([, choice]) => choice === "delete")) recount();
     } catch (e) {
-      saveError = t.saveError(pack.name, errorMessage(e));
+      saveError = t.saveFailed(errorMessage(e));
+      throw new Error(saveError);
     } finally {
       saving = false;
     }
+  }
+
+  /** The dialog's Cancel: back to what's saved. */
+  export function discard() {
+    pendingPacks = {};
+    pendingImages = {};
   }
 
   // ---- Enable images: ticking asks Download all now / When browsing; unticking asks Keep / Delete. ----------------
@@ -86,27 +127,15 @@
     if (asking && dialog && !dialog.open) dialog.showModal();
   });
 
-  async function answer(choice: "now" | "browsing" | "keep" | "delete" | "cancel") {
+  /** The answer waits for Save; turning back to what's saved forgets it. */
+  function answer(choice: ImageChoice | "cancel") {
     const current = asking;
     asking = null;
     if (dialog?.open) dialog.close();
     if (!current || choice === "cancel") return;
     const { pack, turningOn } = current;
-    saving = true;
-    saveError = undefined;
-    try {
-      // From the saved list, so packs not loaded right now keep their setting.
-      const saved = (await getSettings()).imagePacks;
-      imagePacks = (await setSettings({ imagePacks: turningOn ? [...new Set([...saved, pack.id])] : saved.filter((id) => id !== pack.id) })).imagePacks;
-      forgetPictures(); // the encounter screens ask again: pictures on, or gone
-      if (choice === "now") startImageDownload(pack.id, pack.name);
-      if (!turningOn) await (choice === "delete" ? deleteImages(pack.id) : cancelImageDownload(pack.id));
-      if (choice === "delete") recount();
-    } catch (e) {
-      saveError = ti.saveError(pack.name, errorMessage(e));
-    } finally {
-      saving = false;
-    }
+    if (turningOn === imagePacks.includes(pack.id)) delete pendingImages[pack.id];
+    else pendingImages[pack.id] = choice;
   }
 </script>
 
@@ -123,16 +152,16 @@
       <li>
         {#if pack.errors.length === 0}
           <div class="row">
-            <Switch id="pack-{pack.id}" label={pack.name} checked={pack.enabled} disabled={saving} onchange={(on) => toggle(pack, on)} />
+            <Switch id="pack-{pack.id}" label={pack.name} checked={packOn(pack)} disabled={saving} onchange={(on) => toggle(pack, on)} />
             {#if packImages[pack.id]}
               {@const progress = imageDownloads[pack.id]}
               <label class="check">
-                <!-- Stays as saved until the dialog is answered. Can't be ticked again while a cancelled download
+                <!-- Stays as it was until the question is answered. Can't be ticked again while a cancelled download
                      is still finishing its last images, or the new download wouldn't start. -->
                 <input
                   type="checkbox"
-                  checked={imagePacks.includes(pack.id)}
-                  disabled={saving || (!imagePacks.includes(pack.id) && !!imageDownloads[pack.id])}
+                  checked={imagesOn(pack.id)}
+                  disabled={saving || (!imagesOn(pack.id) && !!imageDownloads[pack.id])}
                   onchange={(e) => {
                     asking = { pack, turningOn: e.currentTarget.checked };
                     e.currentTarget.checked = !e.currentTarget.checked;
@@ -146,7 +175,7 @@
                   <span class="muted">{ti.progress(count.format(progress.done + progress.failed), count.format(progress.total))}</span>
                   <button class="btn small" onclick={() => cancelImageDownload(pack.id)}>{ti.cancelDownload}</button>
                 </div>
-              {:else if imagePacks.includes(pack.id) && packImages[pack.id].kept === packImages[pack.id].count}
+              {:else if imagesOn(pack.id) && packImages[pack.id].kept === packImages[pack.id].count}
                 <span class="muted all-kept">{ti.allKept(count.format(packImages[pack.id].count))}</span>
               {/if}
             {/if}
@@ -170,7 +199,7 @@
   <p class="error" role="alert">{t.addonsError(addonsError)}</p>
 {/if}
 {#each panels as addon (addon.id)}
-  <AddonFrame {addon} entry={addon.settings!.entry} onpackschange={packsChanged} />
+  <AddonFrame {addon} entry={panelIn(addon, "rules")!} panel="rules" onpackschange={packsChanged} />
 {/each}
 
 <dialog bind:this={dialog} class="dialog ask" aria-labelledby="images-title" aria-describedby="images-question" onclose={() => asking && answer("cancel")}>

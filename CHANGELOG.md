@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.10] - 2026-11-17
+
+### Added
+
+- Settings has an Integrations section, shown when an addon adds a panel to it; an addon can now add a settings panel to more than one section
+- Addon API: net.fetch can send a POST and its own headers; secrets.get/set/delete keep short secrets in the system keychain (secrets permission); folders.download streams a file into a granted folder, replacing a file only once complete (folders:write); folders.hash gives a file's MD5
+- Addon API: ui.setUnsaved, a settings event and ui.settingsDone let an addon's settings panel wait for the dialog's Save or Cancel
+
+### Changed
+
+- Settings saves with one Save button: changes in every section (appearance, animations, Library tabs, pack switches, Enable images and addon panels that join in) wait for Save, Cancel discards them, and closing with unsaved changes asks first. Sections stay loaded while Settings is open
+
 ## [0.6.9] - 2026-11-17
 
 ### Added

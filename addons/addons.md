@@ -49,7 +49,7 @@ File names: plain ASCII, no spaces.
 | `id` | Lowercase letters, digits and dashes; the same as the folder name. |
 | `name`, `version`, `license` | Required, shown in Settings → About. |
 | `permissions` | Optional. See below. Unknown permissions make the addon invalid. |
-| `settings` | Optional. A page shown as a panel in a Settings section: `rules` (below the pack list) or `library` (a Library section, shown only when an addon adds a panel to it). The addon's `library` page is closed while Settings is open and loads again when it closes. |
+| `settings` | Optional. A page shown as a panel in a Settings section, `{ section, entry }`, or a list of them, at most one per section: `rules` (below the pack list), `library` (a Library section) or `integrations` (an Integrations section, for connections to other services). Library and Integrations show only when an addon adds a panel to them; every addon's panel in a section is shown there, one under another. The addon's `library` page is closed while Settings is open and loads again when it closes. |
 | `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page `entry` in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. `owns`: the fields of the characters it adds that the addon keeps up to date (see below). |
 | `background` | Optional. A page that runs hidden for as long as the app is open. |
 | `library` | Optional. A tab labelled `label` (at most 40 characters) in the app-wide Library, after Catalog unless reordered in Settings → UI, showing the page `entry` across the whole pane (not inside a campaign's Library). The page scrolls itself; keep its bottom-left corner clear, where the Settings gear sits. With `"sidebar": true` the page has a side column: the Library's header then shows a button to hide or show it (remembered per addon on this device), and the page hears which in its context. The addon can hide and show the tab (`library.setVisible`); a hidden tab isn't in the tab bar, and an address to it shows the first tab. |
@@ -60,7 +60,9 @@ File names: plain ASCII, no spaces.
 |---|---|
 | `packs:read` | `packs.list` |
 | `packs:write` | `packs.install`, `packs.remove` |
-| `folders:read` | `folders.list`, `folders.add`, `folders.remove`, `folders.scan`, `folders.read`, `folders.reveal` |
+| `folders:read` | `folders.list`, `folders.add`, `folders.remove`, `folders.scan`, `folders.read`, `folders.hash`, `folders.reveal` |
+| `folders:write` | `folders.download` (with `folders:read`, and `net:<host>` for the address) |
+| `secrets` | `secrets.get`, `secrets.set`, `secrets.delete` |
 | `characters:write` | `characters.list`, `characters.save`, `characters.setPicture` |
 | `net:<host>` | `net.fetch` to `https://<host>/…`, one permission per host name (no port, no wildcards). Only the address the addon asks for is checked; redirects the host sends are followed, wherever they lead (GitHub release downloads need them). |
 
@@ -84,7 +86,17 @@ The app tells a page where it is with a message (not a call, so there's no answe
 - `characters` page: `{ campaign, character }`. `character` is the id of the character whose link is being edited, or null when adding one.
 - `library` page: `{ state }`, the state the page last moved to with `ui.navigate` (a string), or null; with `"sidebar": true` also `sidebarHidden` (true or false), set by the header's button: hide or show the side column when it changes. It's in the address (`?tab=<id>&state=…`), so Back and Forward send it again as a new context; the page stays loaded and shows that state.
 
-A Settings panel lives only while its section is shown: when the user switches to another section or closes Settings, the page is closed and its work stops. A `packs.install` already sent still finishes (or changes nothing). Keep work short, or save progress with `storage.set` so it can pick up again.
+A Settings panel stays loaded while the Settings dialog is open (hidden while another section is shown) and closes with it; its work then stops. A `packs.install` already sent still finishes (or changes nothing). Keep work short, or save progress with `storage.set` so it can pick up again.
+
+### Saving settings
+
+The Settings dialog has one **Save** and **Cancel** for all its sections, and closing it with changes not saved asks first (Save, Discard or Keep editing). A panel joins in like this:
+
+- When something on it changes, it calls `ui.setUnsaved(true)` and keeps the change to itself (nothing is saved yet); `ui.setUnsaved(false)` when it's back as saved.
+- The app then sends `{ koldron: 1, event: "settings", action, id }`: `action` is `"save"` (keep the changes; start what they lead to, or leave that to another page) or `"discard"` (go back to what's saved, and undo what was already done for the changes, such as a folder given with `folders.add`). It is sent only to a panel that said it has unsaved changes.
+- The panel answers with `ui.settingsDone(id, null)` when it's done, or `ui.settingsDone(id, "what went wrong")`; the dialog shows that, after the addon's name, and stays open. A panel that doesn't answer within 2 minutes (10 seconds for a discard) counts as failed.
+
+Actions with a button of their own (scan, delete, export…) stay actions: they happen when pressed. A panel that never calls `ui.setUnsaved` keeps saving its changes itself, at once.
 
 ## The message API
 
@@ -115,7 +127,7 @@ function koldron(call, ...args) {
 | `packs.list` | | Every pack: `{ id, name, version, license, entries, enabled, installed, errors }`. `installed` is false for a pack bundled with the app. |
 | `packs.install` | `{ manifest, files, images?, license? }` | The installed pack, as in `packs.list`. |
 | `packs.remove` | pack id | `null` |
-| `net.fetch` | `https://` URL | The body as an `ArrayBuffer` (at most 200 MB). A GET; an error status is an error. |
+| `net.fetch` | `https://` URL, optional `{ method, headers }` | The body as an `ArrayBuffer` (at most 200 MB). `method` is `"GET"` (the default) or `"POST"` (sent without a body); `headers` is an object of names and values (at most 20; not `Host`, `Cookie` or the connection's own). An error status is an error that names it (e.g. `… http status: 401`); messages leave out the address's query. |
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.pickFolder` | | `[{ path, text }]` for every file in the picked folder and its subfolders (`text` is null for a file that isn't UTF-8), or `null` if cancelled. |
 | `files.saveFile` | suggested file name, the file as an `ArrayBuffer` | `true`, or `false` if the user cancelled. The user picks where in the system dialog. |
@@ -124,10 +136,15 @@ function koldron(call, ...args) {
 | `folders.remove` | folder id | `null`. The addon can't read it any more; its files are never touched. |
 | `folders.scan` | folder id | `[{ path, size, modified }]` for every file in the folder and its subfolders (`modified` in ms). |
 | `folders.read` | folder id, path, offset, length | Those bytes of the file as an `ArrayBuffer` (fewer at its end; at most 16 MB per call). |
+| `folders.hash` | folder id, path | The file's MD5 checksum, lowercase hex. |
+| `folders.download` | folder id, path, `https://` URL, optional MD5 | The downloaded file's MD5. Downloads the URL (a `net:<host>`; redirects followed) to that path in the folder (at most 8 GB, 30 minutes), making its folders. It goes to `<path>.download` first and replaces the path only once complete and, with an MD5 given, matching it, so a broken download never replaces a good file. A path ending in `.download` is refused. |
 | `folders.reveal` | folder id, path | `null`. Shows the file in the system file manager (Explorer, Finder), selected. An error on other systems. |
 | `characters.list` | campaign id | The campaign's characters linked to this addon. |
 | `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. When creating, the addon sets everything. After that it changes only the fields its manifest `owns`; everything else is the app's. |
 | `characters.setPicture` | campaign id, character id, image file as `ArrayBuffer` | The character as saved. Only for a character linked to this addon. |
+| `secrets.get` | name | The secret saved under that name, or `null`. Secrets are kept in the system keychain, apart for each addon, never in a file. A name is 1–64 letters, digits, `-`, `_` or `.`. |
+| `secrets.set` | name, the secret (a string of 1–2048 bytes) | `null` |
+| `secrets.delete` | name | `null`, also when there's none. |
 | `storage.get` | | What `storage.set` saved last, or `null`. |
 | `storage.set` | any JSON value (at most 10 MB) | `null` |
 | `storage.putFile` | file name, the file as an `ArrayBuffer` (at most 50 MB) | `null`. Keeps it as the addon's own file, replacing one with that name. A name is 1–200 ASCII letters, digits, `.`, `_` and `-`, not starting or ending with `.`; not ending in `.tmp`, and not a Windows device name (`con`, `nul.txt`…). |
@@ -141,6 +158,8 @@ function koldron(call, ...args) {
 | `ui.notify` | message | `null`. Shows the message (at most 200 characters) as the app's notification, after the addon's name. |
 | `ui.navigate` | state (a string of at most 2000 characters, or `null`), optional `replace` | `null`. From the `library` page only: moves the app to that state of the tab as a step Back returns from, or in place of the current one with `replace: true`. The page then gets the new context. |
 | `ui.setSidebarButton` | `true` or `false` | `null`. From a `library` page with `"sidebar": true` only: shows or hides the Library header's sidebar button, for while the page has no side column to show (the button's place stays, so the tabs don't move). Each time the tab opens, the button shows. |
+| `ui.setUnsaved` | `true` or `false` | `null`. From a Settings panel only: it has (or no longer has) changes waiting for the dialog's Save (see Saving settings). |
+| `ui.settingsDone` | the `settings` event's `id`, `null` or an error message | `null`. From a Settings panel only: it saved or discarded as asked, or couldn't. |
 
 ### Owned fields
 

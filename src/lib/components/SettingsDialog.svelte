@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type SectionId = "ui" | "campaigns" | "rules" | "library" | "about";
+  export type SectionId = "ui" | "campaigns" | "rules" | "library" | "integrations" | "about";
 
   /** Counts every time any Settings dialog closes (packs may have been switched on or off there): screens showing
    *  pack content read it to load again, whichever gear opened Settings (theirs or the campaign sidebar's). */
@@ -15,8 +15,10 @@
   import RulesSettings from "$lib/components/RulesSettings.svelte";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { addons, loadAddons } from "$lib/stores/addons.svelte";
+  import { panelIn } from "$lib/api/addons";
   import { libraryTabList, libraryTabs, loadLibraryTabs, setLibraryTabs } from "$lib/stores/libraryTabs.svelte";
-  import { moveTo } from "$lib/components/sidebarOrder";
+  import { settlePanels, unsavedPanels } from "$lib/stores/settingsPanels.svelte";
+  import { moveTo, ordered } from "$lib/components/sidebarOrder";
   import OrderList from "$lib/components/OrderList.svelte";
 
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
@@ -24,13 +26,15 @@
 
   const t = strings.settings;
   loadAddons();
-  // Library is a section only when an addon adds a panel to it.
-  const libraryPanels = $derived(addons.list.filter((a) => a.settings?.section === "library"));
+  // Library and Integrations are sections only when an addon adds a panel to them.
+  const libraryPanels = $derived(addons.list.filter((a) => panelIn(a, "library")));
+  const integrationPanels = $derived(addons.list.filter((a) => panelIn(a, "integrations")));
   const sections: { id: SectionId; label: string }[] = $derived([
     { id: "ui", label: t.ui.title },
     { id: "campaigns", label: t.campaigns.title },
     { id: "rules", label: t.rules.title },
     ...(libraryPanels.length ? [{ id: "library" as const, label: t.library.title }] : []),
+    ...(integrationPanels.length ? [{ id: "integrations" as const, label: t.integrations.title }] : []),
     { id: "about", label: t.about.title },
   ]);
   let active = $state<SectionId>("ui");
@@ -56,43 +60,126 @@
     { value: "off", label: t.ui.animationsOff },
   ];
 
-  // Library tabs: one order for the app-wide Library (and Rules/Catalog inside a campaign), moved as the sidebar's screens.
-  loadLibraryTabs();
-  const tabs = $derived(libraryTabList());
-
-  function moveTab(from: number, to: number) {
-    const ids = tabs.map((item) => item.id);
-    const next = moveTo(ids, from, to);
-    if (next !== ids) setLibraryTabs(next);
-  }
-
   const themes: { value: Theme; label: string }[] = [
     { value: "system", label: t.ui.system },
     { value: "light", label: t.ui.light },
     { value: "dark", label: t.ui.dark },
   ];
 
-  // Native modal dialog: keeps focus inside, closes on Escape, returns focus to the opener.
+  // ---- Changes wait for Save: the UI section's drafts, Rules' switches, and the addon panels' own. ----------------
+  let themeDraft = $state<Theme>(theme.choice);
+  let animationsDraft = $state<Animations>(theme.animations);
+  // Library tabs: one order for the app-wide Library (and Rules/Catalog inside a campaign), moved as the sidebar's
+  // screens. Null while unchanged.
+  loadLibraryTabs();
+  const tabs = $derived(libraryTabList());
+  let tabsDraft = $state<string[] | null>(null);
+  const shownTabs = $derived(tabsDraft ? ordered(tabs, tabsDraft) : tabs);
+  let rules: RulesSettings | undefined = $state();
+  let rulesDirty = $state(false);
+
+  const dirty = $derived(
+    themeDraft !== theme.choice || animationsDraft !== theme.animations || tabsDraft !== null || rulesDirty || Object.values(unsavedPanels).some(Boolean),
+  );
+  let saving = $state(false);
+  let errors = $state<string[]>([]);
+  /** Closing with unsaved changes asks first, in place. */
+  let confirmingClose = $state(false);
+
+  function moveTab(from: number, to: number) {
+    const ids = shownTabs.map((item) => item.id);
+    const next = moveTo(ids, from, to);
+    if (next === ids) return;
+    tabsDraft = next.join() === tabs.map((item) => item.id).join() ? null : next;
+  }
+
+  function resetDrafts() {
+    themeDraft = theme.choice;
+    animationsDraft = theme.animations;
+    tabsDraft = null;
+  }
+
+  /** Saves every section's changes; true when all of them were saved. Work they start (scans, downloads) follows. */
+  async function save(): Promise<boolean> {
+    saving = true;
+    const failed: string[] = [];
+    try {
+      // Only this Save's own theme error: one left from an earlier save isn't about this one.
+      const lookChanged = themeDraft !== theme.choice || animationsDraft !== theme.animations;
+      if (themeDraft !== theme.choice) await chooseTheme(themeDraft);
+      if (animationsDraft !== theme.animations) await chooseAnimations(animationsDraft);
+      if (lookChanged && theme.error) failed.push(theme.error);
+      if (tabsDraft) {
+        await setLibraryTabs(tabsDraft);
+        if (libraryTabs.error) failed.push(libraryTabs.error);
+        else tabsDraft = null;
+      }
+      if (rulesDirty) await rules?.save().catch((e: Error) => failed.push(e.message));
+      failed.push(...(await settlePanels("save")));
+    } finally {
+      saving = false;
+      errors = failed;
+    }
+    return failed.length === 0;
+  }
+
+  async function discard() {
+    resetDrafts();
+    rules?.discard();
+    errors = await settlePanels("discard");
+  }
+
+  /** The ✕, Escape or a click beside the dialog: asks first when something isn't saved. */
+  function requestClose() {
+    if (saving) return;
+    if (dirty) confirmingClose = true;
+    else open = false;
+  }
+
+  async function saveAndClose() {
+    if (await save()) open = false;
+    else confirmingClose = false;
+  }
+
+  async function discardAndClose() {
+    await discard();
+    open = false;
+  }
+
+  // Native modal dialog: keeps focus inside, returns focus to the opener. Escape asks first, as the ✕ does.
   $effect(() => {
     if (open && !dialog?.open) {
       if (section) active = section;
+      resetDrafts();
+      errors = [];
+      confirmingClose = false;
       dialog?.showModal();
     }
     if (!open && dialog?.open) dialog.close();
   });
 
   function onBackdropClick(event: MouseEvent) {
-    if (event.target === dialog) open = false;
+    if (event.target === dialog) requestClose();
   }
 </script>
 
-<dialog bind:this={dialog} class="dialog" aria-labelledby="settings-title" onclose={() => {
+<dialog
+  bind:this={dialog}
+  class="dialog"
+  aria-labelledby="settings-title"
+  oncancel={(e) => {
+    e.preventDefault();
+    requestClose();
+  }}
+  onclose={() => {
     open = false;
     settingsClosed.count++;
-  }} onclick={onBackdropClick}>
+  }}
+  onclick={onBackdropClick}
+>
   <header>
     <h2 id="settings-title">{t.title}</h2>
-    <button class="icon-btn icon-btn-lg" aria-label={t.close} onclick={() => (open = false)}>
+    <button class="icon-btn icon-btn-lg" aria-label={t.close} onclick={requestClose}>
       <i class="ti ti-x" aria-hidden="true"></i>
     </button>
   </header>
@@ -115,11 +202,13 @@
       {/each}
     </div>
 
-    {#if active === "ui"}
-      <div id="settings-panel-ui" class="panel" role="tabpanel" aria-labelledby="settings-tab-ui">
+    <!-- Every section stays loaded while Settings is open (only the chosen one shows), so changes not saved yet survive
+         moving between sections. -->
+    {#if open}
+      <div id="settings-panel-ui" class="panel" role="tabpanel" aria-labelledby="settings-tab-ui" hidden={active !== "ui"}>
         <div class="field">
           <label for="theme-select">{t.ui.label}</label>
-          <select id="theme-select" value={theme.choice} onchange={(e) => chooseTheme(e.currentTarget.value as Theme)}>
+          <select id="theme-select" bind:value={themeDraft}>
             {#each themes as option (option.value)}
               <option value={option.value}>{option.label}</option>
             {/each}
@@ -127,44 +216,67 @@
         </div>
         <div class="field">
           <label for="animations-select">{t.ui.animationsLabel}</label>
-          <select id="animations-select" value={theme.animations} onchange={(e) => chooseAnimations(e.currentTarget.value as Animations)}>
+          <select id="animations-select" bind:value={animationsDraft}>
             {#each animationChoices as option (option.value)}
               <option value={option.value}>{option.label}</option>
             {/each}
           </select>
         </div>
-        {#if theme.error}<p class="error" role="alert">{theme.error}</p>{/if}
         <div class="field">
           <span class="field-name" id="library-tabs-label">{t.ui.libraryTabs}</span>
           <div class="order">
-            <OrderList items={tabs} onmove={moveTab} aria-labelledby="library-tabs-label" aria-describedby="library-tabs-hint">
+            <OrderList items={shownTabs} onmove={moveTab} aria-labelledby="library-tabs-label" aria-describedby="library-tabs-hint">
               {#snippet row(item)}<span>{item.label}</span>{/snippet}
             </OrderList>
           </div>
           <span class="hint" id="library-tabs-hint">{t.ui.libraryTabsHint}</span>
-          {#if libraryTabs.error}<p class="error" role="alert">{libraryTabs.error}</p>{/if}
         </div>
       </div>
-    {:else if active === "campaigns"}
-      <div id="settings-panel-campaigns" class="panel" role="tabpanel" aria-labelledby="settings-tab-campaigns">
+      <div id="settings-panel-campaigns" class="panel" role="tabpanel" aria-labelledby="settings-tab-campaigns" hidden={active !== "campaigns"}>
         <CampaignSettings />
       </div>
-    {:else if active === "rules"}
-      <div id="settings-panel-rules" class="panel" role="tabpanel" aria-labelledby="settings-tab-rules">
-        <RulesSettings />
+      <div id="settings-panel-rules" class="panel" role="tabpanel" aria-labelledby="settings-tab-rules" hidden={active !== "rules"}>
+        <RulesSettings bind:this={rules} bind:dirty={rulesDirty} />
       </div>
-    {:else if active === "library"}
-      <div id="settings-panel-library" class="panel" role="tabpanel" aria-labelledby="settings-tab-library">
-        {#each libraryPanels as addon (addon.id)}
-          <AddonFrame {addon} entry={addon.settings!.entry} />
-        {/each}
-      </div>
-    {:else if active === "about"}
-      <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about">
+      {#if libraryPanels.length}
+        <div id="settings-panel-library" class="panel" role="tabpanel" aria-labelledby="settings-tab-library" hidden={active !== "library"}>
+          {#each libraryPanels as addon (addon.id)}
+            <AddonFrame {addon} entry={panelIn(addon, "library")!} panel="library" />
+          {/each}
+        </div>
+      {/if}
+      {#if integrationPanels.length}
+        <div id="settings-panel-integrations" class="panel" role="tabpanel" aria-labelledby="settings-tab-integrations" hidden={active !== "integrations"}>
+          {#each integrationPanels as addon (addon.id)}
+            <AddonFrame {addon} entry={panelIn(addon, "integrations")!} panel="integrations" />
+          {/each}
+        </div>
+      {/if}
+      <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about" hidden={active !== "about"}>
         <AboutSettings />
       </div>
     {/if}
   </div>
+
+  <footer>
+    {#each errors as error, i (i)}<p class="error" role="alert">{error}</p>{/each}
+    {#if confirmingClose}
+      <div class="confirm" role="alertdialog" aria-labelledby="unsaved-question">
+        <p id="unsaved-question">{t.unsaved}</p>
+        <div class="actions">
+          <button class="btn" onclick={() => (confirmingClose = false)}>{t.keepEditing}</button>
+          <button class="btn" disabled={saving} onclick={discardAndClose}>{t.discard}</button>
+          <!-- svelte-ignore a11y_autofocus: saving loses nothing -->
+          <button class="btn btn-primary" autofocus disabled={saving} onclick={saveAndClose}>{t.save}</button>
+        </div>
+      </div>
+    {:else}
+      <div class="actions">
+        <button class="btn" disabled={saving} onclick={discardAndClose}>{t.cancel}</button>
+        <button class="btn btn-primary" disabled={!dirty || saving} onclick={save}>{saving ? t.saving : t.save}</button>
+      </div>
+    {/if}
+  </footer>
 </dialog>
 
 <style>
@@ -229,6 +341,33 @@
   .tab[aria-selected="true"] {
     background: var(--color-accent-soft);
     color: var(--color-link);
+  }
+
+  /* Every section is loaded while Settings is open; only the chosen one shows. */
+  .panel[hidden] {
+    display: none;
+  }
+
+  footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-6);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  footer .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  footer .confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
   }
 
   .panel {

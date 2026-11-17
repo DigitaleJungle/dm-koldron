@@ -3,6 +3,7 @@
   import { errorMessage } from "$lib/api/storage";
   import { charactersChanged, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { registerPanel, unsavedPanels } from "$lib/stores/settingsPanels.svelte";
   import { strings } from "$lib/strings";
   import { answer, isCall } from "./addonBridge";
 
@@ -19,6 +20,7 @@
     onclose,
     onnavigate,
     onsidebarbutton,
+    panel,
   }: {
     addon: AddonSummary;
     entry: string;
@@ -31,10 +33,34 @@
     onnavigate?: (state: string | null, replace: boolean) => Promise<void>;
     /** Only a Library tab page with `sidebar`: `ui.setSidebarButton` shows or hides the header's sidebar button. */
     onsidebarbutton?: (shown: boolean) => void;
+    /** A Settings panel (its section): its changes wait for the dialog's Save (`ui.setUnsaved`, `ui.settingsDone`). */
+    panel?: string;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
   let loaded = $state(false);
+
+  // A Settings panel saves or discards when the dialog says so, and answers with `ui.settingsDone`.
+  // Saving may check something online; discarding only goes back, so closing never waits long on a stuck page.
+  const PANEL_ANSWER_MS = { save: 120_000, discard: 10_000 };
+  const panelKey = $derived(panel ? `${addon.id}:${panel}` : null);
+  let nextRequest = 0;
+  const waiting = new Map<number, { done: () => void; failed: (e: Error) => void }>();
+  $effect(() => {
+    if (!panelKey) return;
+    return registerPanel(panelKey, (action) => {
+      const id = ++nextRequest;
+      return new Promise<void>((done, failed) => {
+        const timer = setTimeout(() => {
+          waiting.delete(id);
+          failed(new Error(strings.addons.noAnswer(addon.name)));
+        }, PANEL_ANSWER_MS[action]);
+        const stop = () => clearTimeout(timer);
+        waiting.set(id, { done: () => (stop(), done()), failed: (e) => (stop(), failed(e)) });
+        frame?.contentWindow?.postMessage({ koldron: 1, event: "settings", action, id }, "*");
+      });
+    });
+  });
   // Also in the page's address (?theme=), so the page can show it before its first paint.
   const theme = () => document.documentElement.dataset.theme ?? "light";
 
@@ -65,6 +91,16 @@
       sidebarButton: (shown: boolean) => {
         if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab with a sidebar.");
         onsidebarbutton(shown);
+      },
+      unsaved: (has: boolean) => {
+        if (!panelKey) throw new Error("ui.setUnsaved works only from a Settings panel.");
+        unsavedPanels[panelKey] = has;
+      },
+      settingsDone: (request: number, error: string | null) => {
+        const pending = waiting.get(request);
+        waiting.delete(request);
+        if (error === null) pending?.done();
+        else pending?.failed(new Error(strings.addons.notice(addon.name, error)));
       },
     };
     answer(addon.id, call, args ?? [], host)

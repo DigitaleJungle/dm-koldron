@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 pub const API: u32 = 1;
 const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
-const SETTINGS_SECTIONS: [&str; 2] = ["rules", "library"];
-const PERMISSIONS: [&str; 4] = ["packs:read", "packs:write", "characters:write", "folders:read"];
+const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
+const PERMISSIONS: [&str; 6] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets"];
 /// The longest label an addon's Add character item or Library tab may have.
 const MAX_LABEL: usize = 40;
 
@@ -27,7 +27,9 @@ pub struct Manifest {
     pub license: String,
     #[serde(default)]
     pub permissions: Vec<String>,
-    pub settings: Option<Panel>,
+    /// Pages shown in Settings sections: one panel, or a list (one per section).
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub settings: Vec<Panel>,
     /// An item in the Characters screen's Add character menu; its page opens in a dialog.
     pub characters: Option<MenuPage>,
     /// A page that runs hidden as long as the app is open.
@@ -67,6 +69,20 @@ pub struct Panel {
     pub section: String,
     /// The page, relative to the addon folder.
     pub entry: String,
+}
+
+/// `settings` as one panel (as addons first wrote it) or a list of them.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Panel>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Panels {
+        One(Panel),
+        Many(Vec<Panel>),
+    }
+    Ok(match Panels::deserialize(deserializer)? {
+        Panels::One(panel) => vec![panel],
+        Panels::Many(list) => list,
+    })
 }
 
 #[derive(Debug)]
@@ -131,9 +147,11 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
             errors.push(format!("Unknown permission \"{p}\"."));
         }
     }
-    if let Some(panel) = &m.settings {
+    for (i, panel) in m.settings.iter().enumerate() {
         if !SETTINGS_SECTIONS.contains(&panel.section.as_str()) {
             errors.push(format!("settings: \"{}\" isn't a Settings section an addon can add to.", panel.section));
+        } else if m.settings[..i].iter().any(|p| p.section == panel.section) {
+            errors.push(format!("settings: more than one panel in \"{}\".", panel.section));
         }
         check_page("settings", &panel.entry, folder, &mut errors);
     }
@@ -201,8 +219,8 @@ mod tests {
     fn manifest(id: &str) -> serde_json::Value {
         serde_json::json!({
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
-            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "net:api.github.com"],
-            "settings": { "section": "rules", "entry": "ui/settings.html" },
+            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "net:api.github.com"],
+            "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html" }],
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
             "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true }
@@ -217,7 +235,7 @@ mod tests {
         let mut bad = manifest("other");
         bad["api"] = (API + 1).into();
         bad["permissions"] = serde_json::json!(["files:write", "net:", "net:Evil.com/x"]);
-        bad["settings"] = serde_json::json!({ "section": "ui", "entry": "../x.html" });
+        bad["settings"] = serde_json::json!([{ "section": "ui", "entry": "../x.html" }, { "section": "library", "entry": "ui/settings.html" }, { "section": "library", "entry": "ui/settings.html" }]);
         bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
         bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
@@ -226,10 +244,11 @@ mod tests {
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
         assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);
+        assert_eq!(addons[0].manifest.settings.len(), 2);
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
-        // api, id, 3 permissions, section, entry, label, characters page, an unknown owned field, background page,
-        // library label and page
-        assert_eq!(invalid[0].errors.len(), 13, "{:?}", invalid[0].errors);
+        // api, id, 3 permissions, section, entry, a second library panel, label, characters page, an unknown owned
+        // field, background page, library label and page
+        assert_eq!(invalid[0].errors.len(), 14, "{:?}", invalid[0].errors);
     }
 
     #[test]

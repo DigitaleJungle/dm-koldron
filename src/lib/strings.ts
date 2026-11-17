@@ -75,6 +75,7 @@ export const strings = {
   addons: {
     close: "Close",
     notice: (addon: string, message: string) => `${addon}: ${message}`,
+    noAnswer: (addon: string) => `${addon} didn't answer, so its settings may not be saved.`,
   },
   characters: {
     title: "Characters",
@@ -856,6 +857,12 @@ export const strings = {
     open: "Settings",
     close: "Close settings",
     sections: "Settings sections",
+    save: "Save",
+    saving: "Saving…",
+    cancel: "Cancel",
+    discard: "Discard",
+    keepEditing: "Keep editing",
+    unsaved: "You have changes that aren't saved.",
     ui: {
       title: "UI",
       label: "Appearance",
@@ -887,7 +894,7 @@ export const strings = {
         `${version} · ${license} · ${new Intl.NumberFormat().format(entries)} entries`,
       invalid: "Not loaded",
       loadError: (reason: string) => `Couldn't load the packs. ${reason}`,
-      saveError: (name: string, reason: string) => `Couldn't switch ${name}. ${reason}`,
+      saveFailed: (reason: string) => `Couldn't save the packs. ${reason}`,
       addonsError: (reason: string) => `Couldn't load the addons. ${reason}`,
       images: {
         enable: "Enable images",
@@ -910,11 +917,13 @@ export const strings = {
           `Downloaded ${new Intl.NumberFormat().format(done)} images of ${name}; ${new Intl.NumberFormat().format(failed)} couldn't be downloaded.`,
         cancelled: (name: string) => `Stopped downloading the images of ${name}.`,
         downloadError: (name: string, reason: string) => `Couldn't download the images of ${name}. ${reason}`,
-        saveError: (name: string, reason: string) => `Couldn't change images for ${name}. ${reason}`,
       },
     },
     library: {
       title: "Library",
+    },
+    integrations: {
+      title: "Integrations",
     },
     about: {
       title: "About",

@@ -15,12 +15,13 @@ vi.mock("$lib/api/addons", () => ({
   addonPutFile: vi.fn(async () => undefined),
   addonGetFile: vi.fn(async (_a: string, name: string) => (name === "gone" ? new ArrayBuffer(0) : new Uint8Array([1, 7, 8]).buffer)),
   addonSetLibraryVisible: vi.fn(async () => undefined),
+  addonSecretSet: vi.fn(async () => undefined),
 }));
 
-import { addonPutFile, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonPutFile, addonSecretSet, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn() });
+const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn() });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -90,5 +91,22 @@ describe("addon bridge", () => {
     await answer("a", "ui.setSidebarButton", [false], h);
     expect(h.sidebarButton).toHaveBeenCalledWith(false);
     await expect(answer("a", "ui.setSidebarButton", [1], h)).rejects.toThrow("true or false");
+    await answer("a", "ui.setUnsaved", [true], h);
+    expect(h.unsaved).toHaveBeenCalledWith(true);
+    await answer("a", "ui.settingsDone", [3, null], h);
+    await answer("a", "ui.settingsDone", [4, "Disk full"], h);
+    expect(h.settingsDone.mock.calls).toEqual([[3, null], [4, "Disk full"]]);
+    await expect(answer("a", "ui.settingsDone", ["x"], h)).rejects.toThrow("id");
+  });
+  it("passes net.fetch options as name/value pairs and keeps secrets text", async () => {
+    const h = host();
+    await answer("a", "net.fetch", ["https://api.x.com/auth", { method: "POST", headers: { Authorization: "tok" } }], h);
+    expect(addonFetch).toHaveBeenLastCalledWith("a", "https://api.x.com/auth", "POST", [["Authorization", "tok"]]);
+    await answer("a", "net.fetch", ["https://api.x.com/list"], h);
+    expect(addonFetch).toHaveBeenLastCalledWith("a", "https://api.x.com/list", undefined, []);
+    await expect(answer("a", "net.fetch", ["https://api.x.com", { headers: ["x"] }], h)).rejects.toThrow("headers");
+    await answer("a", "secrets.set", ["key", "abc"], h);
+    expect(addonSecretSet).toHaveBeenCalledWith("a", "key", "abc");
+    await expect(answer("a", "secrets.set", ["key", 5], h)).rejects.toThrow("string");
   });
 });

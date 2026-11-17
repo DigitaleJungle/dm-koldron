@@ -9,6 +9,11 @@ import {
   addonListFiles,
   addonPutFile,
   addonRevealFile,
+  addonHashFile,
+  addonDownloadFile,
+  addonSecretGet,
+  addonSecretSet,
+  addonSecretDelete,
   addonSetLibraryVisible,
   addonFolders,
   addonReadFile,
@@ -50,6 +55,10 @@ export type FrameHost = {
   libraryVisible: (visible: boolean) => void;
   /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
   sidebarButton: (shown: boolean) => void;
+  /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
+  unsaved: (has: boolean) => void;
+  /** `ui.settingsDone`: a Settings panel saved or discarded, as asked by request `id`; `error` when it couldn't. */
+  settingsDone: (id: number, error: string | null) => void;
 };
 
 /** The tallest an addon can make its frame, in pixels. */
@@ -72,8 +81,14 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       await addonRemovePack(addon, String(args[0]));
       host.packsChanged();
       return null;
-    case "net.fetch":
-      return addonFetch(addon, String(args[0]));
+    case "net.fetch": {
+      const options = args[1] ?? {};
+      if (typeof options !== "object") throw new Error("net.fetch's options are an object.");
+      const { method, headers = {} } = options as { method?: unknown; headers?: unknown };
+      if (typeof headers !== "object" || headers === null || Array.isArray(headers)) throw new Error("net.fetch's headers are an object of names and values.");
+      const pairs = Object.entries(headers).map(([name, value]): [string, string] => [name, String(value)]);
+      return addonFetch(addon, String(args[0]), method === undefined ? undefined : String(method), pairs);
+    }
     case "files.pickFile": {
       const bytes = await addonPickFile(addon, Array.isArray(args[0]) ? args[0].map(String) : []);
       return bytes.byteLength > 0 ? bytes : null;
@@ -100,6 +115,19 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     }
     case "folders.reveal":
       await addonRevealFile(addon, String(args[0]), String(args[1]));
+      return null;
+    case "folders.hash":
+      return addonHashFile(addon, String(args[0]), String(args[1]));
+    case "folders.download":
+      return addonDownloadFile(addon, String(args[0]), String(args[1]), String(args[2]), args[3] == null ? null : String(args[3]));
+    case "secrets.get":
+      return addonSecretGet(addon, String(args[0]));
+    case "secrets.set":
+      if (typeof args[1] !== "string") throw new Error("secrets.set needs the secret as a string.");
+      await addonSecretSet(addon, String(args[0]), args[1]);
+      return null;
+    case "secrets.delete":
+      await addonSecretDelete(addon, String(args[0]));
       return null;
     case "characters.list":
       return addonCharacters(addon, String(args[0]));
@@ -150,6 +178,17 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     case "ui.setSidebarButton": {
       if (typeof args[0] !== "boolean") throw new Error("ui.setSidebarButton needs true or false.");
       host.sidebarButton(args[0]);
+      return null;
+    }
+    case "ui.setUnsaved":
+      if (typeof args[0] !== "boolean") throw new Error("ui.setUnsaved needs true or false.");
+      host.unsaved(args[0]);
+      return null;
+    case "ui.settingsDone": {
+      const [request, error] = [args[0], args[1] ?? null];
+      if (!Number.isSafeInteger(request)) throw new Error("ui.settingsDone needs the request's id.");
+      if (error !== null && typeof error !== "string") throw new Error("ui.settingsDone's error is a string or null.");
+      host.settingsDone(request as number, error === null ? null : error.slice(0, MAX_NOTICE));
       return null;
     }
     case "ui.setHeight": {

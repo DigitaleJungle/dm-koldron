@@ -81,7 +81,7 @@ pub struct AddonSummary {
     pub name: String,
     pub version: String,
     pub license: String,
-    pub settings: Option<crate::addons::Panel>,
+    pub settings: Vec<crate::addons::Panel>,
     pub characters: Option<crate::addons::MenuPage>,
     pub background: Option<String>,
     pub library: Option<crate::addons::Tab>,
@@ -116,7 +116,7 @@ fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
             id: i.folder.clone(),
             version: String::new(),
             license: String::new(),
-            settings: None,
+            settings: Vec::new(),
             characters: None,
             background: None,
             library: None,
@@ -173,19 +173,109 @@ pub async fn addon_remove_pack(app: AppHandle, addon: String, pack: String) -> R
     .await
 }
 
-/// `net.fetch`: a GET over https to a host the addon's manifest names (`net:<host>`). The body comes back as bytes.
+/// `net.fetch` may send at most this many request headers, each at most this long.
+const MAX_HEADERS: usize = 20;
+const MAX_HEADER_LEN: usize = 8 * 1024;
+
+/// The address without its query, for messages: a query can hold a key.
+fn shown_url(url: &str) -> &str {
+    url.split(['?', '#']).next().unwrap_or(url)
+}
+
+/// Checks that the addon may reach `url` (`net:<host>`).
+fn require_net(addon: &Addon, url: &str) -> Result<(), StorageError> {
+    let host = https_host(url).ok_or_else(|| StorageError::Invalid(format!("\"{}\" isn't a plain https:// address.", shown_url(url))))?;
+    require(addon, &format!("net:{host}"))
+}
+
+/// Request headers an addon may send: plain names, values without line breaks. The connection's own headers are the
+/// app's.
+fn check_headers(headers: &[(String, String)]) -> Result<(), StorageError> {
+    const RESERVED: [&str; 6] = ["host", "content-length", "transfer-encoding", "connection", "cookie", "upgrade"];
+    if headers.len() > MAX_HEADERS {
+        return Err(StorageError::Invalid(format!("net.fetch sends at most {MAX_HEADERS} headers.")));
+    }
+    for (name, value) in headers {
+        let plain_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b));
+        let plain_value = value.len() <= MAX_HEADER_LEN && value.bytes().all(|b| b == b'\t' || (b' '..=b'~').contains(&b));
+        if !plain_name || !plain_value || RESERVED.contains(&name.to_ascii_lowercase().as_str()) {
+            return Err(StorageError::Invalid(format!("net.fetch can't send the header \"{name}\".")));
+        }
+    }
+    Ok(())
+}
+
+/// `net.fetch`: a GET (or a POST without a body) over https to a host the addon's manifest names (`net:<host>`), with
+/// the headers it gives. The body comes back as bytes; an error status is an error that names it.
 #[tauri::command]
-pub async fn addon_fetch(app: AppHandle, addon: String, url: String) -> Result<ipc::Response, StorageError> {
+pub async fn addon_fetch(app: AppHandle, addon: String, url: String, method: Option<String>, headers: Option<Vec<(String, String)>>) -> Result<ipc::Response, StorageError> {
     blocking(move || {
-        let found = self::addon(&app, &addon)?;
-        let host = https_host(&url).ok_or_else(|| StorageError::Invalid(format!("\"{url}\" isn't a plain https:// address.")))?;
-        require(found, &format!("net:{host}"))?;
+        require_net(self::addon(&app, &addon)?, &url)?;
+        let headers = headers.unwrap_or_default();
+        check_headers(&headers)?;
         static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
         let agent = AGENT.get_or_init(|| ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(120))).build().into());
-        let failed = |e: ureq::Error| StorageError::Io(format!("{url}: {e}"));
-        let mut response = agent.get(&url).call().map_err(failed)?;
+        let failed = |e: ureq::Error| StorageError::Io(format!("{}: {e}", shown_url(&url)));
+        let mut response = match method.as_deref().unwrap_or("GET") {
+            "GET" => headers.iter().fold(agent.get(&url), |r, (k, v)| r.header(k, v)).call(),
+            "POST" => headers.iter().fold(agent.post(&url), |r, (k, v)| r.header(k, v)).send_empty(),
+            other => return Err(StorageError::Invalid(format!("net.fetch can't send a {other} request."))),
+        }
+        .map_err(failed)?;
         let body = response.body_mut().with_config().limit(MAX_BYTES).read_to_vec().map_err(failed)?;
         Ok(ipc::Response::new(body))
+    })
+    .await
+}
+
+// --- Secrets ---------------------------------------------------------------------------------------------------------
+
+/// The longest secret an addon can keep, in bytes: within what Windows' Credential Manager stores (2,560).
+const MAX_SECRET: usize = 2048;
+
+/// The addon's secret `name` in the OS keychain, apart from every other addon's (`secrets`).
+fn secret(app: &AppHandle, addon: &str, name: &str) -> Result<keyring::Entry, StorageError> {
+    require(self::addon(app, addon)?, "secrets")?;
+    let plain = (1..=64).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b));
+    if !plain {
+        return Err(StorageError::Invalid("A secret's name is 1–64 letters, digits, '-', '_' or '.'.".into()));
+    }
+    keyring::Entry::new(&app.config().identifier, &format!("addon:{addon}:{name}")).map_err(|e| keychain_error(&e))
+}
+
+fn keychain_error(e: &keyring::Error) -> StorageError {
+    StorageError::Io(format!("The system keychain refused: {e}"))
+}
+
+/// `secrets.get`: the secret, or null when there's none.
+#[tauri::command]
+pub async fn addon_secret_get(app: AppHandle, addon: String, name: String) -> Result<Option<String>, StorageError> {
+    blocking(move || match secret(&app, &addon, &name)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(keychain_error(&e)),
+    })
+    .await
+}
+
+/// `secrets.set`
+#[tauri::command]
+pub async fn addon_secret_set(app: AppHandle, addon: String, name: String, value: String) -> Result<(), StorageError> {
+    blocking(move || {
+        if value.is_empty() || value.len() > MAX_SECRET {
+            return Err(StorageError::Invalid(format!("A secret is 1–{MAX_SECRET} bytes.")));
+        }
+        secret(&app, &addon, &name)?.set_password(&value).map_err(|e| keychain_error(&e))
+    })
+    .await
+}
+
+/// `secrets.delete`: also when there's none.
+#[tauri::command]
+pub async fn addon_secret_delete(app: AppHandle, addon: String, name: String) -> Result<(), StorageError> {
+    blocking(move || match secret(&app, &addon, &name)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(keychain_error(&e)),
     })
     .await
 }
@@ -612,6 +702,120 @@ pub async fn addon_read_file(app: AppHandle, addon: String, folder: String, path
     .await
 }
 
+/// The MD5 checksum of a file, as lowercase hex.
+fn md5_of(path: &Path) -> io::Result<String> {
+    use md5::{Digest, Md5};
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Md5::new();
+    let mut buf = vec![0u8; 1 << 16];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            return Ok(format!("{:x}", hasher.finalize()));
+        }
+        hasher.update(&buf[..n]);
+    }
+}
+
+/// `folders.hash`: the MD5 checksum of a file in the folder.
+#[tauri::command]
+pub async fn addon_hash_file(app: AppHandle, addon: String, folder: String, path: String) -> Result<String, StorageError> {
+    blocking(move || {
+        let root = find_folder(&granted(&app, &addon)?.1, &folder)?.path.clone();
+        let full = file_inside(&root, &path).ok_or_else(|| StorageError::NotFound(format!("\"{path}\" isn't a file in the folder.")))?;
+        Ok(md5_of(&full)?)
+    })
+    .await
+}
+
+/// `folders.download`: one file, at most this big.
+const MAX_DOWNLOAD: u64 = 8 * 1024 * 1024 * 1024;
+/// The end of a file still downloading, beside its place.
+const PARTIAL: &str = ".download";
+
+/// Where `path` goes inside `root`, its folders made: never outside it (no `..`, no link leading out), never onto a
+/// folder.
+fn download_target(root: &Path, path: &str) -> Result<PathBuf, StorageError> {
+    let outside = || StorageError::Invalid(format!("\"{path}\" isn't a place in the folder."));
+    if !safe_path(path) || path.ends_with(PARTIAL) {
+        return Err(outside());
+    }
+    let root = root.canonicalize()?;
+    let target = root.join(path);
+    let (Some(parent), Some(name)) = (target.parent(), target.file_name()) else { return Err(outside()) };
+    // The deepest folder already there must be inside too, so a link can't make folders elsewhere.
+    let existing = parent.ancestors().find(|dir| dir.exists()).ok_or_else(outside)?.canonicalize()?;
+    if !existing.starts_with(&root) {
+        return Err(outside());
+    }
+    fs::create_dir_all(parent)?;
+    let parent = parent.canonicalize()?;
+    if !parent.starts_with(&root) || parent.join(name).is_dir() {
+        return Err(outside());
+    }
+    Ok(parent.join(name))
+}
+
+/// Streams `response` into `target` through a file beside it, which only replaces `target` once it is complete and,
+/// when `md5` is given, matches it. Returns the file's MD5.
+fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path, md5: Option<&str>) -> Result<String, StorageError> {
+    use md5::{Digest, Md5};
+    let mut partial = target.as_os_str().to_owned();
+    partial.push(PARTIAL);
+    let partial = PathBuf::from(partial);
+    let result = (|| {
+        let mut out = fs::File::create(&partial)?;
+        let mut reader = response.body_mut().with_config().limit(MAX_DOWNLOAD).reader();
+        let (mut hasher, mut buf) = (Md5::new(), vec![0u8; 1 << 16]);
+        loop {
+            let n = reader.read(&mut buf).map_err(|e| StorageError::Io(format!("The download broke off: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            io::Write::write_all(&mut out, &buf[..n])?;
+        }
+        out.sync_all()?;
+        drop(out);
+        let got = format!("{:x}", hasher.finalize());
+        if md5.is_some_and(|want| !want.eq_ignore_ascii_case(&got)) {
+            return Err(StorageError::Invalid("The downloaded file doesn't match its checksum.".into()));
+        }
+        fs::rename(&partial, target)?;
+        Ok(got)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&partial); // only a leftover partial file otherwise
+    }
+    result
+}
+
+/// `folders.download`: downloads an https file (from a `net:<host>` the addon names) to `path` in the folder
+/// (`folders:write`), making its folders; a file already there is replaced only by a complete, matching download.
+#[tauri::command]
+pub async fn addon_download_file(app: AppHandle, addon: String, folder: String, path: String, url: String, md5: Option<String>) -> Result<String, StorageError> {
+    blocking(move || {
+        let found = self::addon(&app, &addon)?;
+        require(found, "folders:write")?;
+        require_net(found, &url)?;
+        let root = find_folder(&granted(&app, &addon)?.1, &folder)?.path.clone();
+        let target = download_target(&root, &path)?;
+        static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+        // A big book may take a while, but one file 30 minutes at most.
+        let agent = AGENT.get_or_init(|| {
+            ureq::Agent::config_builder()
+                .timeout_connect(Some(Duration::from_secs(20)))
+                .timeout_recv_response(Some(Duration::from_secs(60)))
+                .timeout_recv_body(Some(Duration::from_secs(30 * 60)))
+                .build()
+                .into()
+        });
+        let response = agent.get(&url).call().map_err(|e| StorageError::Io(format!("{}: {e}", shown_url(&url))))?;
+        save_download(response, &target, md5.as_deref())
+    })
+    .await
+}
+
 /// `folders.reveal`: shows the file in the system file manager, selected.
 #[tauri::command]
 pub async fn addon_reveal_file(app: AppHandle, addon: String, folder: String, path: String) -> Result<(), StorageError> {
@@ -771,6 +975,32 @@ mod tests {
         for bad in ["../outside.txt", "sub", "", "/a.md", "missing.md"] {
             assert!(file_inside(&lib, bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn downloads_land_inside_the_folder_only_and_hash_their_bytes() {
+        let dir = temp_dir("download");
+        let lib = dir.join("lib");
+        fs::create_dir_all(lib.join("taken")).unwrap();
+        let target = download_target(&lib, "Pub/Book/book.pdf").unwrap();
+        assert!(target.ends_with("book.pdf") && target.parent().unwrap().is_dir());
+        for bad in ["../out.pdf", "Pub/../../out.pdf", "", "/abs.pdf", "taken", "x.pdf.download"] {
+            assert!(download_target(&lib, bad).is_err(), "{bad}");
+        }
+        fs::write(&target, "hello").unwrap();
+        assert_eq!(md5_of(&target).unwrap(), "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[test]
+    fn fetch_sends_plain_headers_only_and_hides_queries() {
+        let ok = |name: &str, value: &str| check_headers(&[(name.to_string(), value.to_string())]).is_ok();
+        assert!(ok("Authorization", "abc.def") && ok("X-Api_Key", "1 2"));
+        for (name, value) in [("Host", "x"), ("cookie", "a=b"), ("Bad Name", "x"), ("", "x"), ("X", "a\r\nInjected: 1")] {
+            assert!(!ok(name, value), "{name}");
+        }
+        let many: Vec<_> = (0..=MAX_HEADERS).map(|i| (format!("X-{i}"), "v".to_string())).collect();
+        assert!(check_headers(&many).is_err());
+        assert_eq!(shown_url("https://api.x.com/auth?key=secret#a"), "https://api.x.com/auth");
     }
 
     #[test]

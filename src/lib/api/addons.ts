@@ -8,7 +8,8 @@ export type AddonSummary = {
   name: string;
   version: string;
   license: string;
-  settings: { section: string; entry: string } | null;
+  /** Its pages in Settings sections, at most one per section. */
+  settings: { section: string; entry: string }[];
   /** An item in the Characters screen's Add character menu, opening `entry` in a dialog; `owns`: the fields of the
    * characters it adds that it keeps up to date (the app can't change those while the addon is loaded). */
   characters: { label: string; entry: string; owns: string[] } | null;
@@ -22,6 +23,9 @@ export type AddonSummary = {
   licenseText: string | null;
   errors: string[];
 };
+
+/** The page an addon shows in a Settings section, if it has one there. */
+export const panelIn = (addon: AddonSummary, section: string) => addon.settings.find((p) => p.section === section)?.entry;
 
 /** Mirrors `NewPack` in src-tauri/src/packs.rs: the manifest, and each data file by its path. */
 export type NewPack = { manifest: unknown; files: Record<string, unknown>; images?: unknown; license?: string };
@@ -54,8 +58,9 @@ export function addonRemovePack(addon: string, pack: string): Promise<void> {
   return invoke("addon_remove_pack", { addon, pack });
 }
 
-export function addonFetch(addon: string, url: string): Promise<ArrayBuffer> {
-  return invoke("addon_fetch", { addon, url });
+/** `method`: GET (the default) or POST, without a body; `headers` as name/value pairs. */
+export function addonFetch(addon: string, url: string, method?: string, headers?: [string, string][]): Promise<ArrayBuffer> {
+  return invoke("addon_fetch", { addon, url, method, headers });
 }
 
 /** Empty when the user cancelled. */
@@ -143,6 +148,28 @@ export function addonListFiles(addon: string): Promise<StoredFile[]> {
 
 export function addonRevealFile(addon: string, folder: string, path: string): Promise<void> {
   return invoke("addon_reveal_file", { addon, folder, path });
+}
+
+/** The file's MD5 checksum, lowercase hex. */
+export function addonHashFile(addon: string, folder: string, path: string): Promise<string> {
+  return invoke("addon_hash_file", { addon, folder, path });
+}
+
+/** Downloads `url` to `path` in the folder; resolves to the file's MD5. */
+export function addonDownloadFile(addon: string, folder: string, path: string, url: string, md5: string | null): Promise<string> {
+  return invoke("addon_download_file", { addon, folder, path, url, md5 });
+}
+
+export function addonSecretGet(addon: string, name: string): Promise<string | null> {
+  return invoke("addon_secret_get", { addon, name });
+}
+
+export function addonSecretSet(addon: string, name: string, value: string): Promise<void> {
+  return invoke("addon_secret_set", { addon, name, value });
+}
+
+export function addonSecretDelete(addon: string, name: string): Promise<void> {
+  return invoke("addon_secret_delete", { addon, name });
 }
 
 export function addonSetLibraryVisible(addon: string, visible: boolean): Promise<void> {

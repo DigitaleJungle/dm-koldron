@@ -55,6 +55,8 @@ export type FrameHost = {
   libraryVisible: (visible: boolean) => void;
   /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
   sidebarButton: (shown: boolean) => void;
+  /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only the Start screen page can. */
+  openLibrary: (state: string | null) => Promise<void>;
   /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
   unsaved: (has: boolean) => void;
   /** `ui.settingsDone`: a Settings panel saved or discarded, as asked by request `id`; `error` when it couldn't. */
@@ -173,6 +175,13 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       if (state !== null && typeof state !== "string") throw new Error("ui.navigate needs a string or null.");
       if (state !== null && state.length > MAX_STATE) throw new Error(`ui.navigate takes at most ${MAX_STATE} characters.`);
       await host.navigate(state, args[1] === true);
+      return null;
+    }
+    case "ui.openLibrary": {
+      const state = args[0] ?? null;
+      if (state !== null && typeof state !== "string") throw new Error("ui.openLibrary needs a string or null.");
+      if (state !== null && state.length > MAX_STATE) throw new Error(`ui.openLibrary takes at most ${MAX_STATE} characters.`);
+      await host.openLibrary(state);
       return null;
     }
     case "ui.setSidebarButton": {

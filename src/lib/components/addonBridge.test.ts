@@ -21,7 +21,7 @@ vi.mock("$lib/api/addons", () => ({
 import { addonFetch, addonPutFile, addonSecretSet, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn() });
+const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -91,6 +91,9 @@ describe("addon bridge", () => {
     await answer("a", "ui.setSidebarButton", [false], h);
     expect(h.sidebarButton).toHaveBeenCalledWith(false);
     await expect(answer("a", "ui.setSidebarButton", [1], h)).rejects.toThrow("true or false");
+    await answer("a", "ui.openLibrary", ["page=3"], h);
+    expect(h.openLibrary).toHaveBeenCalledWith("page=3");
+    await expect(answer("a", "ui.openLibrary", [5], h)).rejects.toThrow("string or null");
     await answer("a", "ui.setUnsaved", [true], h);
     expect(h.unsaved).toHaveBeenCalledWith(true);
     await answer("a", "ui.settingsDone", [3, null], h);

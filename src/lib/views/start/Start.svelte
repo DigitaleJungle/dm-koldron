@@ -4,6 +4,8 @@
   import { goto } from "$app/navigation";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import { pictureSrc } from "$lib/api/campaigns";
   import { errorMessage } from "$lib/api/storage";
   import { campaigns, createCampaign, refreshCampaigns } from "$lib/stores/campaigns.svelte";
@@ -20,6 +22,37 @@
   let createError = $state<string | null>(null);
 
   const list = $derived(campaigns.list);
+
+  // Addons' Start screen pages, in a column beside the campaigns. Each sets its own height; the column takes room only
+  // once one of them shows something (a height above 0), and is laid out out of sight until then.
+  loadAddons();
+  const startPages = $derived(addons.list.filter((a) => a.start));
+  // Where the first campaign tile is, so a page can line up with the tiles: its height and its top, measured from the
+  // top of the column (`{ tileHeight, tileTop }`, null without campaigns).
+  let tilesList: HTMLUListElement | undefined = $state();
+  let tileHeight = $state<number | null>(null);
+  let tileTop = $state<number | null>(null);
+  let aside: HTMLElement | undefined = $state();
+  $effect(() => {
+    if (!tilesList) return void (tileHeight = tileTop = null);
+    const list = tilesList;
+    // Only while the column is beside the tiles: under them (a narrow window) there's nothing to line up with.
+    const measure = () => {
+      const tile = list.querySelector(".tile")?.getBoundingClientRect();
+      const column = aside?.getBoundingClientRect();
+      const beside = !!tile && !!column && column.left >= tile.right;
+      tileHeight = beside ? Math.round(tile.height) : null;
+      tileTop = beside ? Math.round(tile.top - column.top) : null;
+    };
+    const watch = new ResizeObserver(measure);
+    watch.observe(list);
+    return () => watch.disconnect();
+  });
+  const startContext = $derived({ tileHeight, tileTop });
+  let heights = $state<Record<string, number>>({});
+  const asideShown = $derived(startPages.some((a) => (heights[a.id] ?? 0) > 0));
+  /** A page's `ui.openLibrary`: its addon's Library tab, at that state. */
+  const openLibrary = (id: string) => (state: string | null) => goto(`/library?${new URLSearchParams({ tab: id, ...(state === null ? {} : { state }) })}`);
 
   onMount(() => {
     campaigns.scope = null; // out of any campaign: search everything
@@ -69,6 +102,7 @@
 
     <div class="search"><SearchBar large /></div>
 
+    <div class="columns" class:beside={asideShown}>
     <section aria-labelledby="campaigns-title">
       <div class="section-head">
         <h2 id="campaigns-title" class="sr-only">{t.campaigns}</h2>
@@ -106,7 +140,7 @@
           <p class="muted">{t.empty}</p>
         {:else}
           <!-- Most recently opened first (the backend sorts them). -->
-          <ul class="campaigns">
+          <ul class="campaigns" bind:this={tilesList}>
             {#each list.campaigns as campaign (campaign.id)}
               <li>
                 <a class="tile" class:pictured={!!campaign.picture} href="/campaign/{campaign.id}">
@@ -125,6 +159,20 @@
         {/if}
       {/if}
     </section>
+    {#if startPages.length}
+      <aside bind:this={aside} class="addon-column" class:collapsed={!asideShown} aria-hidden={!asideShown || undefined}>
+        {#each startPages as addon (addon.id)}
+          <AddonFrame
+            {addon}
+            entry={addon.start!}
+            context={startContext}
+            onheight={(px) => (heights[addon.id] = px)}
+            onopenlibrary={addon.library && addon.libraryVisible ? openLibrary(addon.id) : undefined}
+          />
+        {/each}
+      </aside>
+    {/if}
+    </div>
   </main>
 
   <footer>
@@ -172,6 +220,45 @@
   .search {
     width: min(100%, var(--start-width));
     margin: 0 auto;
+  }
+
+  /* The campaigns, with addons' Start pages beside them once one shows something (under them in a narrow window). */
+  .columns {
+    position: relative;
+  }
+
+  .columns.beside {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--start-aside-width);
+    align-items: start;
+    gap: var(--space-6);
+  }
+
+  .addon-column {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  /* A page shows nothing until it sets its height. */
+  .addon-column :global(iframe) {
+    height: 0;
+  }
+
+  /* Laid out at its width, so its pages can measure themselves, but out of sight and out of the way. */
+  .addon-column.collapsed {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--start-aside-width);
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  @media (max-width: 900px) {
+    .columns.beside {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   section {

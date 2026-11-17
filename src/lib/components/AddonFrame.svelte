@@ -21,6 +21,8 @@
     onnavigate,
     onsidebarbutton,
     panel,
+    onopenlibrary,
+    onheight,
   }: {
     addon: AddonSummary;
     entry: string;
@@ -35,6 +37,10 @@
     onsidebarbutton?: (shown: boolean) => void;
     /** A Settings panel (its section): its changes wait for the dialog's Save (`ui.setUnsaved`, `ui.settingsDone`). */
     panel?: string;
+    /** Only the Start screen page: `ui.openLibrary` opens the addon's Library tab at a state. */
+    onopenlibrary?: (state: string | null) => Promise<void>;
+    /** Hears the height the page asks for (`ui.setHeight`). */
+    onheight?: (px: number) => void;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   let height = $state<number>();
@@ -76,7 +82,10 @@
     const reply = (message: object, transfer: Transferable[] = []) =>
       frame?.contentWindow?.postMessage({ koldron: 1, id, ...message }, "*", transfer);
     const host = {
-      setHeight: (px: number) => (height = px),
+      setHeight: (px: number) => {
+        height = px;
+        onheight?.(px);
+      },
       packsChanged: () => onpackschange?.(),
       charactersChanged,
       theme,
@@ -91,6 +100,10 @@
       sidebarButton: (shown: boolean) => {
         if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab with a sidebar.");
         onsidebarbutton(shown);
+      },
+      openLibrary: async (state: string | null) => {
+        if (!onopenlibrary) throw new Error("ui.openLibrary works only from the Start screen page of an addon with a Library tab.");
+        await onopenlibrary(state);
       },
       unsaved: (has: boolean) => {
         if (!panelKey) throw new Error("ui.setUnsaved works only from a Settings panel.");

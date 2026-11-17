@@ -34,6 +34,8 @@ pub struct Manifest {
     pub characters: Option<MenuPage>,
     /// A page that runs hidden as long as the app is open.
     pub background: Option<String>,
+    /// A page shown on the Start screen, beside the campaigns; it sets its own height (0 hides it).
+    pub start: Option<String>,
     /// A tab in the app-wide Library labelled `label`, showing the page `entry`.
     pub library: Option<Tab>,
 }
@@ -165,6 +167,9 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
     if let Some(page) = &m.background {
         check_page("background", page, folder, &mut errors);
     }
+    if let Some(page) = &m.start {
+        check_page("start", page, folder, &mut errors);
+    }
     if let Some(tab) = &m.library {
         check_label("library", &tab.label, &mut errors);
         check_page("library", &tab.entry, folder, &mut errors);
@@ -223,6 +228,7 @@ mod tests {
             "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html" }],
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
+            "start": "ui/settings.html",
             "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true }
         })
     }
@@ -238,6 +244,7 @@ mod tests {
         bad["settings"] = serde_json::json!([{ "section": "ui", "entry": "../x.html" }, { "section": "library", "entry": "ui/settings.html" }, { "section": "library", "entry": "ui/settings.html" }]);
         bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
+        bad["start"] = "start.js".into();
         bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
@@ -247,8 +254,8 @@ mod tests {
         assert_eq!(addons[0].manifest.settings.len(), 2);
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
         // api, id, 3 permissions, section, entry, a second library panel, label, characters page, an unknown owned
-        // field, background page, library label and page
-        assert_eq!(invalid[0].errors.len(), 14, "{:?}", invalid[0].errors);
+        // field, background page, start page, library label and page
+        assert_eq!(invalid[0].errors.len(), 15, "{:?}", invalid[0].errors);
     }
 
     #[test]

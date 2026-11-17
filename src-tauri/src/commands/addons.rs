@@ -84,6 +84,7 @@ pub struct AddonSummary {
     pub settings: Vec<crate::addons::Panel>,
     pub characters: Option<crate::addons::MenuPage>,
     pub background: Option<String>,
+    pub start: Option<String>,
     pub library: Option<crate::addons::Tab>,
     /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
     pub library_visible: bool,
@@ -104,6 +105,7 @@ fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
         settings: a.manifest.settings.clone(),
         characters: a.manifest.characters.clone(),
         background: a.manifest.background.clone(),
+        start: a.manifest.start.clone(),
         library: a.manifest.library.clone(),
         library_visible: library_visible(data, &a.manifest.id),
         license_text: license_in(&a.folder),
@@ -119,6 +121,7 @@ fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
             settings: Vec::new(),
             characters: None,
             background: None,
+            start: None,
             library: None,
             library_visible: true,
             errors: capped(&i.errors),

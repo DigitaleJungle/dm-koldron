@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.11] - 2026-11-17
+
+### Added
+
+- Start screen: addons can add a page beside the campaigns (start in the manifest), shown once it has something to show; it's told the campaign tiles' height and position (tileHeight, tileTop) so it can line up with them
+- Addon API: ui.openLibrary opens the addon's own Library tab at a state, from its Start screen page
+
 ## [0.6.10] - 2026-11-17
 
 ### Added

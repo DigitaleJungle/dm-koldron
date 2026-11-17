@@ -825,6 +825,24 @@ pub async fn addon_hash_file(app: AppHandle, addon: String, folder: String, path
 const MAX_DOWNLOAD: u64 = 8 * 1024 * 1024 * 1024;
 /// The end of a file still downloading, beside its place.
 const PARTIAL: &str = ".download";
+/// A partial file not written to for this long is left over (a crash), not another download still running.
+const PARTIAL_STALE: Duration = Duration::from_secs(60);
+
+/// The partial file, new. One already there that's still being written (another download of the same file, which goes
+/// on in the app when the page that asked for it closes) refuses; one left over from a crash is started again.
+fn open_partial(partial: &Path) -> Result<fs::File, StorageError> {
+    match fs::OpenOptions::new().write(true).create_new(true).open(partial) {
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            // Asked through the file, not its folder: Windows updates a file's time in its folder only once it's closed.
+            let age = fs::File::open(partial)?.metadata()?.modified()?.elapsed().unwrap_or_default();
+            if age < PARTIAL_STALE {
+                return Err(StorageError::Invalid("This file is already being downloaded.".into()));
+            }
+            Ok(fs::File::create(partial)?)
+        }
+        opened => Ok(opened?),
+    }
+}
 
 /// Where `path` goes inside `root`, its folders made: never outside it (no `..`, no link leading out), never onto a
 /// folder.
@@ -856,8 +874,9 @@ fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path) 
     let mut partial = target.as_os_str().to_owned();
     partial.push(PARTIAL);
     let partial = PathBuf::from(partial);
+    // Before the cleanup below: a partial file another download is writing isn't this one's to remove.
+    let mut out = open_partial(&partial)?;
     let result = (|| {
-        let mut out = fs::File::create(&partial)?;
         let mut reader = response.body_mut().with_config().limit(MAX_DOWNLOAD).reader();
         let (mut hasher, mut buf) = (Md5::new(), vec![0u8; 1 << 16]);
         loop {
@@ -1073,6 +1092,12 @@ mod tests {
         fs::create_dir_all(lib.join("taken")).unwrap();
         let target = download_target(&lib, "Pub/Book/book.pdf").unwrap();
         assert!(target.ends_with("book.pdf") && target.parent().unwrap().is_dir());
+        // One download per partial file: a fresh one is another download still running, an old one is left over.
+        let partial = lib.join("busy.pdf.download");
+        drop(open_partial(&partial).unwrap());
+        assert!(open_partial(&partial).is_err());
+        fs::File::options().write(true).open(&partial).unwrap().set_modified(std::time::SystemTime::now() - PARTIAL_STALE * 2).unwrap();
+        assert!(open_partial(&partial).is_ok());
         for bad in ["../out.pdf", "Pub/../../out.pdf", "", "/abs.pdf", "taken", "x.pdf.download"] {
             assert!(download_target(&lib, bad).is_err(), "{bad}");
         }

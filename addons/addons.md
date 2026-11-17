@@ -142,7 +142,7 @@ function koldron(call, ...args) {
 | `folders.scan` | folder id | `[{ path, size, modified }]` for every file in the folder and its subfolders (`modified` in ms). |
 | `folders.read` | folder id, path, offset, length | Those bytes of the file as an `ArrayBuffer` (fewer at its end; at most 16 MB per call). |
 | `folders.hash` | folder id, path | The file's MD5 checksum, lowercase hex. |
-| `folders.download` | folder id, path, `https://` URL | The downloaded file's MD5. Downloads the URL (a `net:<host>`; redirects followed) to that path in the folder (at most 8 GB, 30 minutes), making its folders. It goes to `<path>.download` first and replaces the path only once complete, so a broken download never replaces a good file. A path ending in `.download` is refused. |
+| `folders.download` | folder id, path, `https://` URL | The downloaded file's MD5. Downloads the URL (a `net:<host>`; redirects followed) to that path in the folder (at most 8 GB, 30 minutes), making its folders. It goes to `<path>.download` first and replaces the path only once complete, so a broken download never replaces a good file. A path ending in `.download` is refused, and so is a download of a path another download is still writing. |
 | `folders.reveal` | folder id, path | `null`. Shows the file in the system file manager (Explorer, Finder), selected. An error on other systems. |
 | `characters.list` | campaign id | The campaign's characters linked to this addon. |
 | `characters.save` | campaign id, character | The character as saved. Empty `id`: a new character, linked to this addon. Otherwise it must be one linked to this addon. When creating, the addon sets everything. After that it changes only the fields its manifest `owns`; everything else is the app's. |

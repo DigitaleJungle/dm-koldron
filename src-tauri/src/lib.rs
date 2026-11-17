@@ -64,6 +64,7 @@ pub fn run() {
             commands::addons::addon_read_file,
             commands::addons::addon_hash_file,
             commands::addons::addon_download_file,
+            commands::addons::addon_set_search,
             commands::addons::addon_secret_get,
             commands::addons::addon_secret_set,
             commands::addons::addon_secret_delete,

@@ -16,9 +16,10 @@ vi.mock("$lib/api/addons", () => ({
   addonGetFile: vi.fn(async (_a: string, name: string) => (name === "gone" ? new ArrayBuffer(0) : new Uint8Array([1, 7, 8]).buffer)),
   addonSetLibraryVisible: vi.fn(async () => undefined),
   addonSecretSet: vi.fn(async () => undefined),
+  addonSetSearch: vi.fn(async () => undefined),
 }));
 
-import { addonFetch, addonPutFile, addonSecretSet, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
 const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
@@ -111,5 +112,8 @@ describe("addon bridge", () => {
     await answer("a", "secrets.set", ["key", "abc"], h);
     expect(addonSecretSet).toHaveBeenCalledWith("a", "key", "abc");
     await expect(answer("a", "secrets.set", ["key", 5], h)).rejects.toThrow("string");
+    await answer("a", "search.setEntries", [[{ id: "1", name: "Tomb" }]], h);
+    expect(addonSetSearch).toHaveBeenCalledWith("a", [{ id: "1", name: "Tomb" }]);
+    await expect(answer("a", "search.setEntries", [{}], h)).rejects.toThrow("list");
   });
 });

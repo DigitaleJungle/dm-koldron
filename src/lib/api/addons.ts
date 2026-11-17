@@ -17,6 +17,8 @@ export type AddonSummary = {
   background: string | null;
   /** A page on the Start screen, beside the campaigns; it sets its own height (0 hides it). */
   start: string | null;
+  /** A page shown in the search preview pane for the addon's results (`{ id, state }` in its context). */
+  preview: string | null;
   /** A tab in the app-wide Library labelled `label`, showing the page `entry`; `sidebar`: the header can hide its side
    * column (`sidebarHidden` in the page's context). */
   library: { label: string; entry: string; sidebar: boolean } | null;
@@ -158,8 +160,12 @@ export function addonHashFile(addon: string, folder: string, path: string): Prom
 }
 
 /** Downloads `url` to `path` in the folder; resolves to the file's MD5. */
-export function addonDownloadFile(addon: string, folder: string, path: string, url: string, md5: string | null): Promise<string> {
-  return invoke("addon_download_file", { addon, folder, path, url, md5 });
+export function addonDownloadFile(addon: string, folder: string, path: string, url: string): Promise<string> {
+  return invoke("addon_download_file", { addon, folder, path, url });
+}
+
+export function addonSetSearch(addon: string, entries: unknown[]): Promise<void> {
+  return invoke("addon_set_search", { addon, entries });
 }
 
 export function addonSecretGet(addon: string, name: string): Promise<string | null> {

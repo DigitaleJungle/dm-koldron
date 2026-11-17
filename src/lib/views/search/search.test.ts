@@ -11,6 +11,8 @@ const hit = (kind: string, name: string, chapter?: [string, string]): SearchHit 
   chapterIndex: chapter?.[0] ?? null,
   chapterName: chapter?.[1] ?? null,
   campaign: null,
+  detail: null,
+  state: null,
 });
 
 describe("search results", () => {
@@ -29,6 +31,11 @@ describe("search results", () => {
     expect(hitMeta(spell, false)).toBe("SRD 5.2 · Catalog");
     expect(searchAddress(" fire ball ")).toBe("/search?q=fire+ball");
     expect(searchAddress("fire", "c1")).toBe("/search?q=fire&campaign=c1");
+  });
+
+  it("open an addon's result in its tab of the app-wide Library, at its place there, from inside a campaign too", () => {
+    const found: SearchHit = { ...hit("addon:shelf", "Tomb"), pack: "shelf", source: "Shelf", state: "page=3", detail: "swamp" };
+    expect(hitAddress(found, "/campaign/c1/library")).toBe("/library?tab=shelf&state=page%3D3");
   });
 
   it("group by kind in display order, keeping the best first within a kind", () => {

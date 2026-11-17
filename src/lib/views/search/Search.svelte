@@ -1,7 +1,9 @@
 <script lang="ts">
   // The search screen: every result for ?q=, grouped by type, with type chips (?type=) and a preview pane.
   import { untrack } from "svelte";
-  import { afterNavigate } from "$app/navigation";
+  import { afterNavigate, goto } from "$app/navigation";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
@@ -13,7 +15,7 @@
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
   import { loadPreview, type Preview as Loaded } from "./preview";
-  import { groupByKind, hitAddress, hitMeta, kindLabel } from "./search";
+  import { groupByKind, hitAddress, hitMeta, kindLabel, libraryTabAddress } from "./search";
 
   const t = strings.search;
   const key = (hit: SearchHit) => `${hit.kind}/${hit.pack}/${hit.index}`;
@@ -65,10 +67,18 @@
     const hit = untrack(() => selected);
     [preview, previewError] = [null, null];
     const current = () => wanted === untrack(() => selectedKey);
-    if (hit) load(hit).then((p) => current() && (preview = p), (e) => current() && (previewError = errorMessage(e)));
+    // An addon's result has no text preview: its addon's preview page, if it has one, shows it.
+    if (hit && !hit.kind.startsWith("addon:")) load(hit).then((p) => current() && (preview = p), (e) => current() && (previewError = errorMessage(e)));
   });
 
   const load = async (hit: SearchHit): Promise<Preview> => ({ ...(await loadPreview(hit)), label: hitMeta(hit) });
+
+  // An addon's result whose addon has a preview page shows that page, told which entry (`{ id, state }`).
+  loadAddons();
+  const previewAddon = $derived(selected?.kind.startsWith("addon:") ? addons.list.find((a) => a.id === selected.pack && a.preview) : undefined);
+  const previewContext = $derived(selected ? { id: selected.index, state: selected.state } : undefined);
+  /** Its page's `ui.openLibrary`: the addon's Library tab, at that state. */
+  const openLibrary = (id: string) => (state: string | null) => goto(libraryTabAddress(id, state));
 
   // Typing and the chips refine the results in place (no Back step).
   function address(changes: Record<string, string | null>) {
@@ -138,6 +148,7 @@
                 <li>
                   <button class="result" aria-current={hit === selected ? "true" : undefined} onclick={() => (chosen = key(hit))}>
                     <span class="name">{hit.name}</span>
+                    {#if hit.detail}<span class="meta">{hit.detail}</span>{/if}
                     <span class="meta">{hitMeta(hit, false)}</span>
                   </button>
                 </li>
@@ -154,7 +165,18 @@
             <a class="btn" href={hitAddress(selected, libraryHome())}>{strings.preview.open}</a>
           </header>
           <div class="body prose">
-            {#if previewError}
+            {#if previewAddon}
+              {#key previewAddon.id}
+                <AddonFrame
+                  addon={previewAddon}
+                  entry={previewAddon.preview!}
+                  context={previewContext}
+                  onopenlibrary={previewAddon.library && previewAddon.libraryVisible ? openLibrary(previewAddon.id) : undefined}
+                />
+              {/key}
+            {:else if selected.kind.startsWith("addon:")}
+              <!-- An addon without a preview page: the name and Open only. -->
+            {:else if previewError}
               <p class="error" role="alert">{previewError}</p>
             {:else if !preview}
               <p class="muted" role="status">{strings.preview.loading}</p>
@@ -310,6 +332,12 @@
     flex-direction: column;
   }
 
+  /* An addon's preview page takes the pane's whole width (a frame is otherwise 300px, the browser's default). */
+  .preview .body :global(iframe) {
+    display: block;
+    width: 100%;
+  }
+
   .preview header {
     display: flex;
     align-items: center;
@@ -334,6 +362,8 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    /* The pane's whole width: centred, it would shrink to what it holds (an addon's frame starts at 300px). */
+    width: 100%;
     max-width: none;
     padding: var(--space-3) var(--space-5) var(--space-5);
   }

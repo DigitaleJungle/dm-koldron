@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.12] - 2026-11-17
+
+### Added
+
+- Global search finds what addons make findable (search.setEntries, search permission), inside campaigns too: by name, then tags, then summary and text, showing the addon's name and the tags, and opening the addon's Library tab at the entry
+- Addons can show their own page in the search screen's preview pane for their results (preview in the manifest); ui.openLibrary works from it
+
+### Changed
+
+- folders.download no longer takes a checksum; it still returns the file's MD5
+
 ## [0.6.11] - 2026-11-17
 
 ### Added

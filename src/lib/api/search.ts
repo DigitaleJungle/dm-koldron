@@ -14,6 +14,10 @@ export type SearchHit = {
   chapterName: string | null;
   /** The campaign it belongs to; null for pack content, which every campaign shares. */
   campaign: string | null;
+  /** Shown under its name: an addon entry's tags. */
+  detail: string | null;
+  /** An addon entry's place in its Library tab. */
+  state: string | null;
 };
 
 /**

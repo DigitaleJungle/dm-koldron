@@ -98,6 +98,7 @@
           onmousemove={() => (active = i)}
         >
           <span class="name">{hit.name}</span>
+          {#if hit.detail}<span class="meta">{hit.detail}</span>{/if}
           <span class="meta">{hitMeta(hit)}</span>
         </li>
       {/each}

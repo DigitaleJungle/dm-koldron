@@ -11,6 +11,7 @@
   import { campaigns, createCampaign, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
+  import { libraryTabAddress } from "$lib/views/search/search";
   import { version } from "../../../../package.json";
 
   const t = strings.start;
@@ -52,7 +53,7 @@
   let heights = $state<Record<string, number>>({});
   const asideShown = $derived(startPages.some((a) => (heights[a.id] ?? 0) > 0));
   /** A page's `ui.openLibrary`: its addon's Library tab, at that state. */
-  const openLibrary = (id: string) => (state: string | null) => goto(`/library?${new URLSearchParams({ tab: id, ...(state === null ? {} : { state }) })}`);
+  const openLibrary = (id: string) => (state: string | null) => goto(libraryTabAddress(id, state));
 
   onMount(() => {
     campaigns.scope = null; // out of any campaign: search everything

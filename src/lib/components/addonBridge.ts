@@ -12,6 +12,7 @@ import {
   addonHashFile,
   addonDownloadFile,
   addonSecretGet,
+  addonSetSearch,
   addonSecretSet,
   addonSecretDelete,
   addonSetLibraryVisible,
@@ -55,7 +56,7 @@ export type FrameHost = {
   libraryVisible: (visible: boolean) => void;
   /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
   sidebarButton: (shown: boolean) => void;
-  /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only the Start screen page can. */
+  /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only its Start and preview pages can. */
   openLibrary: (state: string | null) => Promise<void>;
   /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
   unsaved: (has: boolean) => void;
@@ -121,7 +122,11 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     case "folders.hash":
       return addonHashFile(addon, String(args[0]), String(args[1]));
     case "folders.download":
-      return addonDownloadFile(addon, String(args[0]), String(args[1]), String(args[2]), args[3] == null ? null : String(args[3]));
+      return addonDownloadFile(addon, String(args[0]), String(args[1]), String(args[2]));
+    case "search.setEntries":
+      if (!Array.isArray(args[0])) throw new Error("search.setEntries needs a list of entries.");
+      await addonSetSearch(addon, args[0]);
+      return null;
     case "secrets.get":
       return addonSecretGet(addon, String(args[0]));
     case "secrets.set":

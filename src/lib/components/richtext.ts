@@ -39,7 +39,7 @@ function tagOf(a: Element): Tag | null {
 }
 
 /** Where a tag opens: the entry in the Catalog, or the character. */
-export const tagAddress = (tag: Tag, base?: string) => hitAddress({ ...tag, source: "", name: "", chapterIndex: null, chapterName: null }, base);
+export const tagAddress = (tag: Tag, base?: string) => hitAddress({ ...tag, source: "", name: "", chapterIndex: null, chapterName: null, detail: null, state: null }, base);
 
 /**
  * The allowed subset of `value` as HTML. `links`: give each tag its address (to show it; Catalog entries in the Library

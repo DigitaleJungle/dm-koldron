@@ -13,7 +13,7 @@ pub const API: u32 = 1;
 const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
-const PERMISSIONS: [&str; 6] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets"];
+const PERMISSIONS: [&str; 7] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search"];
 /// The longest label an addon's Add character item or Library tab may have.
 const MAX_LABEL: usize = 40;
 
@@ -36,6 +36,8 @@ pub struct Manifest {
     pub background: Option<String>,
     /// A page shown on the Start screen, beside the campaigns; it sets its own height (0 hides it).
     pub start: Option<String>,
+    /// A page shown in the search screen's preview pane for the addon's search results (`{ id, state }` in its context).
+    pub preview: Option<String>,
     /// A tab in the app-wide Library labelled `label`, showing the page `entry`.
     pub library: Option<Tab>,
 }
@@ -170,6 +172,9 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
     if let Some(page) = &m.start {
         check_page("start", page, folder, &mut errors);
     }
+    if let Some(page) = &m.preview {
+        check_page("preview", page, folder, &mut errors);
+    }
     if let Some(tab) = &m.library {
         check_label("library", &tab.label, &mut errors);
         check_page("library", &tab.entry, folder, &mut errors);
@@ -229,6 +234,7 @@ mod tests {
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
             "start": "ui/settings.html",
+            "preview": "ui/settings.html",
             "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true }
         })
     }
@@ -245,6 +251,7 @@ mod tests {
         bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
         bad["start"] = "start.js".into();
+        bad["preview"] = "../preview.html".into();
         bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
@@ -254,8 +261,8 @@ mod tests {
         assert_eq!(addons[0].manifest.settings.len(), 2);
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
         // api, id, 3 permissions, section, entry, a second library panel, label, characters page, an unknown owned
-        // field, background page, start page, library label and page
-        assert_eq!(invalid[0].errors.len(), 15, "{:?}", invalid[0].errors);
+        // field, background page, start page, preview page, library label and page
+        assert_eq!(invalid[0].errors.len(), 16, "{:?}", invalid[0].errors);
     }
 
     #[test]

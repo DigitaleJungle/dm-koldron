@@ -85,6 +85,7 @@ pub struct AddonSummary {
     pub characters: Option<crate::addons::MenuPage>,
     pub background: Option<String>,
     pub start: Option<String>,
+    pub preview: Option<String>,
     pub library: Option<crate::addons::Tab>,
     /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
     pub library_visible: bool,
@@ -106,6 +107,7 @@ fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
         characters: a.manifest.characters.clone(),
         background: a.manifest.background.clone(),
         start: a.manifest.start.clone(),
+        preview: a.manifest.preview.clone(),
         library: a.manifest.library.clone(),
         library_visible: library_visible(data, &a.manifest.id),
         license_text: license_in(&a.folder),
@@ -122,6 +124,7 @@ fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
             characters: None,
             background: None,
             start: None,
+            preview: None,
             library: None,
             library_visible: true,
             errors: capped(&i.errors),
@@ -227,6 +230,93 @@ pub async fn addon_fetch(app: AppHandle, addon: String, url: String, method: Opt
         .map_err(failed)?;
         let body = response.body_mut().with_config().limit(MAX_BYTES).read_to_vec().map_err(failed)?;
         Ok(ipc::Response::new(body))
+    })
+    .await
+}
+
+// --- Search ----------------------------------------------------------------------------------------------------------
+
+/// `search.setEntries`: at most this many entries per addon, together at most this much text.
+const MAX_SEARCH_ENTRIES: usize = 50_000;
+const MAX_SEARCH_BYTES: usize = 50 * 1024 * 1024;
+
+/// Something an addon makes findable in global search (`search`): found by its name, then its tags, then its summary
+/// and text; opening it opens the addon's Library tab at `state`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SearchEntry {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub state: Option<String>,
+}
+
+fn check_search_entries(entries: &[SearchEntry]) -> Result<(), StorageError> {
+    if entries.len() > MAX_SEARCH_ENTRIES {
+        return Err(StorageError::Invalid(format!("search.setEntries takes at most {MAX_SEARCH_ENTRIES} entries.")));
+    }
+    let size: usize = entries.iter().map(|e| e.id.len() + e.name.len() + e.tags.iter().map(String::len).sum::<usize>() + e.summary.len() + e.text.len() + e.state.as_ref().map_or(0, String::len)).sum();
+    if size > MAX_SEARCH_BYTES {
+        return Err(StorageError::Invalid(format!("search.setEntries takes at most {} MB of text.", MAX_SEARCH_BYTES / 1024 / 1024)));
+    }
+    for e in entries {
+        // In characters, as documented (and as an addon's JavaScript counts them), not bytes.
+        let chars = |s: &str| s.chars().count();
+        let fits = (1..=200).contains(&chars(&e.id))
+            && !e.name.trim().is_empty()
+            && chars(&e.name) <= 500
+            && e.tags.len() <= 50
+            && e.tags.iter().all(|t| chars(t) <= 100)
+            && chars(&e.summary) <= 2_000
+            && chars(&e.text) <= 20_000
+            && e.state.as_ref().is_none_or(|s| chars(s) <= 2_000);
+        if !fits {
+            return Err(StorageError::Invalid(format!("Search entry \"{}\" is too long or has no id or name.", e.id.chars().take(40).collect::<String>())));
+        }
+    }
+    Ok(())
+}
+
+fn search_file(app: &AppHandle, addon: &str) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("addon-data").join(addon).join("search.json"))
+}
+
+fn read_search_entries(file: &Path) -> Vec<SearchEntry> {
+    // shortcut: an unreadable file just leaves the addon out of search until it sends its entries again.
+    fs::read_to_string(file).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
+}
+
+/// Every loaded addon with `search`, with its name and its entries: for the search index.
+pub fn search_entries(app: &AppHandle) -> Result<Vec<(String, String, Vec<SearchEntry>)>, StorageError> {
+    let mut all = Vec::new();
+    for a in addons(app)?.0.iter().filter(|a| a.allows("search")) {
+        all.push((a.manifest.id.clone(), a.manifest.name.clone(), read_search_entries(&search_file(app, &a.manifest.id)?)));
+    }
+    Ok(all)
+}
+
+/// `search.setEntries`: replaces what the addon makes findable; the next search uses it.
+#[tauri::command]
+pub async fn addon_set_search(app: AppHandle, addon: String, entries: Vec<SearchEntry>) -> Result<(), StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "search")?;
+        check_search_entries(&entries)?;
+        let file = search_file(&app, &addon)?;
+        let json = serde_json::to_string(&entries).expect("entries serialize");
+        // The same list again (a page that loaded) changes nothing: no rebuild of the index before the next search.
+        if fs::read_to_string(&file).is_ok_and(|saved| saved == json) {
+            return Ok(());
+        }
+        fs::create_dir_all(file.parent().expect("has a folder"))?;
+        write_atomic(&file, &json)?;
+        search::changed();
+        Ok(())
     })
     .await
 }
@@ -759,9 +849,9 @@ fn download_target(root: &Path, path: &str) -> Result<PathBuf, StorageError> {
     Ok(parent.join(name))
 }
 
-/// Streams `response` into `target` through a file beside it, which only replaces `target` once it is complete and,
-/// when `md5` is given, matches it. Returns the file's MD5.
-fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path, md5: Option<&str>) -> Result<String, StorageError> {
+/// Streams `response` into `target` through a file beside it, which only replaces `target` once it is complete. Returns
+/// the file's MD5.
+fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path) -> Result<String, StorageError> {
     use md5::{Digest, Md5};
     let mut partial = target.as_os_str().to_owned();
     partial.push(PARTIAL);
@@ -780,12 +870,8 @@ fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path, 
         }
         out.sync_all()?;
         drop(out);
-        let got = format!("{:x}", hasher.finalize());
-        if md5.is_some_and(|want| !want.eq_ignore_ascii_case(&got)) {
-            return Err(StorageError::Invalid("The downloaded file doesn't match its checksum.".into()));
-        }
         fs::rename(&partial, target)?;
-        Ok(got)
+        Ok(format!("{:x}", hasher.finalize()))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&partial); // only a leftover partial file otherwise
@@ -794,9 +880,9 @@ fn save_download(mut response: ureq::http::Response<ureq::Body>, target: &Path, 
 }
 
 /// `folders.download`: downloads an https file (from a `net:<host>` the addon names) to `path` in the folder
-/// (`folders:write`), making its folders; a file already there is replaced only by a complete, matching download.
+/// (`folders:write`), making its folders; a file already there is replaced only by a complete download.
 #[tauri::command]
-pub async fn addon_download_file(app: AppHandle, addon: String, folder: String, path: String, url: String, md5: Option<String>) -> Result<String, StorageError> {
+pub async fn addon_download_file(app: AppHandle, addon: String, folder: String, path: String, url: String) -> Result<String, StorageError> {
     blocking(move || {
         let found = self::addon(&app, &addon)?;
         require(found, "folders:write")?;
@@ -814,7 +900,7 @@ pub async fn addon_download_file(app: AppHandle, addon: String, folder: String, 
                 .into()
         });
         let response = agent.get(&url).call().map_err(|e| StorageError::Io(format!("{}: {e}", shown_url(&url))))?;
-        save_download(response, &target, md5.as_deref())
+        save_download(response, &target)
     })
     .await
 }
@@ -992,6 +1078,26 @@ mod tests {
         }
         fs::write(&target, "hello").unwrap();
         assert_eq!(md5_of(&target).unwrap(), "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[test]
+    fn search_entries_need_an_id_and_a_name_and_stay_within_limits() {
+        let ok = SearchEntry { id: "a".into(), name: "Name".into(), tags: vec!["t".into()], summary: String::new(), text: String::new(), state: None };
+        assert!(check_search_entries(std::slice::from_ref(&ok)).is_ok());
+        for bad in [
+            SearchEntry { id: String::new(), ..ok.clone() },
+            SearchEntry { name: " ".into(), ..ok.clone() },
+            SearchEntry { text: "x".repeat(20_001), ..ok.clone() },
+            SearchEntry { state: Some("x".repeat(2_001)), ..ok.clone() },
+        ] {
+            assert!(check_search_entries(&[bad]).is_err());
+        }
+        // Counted in characters: 20,000 accented letters (40,000 bytes) fit.
+        assert!(check_search_entries(&[SearchEntry { text: "é".repeat(20_000), ..ok.clone() }]).is_ok());
+        assert!(check_search_entries(&vec![ok.clone(); MAX_SEARCH_ENTRIES + 1]).is_err());
+        // Each within its limits, but too much together.
+        let long = SearchEntry { text: "x".repeat(20_000), ..ok };
+        assert!(check_search_entries(&vec![long; MAX_SEARCH_BYTES / 20_000 + 1]).is_err());
     }
 
     #[test]

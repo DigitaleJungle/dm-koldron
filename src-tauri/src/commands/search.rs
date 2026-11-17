@@ -1,9 +1,10 @@
 //! Global search: one SQLite FTS5 index, in memory, over search documents. Every source of searchable content (the
-//! switched-on packs and the active campaigns' characters now; plugins later) adds `Doc`s; the index doesn't know
+//! switched-on packs, the active campaigns' characters, and what addons make findable) adds `Doc`s; the index doesn't know
 //! where they came from.
 
 use crate::commands::campaigns::{self, active_dir};
 use crate::commands::catalog::{also, description_text, KINDS};
+use crate::commands::addons::{search_entries, SearchEntry};
 use crate::commands::characters::{self, class_line};
 use crate::commands::packs::{disabled, enabled, loaded};
 use crate::packs::Pack;
@@ -30,11 +31,16 @@ pub struct Hit {
     pub chapter_name: Option<String>,
     /// The campaign it belongs to; none for what every campaign shares (pack content).
     pub campaign: Option<String>,
+    /// Shown under its name: an addon entry's tags.
+    pub detail: Option<String>,
+    /// An addon entry's place in its Library tab, to open it there.
+    pub state: Option<String>,
 }
 
-/// One searchable thing: its result, and the text searched besides its name.
+/// One searchable thing: its result, and the text searched besides its name (its tags weigh more than the body).
 pub struct Doc {
     pub hit: Hit,
+    pub tags: String,
     pub body: String,
 }
 
@@ -60,8 +66,8 @@ pub fn pack_docs(packs: &[&Pack]) -> Vec<Doc> {
         .flat_map(|kind| packs.iter().flat_map(move |p| p.entries.get(kind).into_iter().flatten().map(move |e| (*p, kind, e))))
         .map(|(pack, kind, entry)| {
             let a = also(pack, kind, entry);
-            let hit = Hit { kind: a.kind, pack: a.pack, source: a.source, index: a.index, name: a.name, chapter_index: a.chapter_index, chapter_name: a.chapter_name, campaign: None };
-            Doc { hit, body: description_text(entry) }
+            let hit = Hit { kind: a.kind, pack: a.pack, source: a.source, index: a.index, name: a.name, chapter_index: a.chapter_index, chapter_name: a.chapter_name, campaign: None, detail: None, state: None };
+            Doc { hit, tags: String::new(), body: description_text(entry) }
         })
         .filter(|d| d.hit.kind != "rule-sections" || d.hit.chapter_index.is_some())
         .collect()
@@ -76,6 +82,7 @@ fn character_docs(dirs: &campaigns::Dirs) -> Vec<Doc> {
         .filter_map(|campaign| Some((characters::list(&active_dir(dirs, &campaign.id).ok()?).ok()?, campaign)))
         .flat_map(|(list, campaign)| {
             list.characters.into_iter().map(move |c| Doc {
+                tags: String::new(),
                 body: format!("{} {}", c.player, class_line(&c)),
                 hit: Hit {
                     kind: "characters".into(),
@@ -86,7 +93,37 @@ fn character_docs(dirs: &campaigns::Dirs) -> Vec<Doc> {
                     chapter_index: None,
                     chapter_name: None,
                     campaign: Some(campaign.id.clone()),
+                    detail: None,
+                    state: None,
                 },
+            })
+        })
+        .collect()
+}
+
+/// What addons make findable (`search.setEntries`): every campaign sees it. Kind `addon:<id>`, source the addon's name.
+pub fn addon_docs(addons: Vec<(String, String, Vec<SearchEntry>)>) -> Vec<Doc> {
+    addons
+        .into_iter()
+        .flat_map(|(id, name, entries)| {
+            entries.into_iter().map(move |e| {
+                let tags = e.tags.join(" · ");
+                Doc {
+                    body: format!("{} {}", e.summary, e.text),
+                    hit: Hit {
+                        kind: format!("addon:{id}"),
+                        pack: id.clone(),
+                        source: name.clone(),
+                        index: e.id,
+                        name: e.name,
+                        chapter_index: None,
+                        chapter_name: None,
+                        campaign: None,
+                        detail: (!tags.is_empty()).then(|| tags.clone()),
+                        state: e.state,
+                    },
+                    tags,
+                }
             })
         })
         .collect()
@@ -94,18 +131,19 @@ fn character_docs(dirs: &campaigns::Dirs) -> Vec<Doc> {
 
 pub fn build(docs: &[Doc]) -> Result<Connection, StorageError> {
     let db = Connection::open_in_memory().map_err(sql_error)?;
-    // name and body first: bm25's weights below are per column, in this order.
+    // name, tags and body first: bm25's weights below are per column, in this order.
     db.execute_batch(
-        "CREATE VIRTUAL TABLE docs USING fts5(name, body, kind UNINDEXED, pack UNINDEXED, source UNINDEXED,
-            idx UNINDEXED, chapter_index UNINDEXED, chapter_name UNINDEXED, campaign UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');",
+        "CREATE VIRTUAL TABLE docs USING fts5(name, tags, body, kind UNINDEXED, pack UNINDEXED, source UNINDEXED,
+            idx UNINDEXED, chapter_index UNINDEXED, chapter_name UNINDEXED, campaign UNINDEXED, state UNINDEXED,
+            tokenize = 'unicode61 remove_diacritics 2');",
     )
     .map_err(sql_error)?;
     let tx = db.unchecked_transaction().map_err(sql_error)?;
     {
-        let mut insert = tx.prepare("INSERT INTO docs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)").map_err(sql_error)?;
-        for Doc { hit: h, body } in docs {
+        let mut insert = tx.prepare("INSERT INTO docs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)").map_err(sql_error)?;
+        for Doc { hit: h, tags, body } in docs {
             insert
-                .execute(params![h.name, body, h.kind, h.pack, h.source, h.index, h.chapter_index, h.chapter_name, h.campaign])
+                .execute(params![h.name, tags, body, h.kind, h.pack, h.source, h.index, h.chapter_index, h.chapter_name, h.campaign, h.state])
                 .map_err(sql_error)?;
         }
     }
@@ -134,9 +172,9 @@ pub fn search(db: &Connection, query: &str, limit: Option<u32>, campaign: Option
     }
     let mut select = db
         .prepare_cached(
-            "SELECT kind, pack, source, idx, name, chapter_index, chapter_name, campaign FROM docs
+            "SELECT kind, pack, source, idx, name, chapter_index, chapter_name, campaign, tags, state FROM docs
              WHERE docs MATCH ?1 AND (?4 IS NULL OR campaign IS NULL OR campaign = ?4)
-             ORDER BY lower(name) LIKE ?2 ESCAPE '\\' DESC, bm25(docs, 10.0, 1.0), name LIMIT ?3",
+             ORDER BY lower(name) LIKE ?2 ESCAPE '\\' DESC, bm25(docs, 10.0, 3.0, 1.0), name LIMIT ?3",
         )
         .map_err(sql_error)?;
     let starts = escape_like(query.trim().to_lowercase()) + "%";
@@ -151,6 +189,8 @@ pub fn search(db: &Connection, query: &str, limit: Option<u32>, campaign: Option
                 chapter_index: r.get(5)?,
                 chapter_name: r.get(6)?,
                 campaign: r.get(7)?,
+                detail: Some(r.get::<_, String>(8)?).filter(|t| !t.is_empty()),
+                state: r.get(9)?,
             })
         })
         .map_err(sql_error)?;
@@ -175,6 +215,7 @@ fn with_index<T>(app: &AppHandle, work: impl FnOnce(&Connection) -> Result<T, St
     if index.as_ref().is_none_or(|(built_for, _)| *built_for != wanted) {
         let mut docs = pack_docs(&enabled(&loaded(app)?.0, &wanted.0));
         docs.extend(character_docs(&campaigns::dirs(app)?));
+        docs.extend(addon_docs(search_entries(app)?));
         *index = Some((wanted, build(&docs)?));
     }
     work(&index.as_ref().expect("built above").1)
@@ -203,6 +244,26 @@ mod tests {
     fn srd_index() -> Connection {
         let (packs, _) = load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs")).unwrap();
         build(&pack_docs(&packs.iter().collect::<Vec<_>>())).unwrap()
+    }
+
+    #[test]
+    fn addon_entries_are_found_by_name_tags_and_text_everywhere() {
+        let entry = |id: &str, name: &str, tags: &[&str], summary: &str| SearchEntry {
+            id: id.into(),
+            name: name.into(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            summary: summary.into(),
+            text: String::new(),
+            state: Some(format!("state-{id}")),
+        };
+        let entries = vec![entry("1", "Tomb of Doom", &["swamp", "undead"], "A crypt."), entry("2", "Coastal Maps", &[], "Swamp encounters.")];
+        let db = build(&addon_docs(vec![("shelf".into(), "Shelf".into(), entries)])).unwrap();
+        let hit = search(&db, "tomb", None, Some("any-campaign")).unwrap().remove(0);
+        assert_eq!((hit.kind.as_str(), hit.pack.as_str(), hit.source.as_str(), hit.index.as_str()), ("addon:shelf", "shelf", "Shelf", "1"));
+        assert_eq!((hit.detail.as_deref(), hit.state.as_deref()), (Some("swamp · undead"), Some("state-1")));
+        // A tag counts more than a summary.
+        let swamp: Vec<_> = search(&db, "swamp", None, None).unwrap().into_iter().map(|h| h.index).collect();
+        assert_eq!(swamp, ["1", "2"]);
     }
 
     fn names(db: &Connection, query: &str, limit: Option<u32>) -> Vec<String> {

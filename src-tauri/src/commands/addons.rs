@@ -59,20 +59,35 @@ fn addons(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
 /// The user's disabled addons (Settings → Addons): ids, in the data folder. They aren't loaded.
 const DISABLED_FILE: &str = "disabled-addons.json";
 
+/// For loading: a list that can't be read disables nothing (changing it is refused, see `edit_list`).
 fn disabled_addons(data: &Path) -> Vec<String> {
-    fs::read_to_string(data.join(DISABLED_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    read_list(&data.join(DISABLED_FILE)).unwrap_or_default()
 }
 
 fn set_disabled(data: &Path, id: &str, off: bool) -> Result<(), StorageError> {
-    let mut ids = disabled_addons(data);
-    if ids.contains(&id.to_string()) == off {
+    edit_list(&data.join(DISABLED_FILE), id, off)
+}
+
+/// A JSON list of names: empty when there's no file, `Corrupt` when it can't be read.
+fn read_list(path: &Path) -> Result<Vec<String>, StorageError> {
+    match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| StorageError::Corrupt(format!("{}: {e}", path.display()))),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Adds `item` to the list in `path` (`keep`) or takes it out. A list that can't be read is never saved over.
+fn edit_list(path: &Path, item: &str, keep: bool) -> Result<(), StorageError> {
+    let mut items = read_list(path)?;
+    if items.iter().any(|i| i == item) == keep {
         return Ok(());
     }
-    ids.retain(|i| i != id);
-    if off {
-        ids.push(id.to_string());
+    items.retain(|i| i != item);
+    if keep {
+        items.push(item.to_string());
     }
-    write_atomic(&data.join(DISABLED_FILE), &serde_json::to_string(&ids).map_err(|e| StorageError::Io(e.to_string()))?)
+    write_atomic(path, &serde_json::to_string(&items).map_err(|e| StorageError::Io(e.to_string()))?)
 }
 
 /// Each loaded addon's id with the character fields it owns (a character linked to an addon that isn't loaded is an
@@ -353,7 +368,8 @@ fn read_search_entries(file: &Path) -> Vec<SearchEntry> {
 /// Every loaded addon with `search`, with its name and its entries: for the search index.
 pub fn search_entries(app: &AppHandle) -> Result<Vec<(String, String, Vec<SearchEntry>)>, StorageError> {
     let mut all = Vec::new();
-    for a in addons(app)?.0.iter().filter(|a| a.allows("search")) {
+    // Not one uninstalled since start: its entries go at once, like its pages.
+    for a in addons(app)?.0.iter().filter(|a| a.allows("search") && a.folder.is_dir()) {
         all.push((a.manifest.id.clone(), a.manifest.name.clone(), read_search_entries(&search_file(app, &a.manifest.id)?)));
     }
     Ok(all)
@@ -405,20 +421,8 @@ fn secret_names_file(data: &Path, addon: &str) -> PathBuf {
     data.join("addon-data").join(addon).join("secrets.json")
 }
 
-fn secret_names(data: &Path, addon: &str) -> Vec<String> {
-    fs::read_to_string(secret_names_file(data, addon)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
-}
-
 fn note_secret(data: &Path, addon: &str, name: &str, kept: bool) -> Result<(), StorageError> {
-    let mut names = secret_names(data, addon);
-    if names.iter().any(|n| n == name) == kept {
-        return Ok(());
-    }
-    names.retain(|n| n != name);
-    if kept {
-        names.push(name.to_string());
-    }
-    write_atomic(&secret_names_file(data, addon), &serde_json::to_string(&names).map_err(|e| StorageError::Io(e.to_string()))?)
+    edit_list(&secret_names_file(data, addon), name, kept)
 }
 
 fn keychain_error(e: &keyring::Error) -> StorageError {
@@ -1331,7 +1335,7 @@ fn uninstall(
     let _ = fs::remove_dir_all(&aside); // what's left goes with the staging folder
     set_disabled(data, id, false)?;
     if delete_data {
-        for name in secret_names(data, id) {
+        for name in read_list(&secret_names_file(data, id))? {
             delete_secret(&name)?;
         }
         discard(&data.join("addon-data").join(id))?;
@@ -1349,7 +1353,9 @@ pub async fn uninstall_addon(app: AppHandle, id: String, delete_data: bool) -> R
         uninstall(&data, &staging_dir(&app)?, &id, delete_data, |name| match keychain_entry(&app, &id, name)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(keychain_error(&e)),
-        })
+        })?;
+        search::changed(); // its entries leave global search
+        Ok(())
     })
     .await
 }
@@ -1631,5 +1637,19 @@ mod tests {
         assert!(!row("broken").errors.is_empty());
         assert_eq!(got("removed"), (true, Some("1.0"), true));
         assert_eq!(rows.len(), 5);
+    }
+
+    #[test]
+    fn a_name_list_that_cant_be_read_is_never_saved_over() {
+        let dir = temp_dir("lists");
+        let list = dir.join("list.json");
+        edit_list(&list, "a", true).unwrap();
+        edit_list(&list, "b", true).unwrap();
+        edit_list(&list, "a", false).unwrap();
+        assert_eq!(read_list(&list).unwrap(), ["b"]);
+        fs::write(&list, "not json").unwrap();
+        assert!(matches!(edit_list(&list, "c", true), Err(StorageError::Corrupt(_))));
+        assert_eq!(fs::read_to_string(&list).unwrap(), "not json");
+        assert!(disabled_addons(&dir).is_empty());
     }
 }

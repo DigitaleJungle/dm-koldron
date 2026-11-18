@@ -109,9 +109,22 @@
   // Ready locks the encounter: nothing in it can change until the pencil puts it back to Draft.
   const locked = $derived(encounter?.status === "ready");
 
-  /** Saves the changes, with `status` (Ready and back to Draft save at once). */
+  let inflight: Promise<boolean> | null = null;
+
+  /** Saves the changes, with `status` (Ready and back to Draft save at once), after a save under way. */
   async function save(status = encounter?.status ?? "draft"): Promise<boolean> {
-    if (saving) return false;
+    while (inflight) await inflight;
+    // The save just finished may have saved everything already.
+    if (!changed && status === (encounter?.status ?? "draft")) return true;
+    inflight = write(status);
+    try {
+      return await inflight;
+    } finally {
+      inflight = null;
+    }
+  }
+
+  async function write(status: Encounter["status"]): Promise<boolean> {
     saving = true;
     saveError = null;
     const sent = snapshot();

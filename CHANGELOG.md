@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1] - 2026-11-18
+
+### Fixed
+
+- Uninstalling an addon removes its entries from global search at once, instead of after a restart
+- A damaged list of disabled addons or addon secret names is no longer saved over; changing it shows an error instead
+- Ending an encounter while a linked character syncs no longer brings the finished fight back as running
+- Encounter builder: choosing Save when leaving while a save is under way waits for it instead of doing nothing
+
 ## [0.7.0] - 2026-11-18
 
 ### Added

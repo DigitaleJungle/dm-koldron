@@ -191,6 +191,7 @@
   /** Shows the change at once and saves it after the saves before it. */
   function commit(next: Run) {
     run = next;
+    if (ending) return; // End has saved and is removing the run: a save now would bring it back
     const copy = $state.snapshot(next) as Run;
     saving = saving.then(() =>
       saveRun(campaign, id, copy).then(

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.13] - 2026-11-18
+
+### Fixed
+
+- Settings → Animations now reaches addon pages too, so turning animations on or off in Koldron works there even when the system setting says otherwise.
+
 ## [0.6.12] - 2026-11-17
 
 ### Added

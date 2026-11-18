@@ -69,6 +69,8 @@
   });
   // Also in the page's address (?theme=), so the page can show it before its first paint.
   const theme = () => document.documentElement.dataset.theme ?? "light";
+  // Settings → Animations (?motion=reduce|full): the frame only sees the OS's reduce-motion otherwise.
+  const motion = () => document.documentElement.dataset.motion ?? "full";
 
   $effect(() => {
     const sent = $state.snapshot(context);
@@ -126,7 +128,7 @@
 
 <iframe
   bind:this={frame}
-  src="{addonUrl(addon.id, entry)}?theme={theme()}"
+  src="{addonUrl(addon.id, entry)}?theme={theme()}&motion={motion()}"
   title={addon.name}
   sandbox="allow-scripts allow-forms"
   class:hidden

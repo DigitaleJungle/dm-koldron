@@ -9,7 +9,6 @@
   let texts = $state<LicenseText[]>();
   let error = $state<string>();
   let addons = $state<AddonSummary[]>([]);
-  let addonsError = $state<string>();
 
   $effect(() => {
     licenseTexts()
@@ -17,7 +16,7 @@
       .catch((e) => (error = errorMessage(e)));
     listAddons()
       .then((list) => (addons = list))
-      .catch((e) => (addonsError = errorMessage(e)));
+      .catch(() => {}); // Settings → Addons shows why; the app's own license texts still show
   });
 </script>
 
@@ -43,31 +42,6 @@
   <p>{t.srdApi}</p>
   <p>{t.tabler}</p>
 </section>
-
-{#if addonsError}
-  <p class="error" role="alert">{t.addonsError(addonsError)}</p>
-{:else if addons.length > 0}
-  <section>
-    <h3>{t.addons}</h3>
-    <ul>
-      {#each addons as addon (addon.id)}
-        <li>
-          <p class="name">{addon.name}</p>
-          {#if addon.errors.length === 0}
-            <p class="muted">{t.addonDetails(addon.version, addon.license)}</p>
-          {:else}
-            <p class="invalid">{t.addonInvalid}</p>
-            <ul class="errors">
-              {#each addon.errors as problem, i (i)}
-                <li>{problem}</li>
-              {/each}
-            </ul>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  </section>
-{/if}
 
 <section>
   <h3>{t.texts}</h3>
@@ -139,30 +113,6 @@
     font-size: var(--text-xs);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-
-  ul {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    list-style: none;
-  }
-
-  .name {
-    font-weight: var(--weight-medium);
-  }
-
-  .invalid {
-    color: var(--color-danger);
-    font-weight: var(--weight-medium);
-  }
-
-  .errors {
-    gap: var(--space-1);
-    padding-left: var(--space-4);
-    list-style: disc;
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
   }
 
   .error {

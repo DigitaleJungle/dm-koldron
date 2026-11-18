@@ -1,6 +1,6 @@
 [package]
 name = "dm-koldron"
-version = "0.6.13"
+version = "0.7.0"
 description = "Desktop companion for Dungeon Masters running in-person sessions"
 authors = ["David Delanoye"]
 license = "MPL-2.0"
@@ -31,6 +31,8 @@ ureq = "3"
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
 # Checksums for `folders.download` and `folders.hash`.
 md-5 = "0.10"
+# Installs an addon from a .zip (Settings → Addons); reading only, deflate and stored entries.
+zip = { version = "9.7.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

@@ -2,7 +2,7 @@
 //! their sandboxed frames make through the window's bridge. Every call names the addon and is checked here against the
 //! permissions its manifest declares; the window is not trusted to have checked.
 
-use crate::addons::{https_host, load_dir, Addon};
+use crate::addons::{https_host, load_dir, read_new, Addon, Manifest, MANIFEST};
 use crate::commands::about::license_in;
 use crate::commands::campaigns::{active_dir, dirs, now_ms};
 use crate::commands::characters::{self, Character, Editor};
@@ -39,16 +39,40 @@ fn lock_pack_change() -> std::sync::MutexGuard<'static, ()> {
     PACK_CHANGE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-// shortcut: addons are read once per run; there's no install UI, so a new addon needs a restart. Reload here when one comes.
+// shortcut: addons are read once per run, so installing, enabling, disabling or uninstalling one needs a restart
+// (Settings → Addons offers one). Reload here if that gets in the way.
 static ADDONS: OnceLock<Loaded> = OnceLock::new();
 
-/// Blocking: call it inside `blocking`.
+/// The addons running this session: the valid, enabled ones as they were at start (and the invalid ones). Blocking:
+/// call it inside `blocking`.
 fn addons(app: &AppHandle) -> Result<&'static Loaded, StorageError> {
     if let Some(loaded) = ADDONS.get() {
         return Ok(loaded);
     }
-    let loaded = load_dir(&data_dir(app)?.join("addons"))?;
-    Ok(ADDONS.get_or_init(|| loaded))
+    let data = data_dir(app)?;
+    let (mut valid, invalid) = load_dir(&data.join("addons"))?;
+    let off = disabled_addons(&data);
+    valid.retain(|a| !off.contains(&a.manifest.id));
+    Ok(ADDONS.get_or_init(|| (valid, invalid)))
+}
+
+/// The user's disabled addons (Settings → Addons): ids, in the data folder. They aren't loaded.
+const DISABLED_FILE: &str = "disabled-addons.json";
+
+fn disabled_addons(data: &Path) -> Vec<String> {
+    fs::read_to_string(data.join(DISABLED_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+fn set_disabled(data: &Path, id: &str, off: bool) -> Result<(), StorageError> {
+    let mut ids = disabled_addons(data);
+    if ids.contains(&id.to_string()) == off {
+        return Ok(());
+    }
+    ids.retain(|i| i != id);
+    if off {
+        ids.push(id.to_string());
+    }
+    write_atomic(&data.join(DISABLED_FILE), &serde_json::to_string(&ids).map_err(|e| StorageError::Io(e.to_string()))?)
 }
 
 /// Each loaded addon's id with the character fields it owns (a character linked to an addon that isn't loaded is an
@@ -61,8 +85,10 @@ fn owns(addon: &Addon) -> &[String] {
     addon.manifest.characters.as_ref().map_or(&[], |c| c.owns.as_slice())
 }
 
+/// A running addon. One uninstalled since start (its folder gone) is refused, so it can't write back data the
+/// uninstall deleted.
 fn addon(app: &AppHandle, id: &str) -> Result<&'static Addon, StorageError> {
-    addons(app)?.0.iter().find(|a| a.manifest.id == id).ok_or_else(|| StorageError::NotFound(format!("No addon \"{id}\" is loaded.")))
+    addons(app)?.0.iter().find(|a| a.manifest.id == id && a.folder.is_dir()).ok_or_else(|| StorageError::NotFound(format!("No addon \"{id}\" is loaded.")))
 }
 
 fn require(addon: &Addon, permission: &str) -> Result<(), StorageError> {
@@ -91,51 +117,83 @@ pub struct AddonSummary {
     pub library_visible: bool,
     /// The license file in its folder, if it has one.
     pub license_text: Option<String>,
-    /// Empty for a loaded addon. An addon with errors isn't loaded.
+    /// Empty for a valid addon. An addon with errors isn't loaded.
     pub errors: Vec<String>,
+    /// Whether the user has it enabled; a disabled one isn't loaded on the next start.
+    pub enabled: bool,
+    /// The version running this session; `None` when it isn't running (disabled, invalid, or installed since start).
+    pub loaded_version: Option<String>,
+    /// Uninstalled since start: its pages and calls stop at once, the rest goes on the restart.
+    pub removed: bool,
 }
 
-/// `data`: the data folder.
-fn summaries_of((addons, invalid): &Loaded, data: &Path) -> Vec<AddonSummary> {
-    let dir = data.join("addons");
-    let valid = addons.iter().map(|a| AddonSummary {
-        id: a.manifest.id.clone(),
-        name: a.manifest.name.clone(),
-        version: a.manifest.version.clone(),
-        license: a.manifest.license.clone(),
-        settings: a.manifest.settings.clone(),
-        characters: a.manifest.characters.clone(),
-        background: a.manifest.background.clone(),
-        start: a.manifest.start.clone(),
-        preview: a.manifest.preview.clone(),
-        library: a.manifest.library.clone(),
-        library_visible: library_visible(data, &a.manifest.id),
-        license_text: license_in(&a.folder),
+fn summary(addon: &Addon, data: &Path) -> AddonSummary {
+    let m = &addon.manifest;
+    AddonSummary {
+        id: m.id.clone(),
+        name: m.name.clone(),
+        version: m.version.clone(),
+        license: m.license.clone(),
+        settings: m.settings.clone(),
+        characters: m.characters.clone(),
+        background: m.background.clone(),
+        start: m.start.clone(),
+        preview: m.preview.clone(),
+        library: m.library.clone(),
+        library_visible: library_visible(data, &m.id),
+        license_text: license_in(&addon.folder),
         errors: Vec::new(),
+        enabled: true,
+        loaded_version: None,
+        removed: false,
+    }
+}
+
+/// The addons folder as it is now (`on_disk`), next to the addons running since start. `data`: the data folder.
+fn summaries_of(on_disk: &Loaded, running: &[Addon], data: &Path) -> Vec<AddonSummary> {
+    let (addons, invalid) = on_disk;
+    let dir = data.join("addons");
+    let off = disabled_addons(data);
+    let loaded_version = |id: &str| running.iter().find(|r| r.manifest.id == id).map(|r| r.manifest.version.clone());
+    let valid = addons.iter().map(|a| AddonSummary {
+        enabled: !off.contains(&a.manifest.id),
+        loaded_version: loaded_version(&a.manifest.id),
+        ..summary(a, data)
     });
-    let invalid = invalid.iter().map(|i| {
-        AddonSummary {
-            name: i.name.clone().unwrap_or_else(|| i.folder.clone()),
-            license_text: license_in(&dir.join(&i.folder)),
-            id: i.folder.clone(),
-            version: String::new(),
-            license: String::new(),
-            settings: Vec::new(),
-            characters: None,
-            background: None,
-            start: None,
-            preview: None,
-            library: None,
-            library_visible: true,
-            errors: capped(&i.errors),
-        }
+    let invalid_rows = invalid.iter().map(|i| AddonSummary {
+        name: i.name.clone().unwrap_or_else(|| i.folder.clone()),
+        license_text: license_in(&dir.join(&i.folder)),
+        id: i.folder.clone(),
+        version: String::new(),
+        license: String::new(),
+        settings: Vec::new(),
+        characters: None,
+        background: None,
+        start: None,
+        preview: None,
+        library: None,
+        library_visible: true,
+        errors: capped(&i.errors),
+        enabled: !off.contains(&i.folder),
+        loaded_version: loaded_version(&i.folder),
+        removed: false,
     });
-    valid.chain(invalid).collect()
+    let present = |id: &str| addons.iter().any(|a| a.manifest.id == id) || invalid.iter().any(|i| i.folder == id);
+    let removed = running.iter().filter(|r| !present(&r.manifest.id)).map(|r| AddonSummary {
+        loaded_version: Some(r.manifest.version.clone()),
+        removed: true,
+        ..summary(r, data)
+    });
+    valid.chain(invalid_rows).chain(removed).collect()
 }
 
 #[tauri::command]
 pub async fn list_addons(app: AppHandle) -> Result<Vec<AddonSummary>, StorageError> {
-    blocking(move || Ok(summaries_of(addons(&app)?, &data_dir(&app)?))).await
+    blocking(move || {
+        let data = data_dir(&app)?;
+        Ok(summaries_of(&load_dir(&data.join("addons"))?, &addons(&app)?.0, &data))
+    })
+    .await
 }
 
 /// `packs.list`: every pack, valid or not.
@@ -333,7 +391,34 @@ fn secret(app: &AppHandle, addon: &str, name: &str) -> Result<keyring::Entry, St
     if !plain {
         return Err(StorageError::Invalid("A secret's name is 1–64 letters, digits, '-', '_' or '.'.".into()));
     }
+    keychain_entry(app, addon, name)
+}
+
+fn keychain_entry(app: &AppHandle, addon: &str, name: &str) -> Result<keyring::Entry, StorageError> {
     keyring::Entry::new(&app.config().identifier, &format!("addon:{addon}:{name}")).map_err(|e| keychain_error(&e))
+}
+
+/// The names of an addon's secrets, so deleting its data can delete them too: the keychain can't list them.
+// shortcut: secrets set before names were recorded (before v0.7) aren't listed, so they stay in the keychain; record
+// them some other way if that matters.
+fn secret_names_file(data: &Path, addon: &str) -> PathBuf {
+    data.join("addon-data").join(addon).join("secrets.json")
+}
+
+fn secret_names(data: &Path, addon: &str) -> Vec<String> {
+    fs::read_to_string(secret_names_file(data, addon)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+fn note_secret(data: &Path, addon: &str, name: &str, kept: bool) -> Result<(), StorageError> {
+    let mut names = secret_names(data, addon);
+    if names.iter().any(|n| n == name) == kept {
+        return Ok(());
+    }
+    names.retain(|n| n != name);
+    if kept {
+        names.push(name.to_string());
+    }
+    write_atomic(&secret_names_file(data, addon), &serde_json::to_string(&names).map_err(|e| StorageError::Io(e.to_string()))?)
 }
 
 fn keychain_error(e: &keyring::Error) -> StorageError {
@@ -358,7 +443,8 @@ pub async fn addon_secret_set(app: AppHandle, addon: String, name: String, value
         if value.is_empty() || value.len() > MAX_SECRET {
             return Err(StorageError::Invalid(format!("A secret is 1–{MAX_SECRET} bytes.")));
         }
-        secret(&app, &addon, &name)?.set_password(&value).map_err(|e| keychain_error(&e))
+        secret(&app, &addon, &name)?.set_password(&value).map_err(|e| keychain_error(&e))?;
+        note_secret(&data_dir(&app)?, &addon, &name, true)
     })
     .await
 }
@@ -366,9 +452,12 @@ pub async fn addon_secret_set(app: AppHandle, addon: String, name: String, value
 /// `secrets.delete`: also when there's none.
 #[tauri::command]
 pub async fn addon_secret_delete(app: AppHandle, addon: String, name: String) -> Result<(), StorageError> {
-    blocking(move || match secret(&app, &addon, &name)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(keychain_error(&e)),
+    blocking(move || {
+        match secret(&app, &addon, &name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => return Err(keychain_error(&e)),
+        }
+        note_secret(&data_dir(&app)?, &addon, &name, false)
     })
     .await
 }
@@ -1042,6 +1131,235 @@ fn content_type(path: &str) -> &'static str {
     }
 }
 
+// ---- Installing an addon from a .zip (Settings → Addons): the main window's calls, not an addon's. ---------------
+
+/// One install at a time: they share the staging folder.
+static ADDON_INSTALL: Mutex<()> = Mutex::new(());
+
+fn lock_install() -> std::sync::MutexGuard<'static, ()> {
+    ADDON_INSTALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Where a picked .zip is unzipped until it's installed or discarded.
+fn staging_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("addon-staging"))
+}
+
+/// Unzips into `dest`: only paths inside it, no links, at most `MAX_FILES` files and `limit` bytes unzipped.
+fn unzip(zip: impl Read + Seek, dest: &Path, limit: u64) -> Result<(), StorageError> {
+    let unreadable = |e: zip::result::ZipError| StorageError::Invalid(format!("Not a readable .zip file: {e}"));
+    let mut archive = zip::ZipArchive::new(zip).map_err(unreadable)?;
+    if archive.len() > MAX_FILES {
+        return Err(StorageError::Invalid(format!("The .zip has more than {MAX_FILES} files.")));
+    }
+    let mut left = limit;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(unreadable)?;
+        let path = entry.enclosed_name().filter(|_| !entry.is_symlink());
+        let Some(path) = path else { return Err(StorageError::Invalid(format!("\"{}\" points outside the addon.", entry.name().unwrap_or_default()))) };
+        if path.as_os_str().is_empty() {
+            continue; // "." or "./": the folder itself
+        }
+        let target = dest.join(path);
+        if entry.is_dir() {
+            fs::create_dir_all(&target)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        // Counted while unzipping: the sizes a .zip states can lie.
+        let written = io::copy(&mut (&mut entry).take(left + 1), &mut fs::File::create(&target)?)?;
+        if written > left {
+            return Err(StorageError::Invalid(format!("The addon is larger than {} MB unzipped.", limit / 1024 / 1024)));
+        }
+        left -= written;
+    }
+    Ok(())
+}
+
+/// The unzipped addon's folder: the .zip's top level, or the one folder in it with a manifest (a zipped folder).
+fn addon_root(dir: &Path) -> Result<PathBuf, StorageError> {
+    if dir.join(MANIFEST).is_file() {
+        return Ok(dir.to_path_buf());
+    }
+    let mut found = fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.join(MANIFEST).is_file());
+    match (found.next(), found.next()) {
+        (Some(root), None) => Ok(root),
+        _ => Err(StorageError::Invalid(format!("The .zip has no {MANIFEST} at its top or in one folder."))),
+    }
+}
+
+fn checked(root: &Path) -> Result<Manifest, StorageError> {
+    read_new(root).map_err(|errors| StorageError::Invalid(format!("This addon can't be installed. {}", capped(&errors).join(" "))))
+}
+
+fn discard(staging: &Path) -> Result<(), StorageError> {
+    match fs::remove_dir_all(staging) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
+}
+
+/// Unzips `zip` into `staging` (replacing an earlier unzipped addon) and checks the addon in it. Only its own
+/// subfolder is cleared, so a leftover of an uninstall that's still locked can't block an install.
+fn stage(zip: &Path, staging: &Path) -> Result<Manifest, StorageError> {
+    let unzipped = staging.join("unzipped");
+    discard(&unzipped)?;
+    fs::create_dir_all(&unzipped)?;
+    let result = unzip(fs::File::open(zip)?, &unzipped, MAX_BYTES).and_then(|()| checked(&addon_root(&unzipped)?));
+    if result.is_err() {
+        let _ = discard(&unzipped);
+    }
+    result
+}
+
+/// Windows refuses to move a folder another program has open (an editor, File Explorer): say that, not "os error 5".
+fn move_addon_folder(from: &Path, to: &Path) -> Result<(), StorageError> {
+    fs::rename(from, to).map_err(|e| match e.kind() {
+        io::ErrorKind::PermissionDenied => StorageError::Io(
+            "Another program has the addon's folder open, such as an editor or File Explorer. Close it there and try again.".into(),
+        ),
+        _ => e.into(),
+    })
+}
+
+/// Moves the staged addon to `addons/<id>`, replacing the one with that id; on failure the old one is put back.
+/// Its saved data (`addon-data/<id>/`) is never touched.
+fn install(staging: &Path, addons: &Path) -> Result<(), StorageError> {
+    let root = addon_root(&staging.join("unzipped"))?;
+    let target = addons.join(&checked(&root)?.id);
+    let old = staging.join("old");
+    let _ = fs::remove_dir_all(&old);
+    fs::create_dir_all(addons)?;
+    let replacing = target.exists();
+    if replacing {
+        move_addon_folder(&target, &old)?;
+    }
+    if let Err(e) = fs::rename(&root, &target) {
+        if replacing {
+            let _ = fs::rename(&old, &target);
+        }
+        return Err(e.into());
+    }
+    let _ = discard(staging);
+    Ok(())
+}
+
+/// What the user confirms before an install.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StagedAddon {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub permissions: Vec<String>,
+    /// The version of the addon with this id that it replaces ("" when that one's manifest can't be read); `None`
+    /// when there's none.
+    pub replaces: Option<String>,
+}
+
+/// The user picks an addon's .zip; it's unzipped and checked, waiting for `install_staged_addon`. `None`: cancelled.
+#[tauri::command]
+pub async fn stage_addon(app: AppHandle) -> Result<Option<StagedAddon>, StorageError> {
+    blocking(move || {
+        let Some(zip) = picked_path(dialog(&app).add_filter("Addon", &["zip"]).blocking_pick_file())? else { return Ok(None) };
+        let _lock = lock_install();
+        let manifest = stage(&zip, &staging_dir(&app)?)?;
+        let current = data_dir(&app)?.join("addons").join(&manifest.id);
+        let replaces = current.is_dir().then(|| {
+            let text = fs::read_to_string(current.join(MANIFEST)).unwrap_or_default();
+            serde_json::from_str::<Value>(&text).ok().and_then(|v| v["version"].as_str().map(str::to_string)).unwrap_or_default()
+        });
+        Ok(Some(StagedAddon { id: manifest.id, name: manifest.name, version: manifest.version, permissions: manifest.permissions, replaces }))
+    })
+    .await
+}
+
+/// Installs the staged addon; it loads on the next start.
+#[tauri::command]
+pub async fn install_staged_addon(app: AppHandle) -> Result<(), StorageError> {
+    blocking(move || {
+        let _lock = lock_install();
+        install(&staging_dir(&app)?, &data_dir(&app)?.join("addons"))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn discard_staged_addon(app: AppHandle) -> Result<(), StorageError> {
+    blocking(move || {
+        let _lock = lock_install();
+        discard(&staging_dir(&app)?)
+    })
+    .await
+}
+
+fn installed_folder(data: &Path, id: &str) -> Result<PathBuf, StorageError> {
+    crate::storage::check_id(id, "addon")?;
+    let folder = data.join("addons").join(id);
+    if folder.is_dir() { Ok(folder) } else { Err(StorageError::NotFound(format!("No addon \"{id}\" is installed."))) }
+}
+
+/// Enables or disables an installed addon; it takes effect on the next start.
+#[tauri::command]
+pub async fn set_addon_enabled(app: AppHandle, id: String, enabled: bool) -> Result<(), StorageError> {
+    blocking(move || {
+        let data = data_dir(&app)?;
+        installed_folder(&data, &id)?;
+        let _lock = lock_install();
+        set_disabled(&data, &id, !enabled)
+    })
+    .await
+}
+
+/// Removes `addons/<id>`: moved aside in one step (the step that can fail on a locked file, so it goes first and
+/// nothing else is touched if it does), then deleted. With `delete_data`, each of its secrets (`delete_secret`) and
+/// `addon-data/<id>/` go too. Packs it installed stay.
+fn uninstall(
+    data: &Path,
+    staging: &Path,
+    id: &str,
+    delete_data: bool,
+    delete_secret: impl Fn(&str) -> Result<(), StorageError>,
+) -> Result<(), StorageError> {
+    let folder = installed_folder(data, id)?;
+    fs::create_dir_all(staging)?;
+    let aside = staging.join(format!("removed-{id}"));
+    let _ = fs::remove_dir_all(&aside);
+    move_addon_folder(&folder, &aside)?;
+    let _ = fs::remove_dir_all(&aside); // what's left goes with the staging folder
+    set_disabled(data, id, false)?;
+    if delete_data {
+        for name in secret_names(data, id) {
+            delete_secret(&name)?;
+        }
+        discard(&data.join("addon-data").join(id))?;
+    }
+    Ok(())
+}
+
+/// Uninstalls an addon; its pages and calls stop at once. `delete_data`: its saved data and its secrets go too.
+#[tauri::command]
+pub async fn uninstall_addon(app: AppHandle, id: String, delete_data: bool) -> Result<(), StorageError> {
+    blocking(move || {
+        let data = data_dir(&app)?;
+        installed_folder(&data, &id)?;
+        let _lock = lock_install();
+        uninstall(&data, &staging_dir(&app)?, &id, delete_data, |name| match keychain_entry(&app, &id, name)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(keychain_error(&e)),
+        })
+    })
+    .await
+}
+
+/// Addons are read once per run, so a change needs a restart.
+#[tauri::command]
+pub fn restart_app(app: AppHandle) {
+    app.restart();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1197,5 +1515,121 @@ mod tests {
         let got = read_folder(&dir).unwrap();
         let want = [("data/c.json", Some("[]")), ("data/icon.png", None), ("pack.json", Some("{}"))];
         assert_eq!(got.iter().map(|f| (f.path.as_str(), f.text.as_deref())).collect::<Vec<_>>(), want);
+    }
+
+    fn zip_of(files: &[(&str, &str)]) -> io::Cursor<Vec<u8>> {
+        let mut writer = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
+        for (name, text) in files {
+            writer.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            io::Write::write_all(&mut writer, text.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap()
+    }
+
+    fn manifest(version: &str) -> String {
+        serde_json::json!({ "api": crate::addons::API, "id": "demo", "name": "Demo", "version": version, "license": "MIT",
+            "permissions": ["secrets"], "library": { "label": "Demo", "entry": "ui/tab.html" } }).to_string()
+    }
+
+    #[test]
+    fn unzips_only_inside_the_folder() {
+        let dir = temp_dir("unzip-escape");
+        let err = unzip(zip_of(&[("ok.txt", "x"), ("../evil.txt", "x")]), &dir.join("out"), MAX_BYTES).unwrap_err();
+        assert!(matches!(err, StorageError::Invalid(_)), "{err:?}");
+        assert!(!dir.join("evil.txt").exists());
+    }
+
+    #[test]
+    fn unzips_no_more_than_the_limit() {
+        let dir = temp_dir("unzip-limit");
+        assert!(unzip(zip_of(&[("a.txt", "12345"), ("./", "")]), &dir.join("fits"), 5).is_ok());
+        let err = unzip(zip_of(&[("a.txt", "123"), ("b.txt", "456")]), &dir.join("over"), 5).unwrap_err();
+        assert!(matches!(err, StorageError::Invalid(_)), "{err:?}");
+    }
+
+    #[test]
+    fn installs_a_zipped_folder_replacing_the_old_version() {
+        let dir = temp_dir("install");
+        let (staging, addons) = (dir.join("staging"), dir.join("addons"));
+        // A zipped folder, as the system's "compress" makes it, with a macOS metadata folder beside it.
+        let v1 = dir.join("v1.zip");
+        fs::write(&v1, zip_of(&[("demo/addon.json", &manifest("1.0.0")), ("demo/ui/tab.html", "1"), ("__MACOSX/._x", "")]).into_inner()).unwrap();
+        assert_eq!(stage(&v1, &staging).unwrap().version, "1.0.0");
+        install(&staging, &addons).unwrap();
+        assert_eq!(fs::read_to_string(addons.join("demo/ui/tab.html")).unwrap(), "1");
+        assert!(!staging.exists());
+
+        let v2 = dir.join("v2.zip");
+        fs::write(&v2, zip_of(&[("addon.json", &manifest("2.0.0")), ("ui/tab.html", "2")]).into_inner()).unwrap();
+        stage(&v2, &staging).unwrap();
+        install(&staging, &addons).unwrap();
+        assert_eq!(fs::read_to_string(addons.join("demo/ui/tab.html")).unwrap(), "2");
+
+        // An invalid addon (its page is missing) is refused and leaves nothing staged.
+        let bad = dir.join("bad.zip");
+        fs::write(&bad, zip_of(&[("addon.json", &manifest("3.0.0"))]).into_inner()).unwrap();
+        assert!(matches!(stage(&bad, &staging), Err(StorageError::Invalid(_))));
+        assert!(!staging.join("unzipped").exists());
+        assert!(install(&staging, &addons).is_err());
+    }
+
+    #[test]
+    fn uninstalling_keeps_the_data_unless_asked_and_enables_it_again() {
+        let dir = temp_dir("uninstall");
+        let staging = dir.join("staging");
+        for id in ["kept", "gone"] {
+            fs::create_dir_all(dir.join("addons").join(id)).unwrap();
+            fs::create_dir_all(dir.join("addon-data").join(id)).unwrap();
+            fs::write(dir.join("addon-data").join(id).join("storage.json"), "{}").unwrap();
+        }
+        set_disabled(&dir, "kept", true).unwrap();
+        set_disabled(&dir, "gone", true).unwrap();
+        note_secret(&dir, "gone", "token", true).unwrap();
+        let deleted = std::cell::RefCell::new(Vec::new());
+        let delete = |name: &str| {
+            deleted.borrow_mut().push(name.to_string());
+            Ok(())
+        };
+        uninstall(&dir, &staging, "kept", false, delete).unwrap();
+        uninstall(&dir, &staging, "gone", true, delete).unwrap();
+        assert_eq!(*deleted.borrow(), ["token"]);
+        assert!(!dir.join("addons/kept").exists() && !dir.join("addons/gone").exists());
+        assert!(dir.join("addon-data/kept/storage.json").exists());
+        assert!(!dir.join("addon-data/gone").exists());
+        assert!(disabled_addons(&dir).is_empty());
+        assert!(matches!(uninstall(&dir, &staging, "kept", false, delete), Err(StorageError::NotFound(_))));
+        assert!(installed_folder(&dir, "../addon-data").is_err());
+    }
+
+    fn write_manifest(dir: &Path, id: &str, version: &str, api: u32) {
+        fs::create_dir_all(dir.join(id)).unwrap();
+        let m = serde_json::json!({ "api": api, "id": id, "name": id, "version": version, "license": "MIT" });
+        fs::write(dir.join(id).join(MANIFEST), m.to_string()).unwrap();
+    }
+
+    #[test]
+    fn rows_say_what_changes_on_the_next_start() {
+        let dir = temp_dir("summaries");
+        let api = crate::addons::API;
+        let at_start = dir.join("at-start");
+        write_manifest(&at_start, "updated", "1.0", api);
+        write_manifest(&at_start, "removed", "1.0", api);
+        let addons = dir.join("addons");
+        write_manifest(&addons, "updated", "2.0", api);
+        write_manifest(&addons, "new", "1.0", api);
+        write_manifest(&addons, "off", "1.0", api);
+        write_manifest(&addons, "broken", "1.0", api + 1);
+        set_disabled(&dir, "off", true).unwrap();
+        let rows = summaries_of(&load_dir(&addons).unwrap(), &load_dir(&at_start).unwrap().0, &dir);
+        let row = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
+        let got = |id: &str| (row(id).enabled, row(id).loaded_version.as_deref(), row(id).removed);
+        assert_eq!(got("updated"), (true, Some("1.0"), false));
+        assert_eq!(row("updated").version, "2.0");
+        assert_eq!(got("new"), (true, None, false));
+        assert_eq!(got("off"), (false, None, false));
+        assert_eq!(got("broken"), (true, None, false));
+        assert!(!row("broken").errors.is_empty());
+        assert_eq!(got("removed"), (true, Some("1.0"), true));
+        assert_eq!(rows.len(), 5);
     }
 }

@@ -26,6 +26,12 @@ export type AddonSummary = {
   libraryVisible: boolean;
   licenseText: string | null;
   errors: string[];
+  /** Whether the user has it enabled; a disabled one isn't loaded on the next start. */
+  enabled: boolean;
+  /** The version running this session; null when it isn't (disabled, invalid, or installed since start). */
+  loadedVersion: string | null;
+  /** Uninstalled since start: its pages and calls stop at once, the rest goes on the restart. */
+  removed: boolean;
 };
 
 /** The page an addon shows in a Settings section, if it has one there. */
@@ -37,9 +43,42 @@ export type NewPack = { manifest: unknown; files: Record<string, unknown>; image
 /** Mirrors `PickedFile`: a path inside the picked folder, and the text when the file is UTF-8 text. */
 export type PickedFile = { path: string; text: string | null };
 
-/** The addons in the data folder, valid ones first. Rejects with a StorageError. */
+/** The addons in the data folder as it is now, valid ones first, then the ones uninstalled since start. Rejects with
+ * a StorageError. */
 export function listAddons(): Promise<AddonSummary[]> {
   return invoke("list_addons");
+}
+
+/** Mirrors `StagedAddon`: a picked .zip, unzipped and checked, waiting to be installed. `replaces`: the version of
+ * the installed addon with this id ("" when unreadable), or null when there's none. */
+export type StagedAddon = { id: string; name: string; version: string; permissions: string[]; replaces: string | null };
+
+/** The user picks an addon's .zip; null when cancelled. Rejects with a StorageError when it isn't a valid addon. */
+export function stageAddon(): Promise<StagedAddon | null> {
+  return invoke("stage_addon");
+}
+
+/** Installs the staged addon (replacing one with its id, its saved data kept); it loads after a restart. */
+export function installStagedAddon(): Promise<void> {
+  return invoke("install_staged_addon");
+}
+
+export function discardStagedAddon(): Promise<void> {
+  return invoke("discard_staged_addon");
+}
+
+/** Takes effect on the next start. */
+export function setAddonEnabled(id: string, enabled: boolean): Promise<void> {
+  return invoke("set_addon_enabled", { id, enabled });
+}
+
+/** Takes effect on the next start. `deleteData`: its saved data and secrets go too; packs it installed stay. */
+export function uninstallAddon(id: string, deleteData: boolean): Promise<void> {
+  return invoke("uninstall_addon", { id, deleteData });
+}
+
+export function restartApp(): Promise<void> {
+  return invoke("restart_app");
 }
 
 /** Where an addon's page is served: `koldron-addon://localhost/…`, which Windows (WebView2) spells as http. */

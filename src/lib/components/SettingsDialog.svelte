@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type SectionId = "ui" | "campaigns" | "rules" | "library" | "integrations" | "about";
+  export type SectionId = "ui" | "campaigns" | "rules" | "library" | "integrations" | "addons" | "about";
 
   /** Counts every time any Settings dialog closes (packs may have been switched on or off there): screens showing
    *  pack content read it to load again, whichever gear opened Settings (theirs or the campaign sidebar's). */
@@ -12,6 +12,7 @@
   import type { Animations, Theme } from "$lib/api/settings";
   import CampaignSettings from "$lib/components/CampaignSettings.svelte";
   import AboutSettings from "$lib/components/AboutSettings.svelte";
+  import AddonSettings from "$lib/components/AddonSettings.svelte";
   import RulesSettings from "$lib/components/RulesSettings.svelte";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { addons, loadAddons } from "$lib/stores/addons.svelte";
@@ -35,6 +36,7 @@
     { id: "rules", label: t.rules.title },
     ...(libraryPanels.length ? [{ id: "library" as const, label: t.library.title }] : []),
     ...(integrationPanels.length ? [{ id: "integrations" as const, label: t.integrations.title }] : []),
+    { id: "addons", label: t.addons.title },
     { id: "about", label: t.about.title },
   ]);
   let active = $state<SectionId>("ui");
@@ -77,9 +79,11 @@
   const shownTabs = $derived(tabsDraft ? ordered(tabs, tabsDraft) : tabs);
   let rules: RulesSettings | undefined = $state();
   let rulesDirty = $state(false);
+  let addonSettings: AddonSettings | undefined = $state();
+  let addonsDirty = $state(false);
 
   const dirty = $derived(
-    themeDraft !== theme.choice || animationsDraft !== theme.animations || tabsDraft !== null || rulesDirty || Object.values(unsavedPanels).some(Boolean),
+    themeDraft !== theme.choice || animationsDraft !== theme.animations || tabsDraft !== null || rulesDirty || addonsDirty || Object.values(unsavedPanels).some(Boolean),
   );
   let saving = $state(false);
   let errors = $state<string[]>([]);
@@ -115,6 +119,7 @@
         else tabsDraft = null;
       }
       if (rulesDirty) await rules?.save().catch((e: Error) => failed.push(e.message));
+      if (addonsDirty) await addonSettings?.save().catch((e: Error) => failed.push(e.message));
       failed.push(...(await settlePanels("save")));
     } finally {
       saving = false;
@@ -126,6 +131,7 @@
   async function discard() {
     resetDrafts();
     rules?.discard();
+    addonSettings?.discard();
     errors = await settlePanels("discard");
   }
 
@@ -252,6 +258,9 @@
           {/each}
         </div>
       {/if}
+      <div id="settings-panel-addons" class="panel" role="tabpanel" aria-labelledby="settings-tab-addons" hidden={active !== "addons"}>
+        <AddonSettings bind:this={addonSettings} bind:dirty={addonsDirty} unsaved={dirty} />
+      </div>
       <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about" hidden={active !== "about"}>
         <AboutSettings />
       </div>
@@ -272,7 +281,7 @@
       </div>
     {:else}
       <div class="actions">
-        <button class="btn" disabled={saving} onclick={discardAndClose}>{t.cancel}</button>
+        <button class="btn" disabled={saving} onclick={requestClose}>{t.closeButton}</button>
         <button class="btn btn-primary" disabled={!dirty || saving} onclick={save}>{saving ? t.saving : t.save}</button>
       </div>
     {/if}

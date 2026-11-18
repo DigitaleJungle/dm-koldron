@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-11-18
+
+### Added
+
+- Settings → Addons: install an addon from a .zip (its files at the top, or its folder zipped), after a check and a confirmation that lists the permissions it asks for; an addon with the same id is replaced and keeps its saved data
+- Settings → Addons: a switch to enable or disable each addon, and Uninstall, optionally deleting its saved data and keychain secrets (packs it installed stay)
+- Changes in Settings → Addons wait for Save; they take effect after a restart, and each row says what will change, with Restart now
+
+### Changed
+
+- The addon list moved from Settings → About to Settings → Addons; About keeps the license texts
+- The Settings footer's Cancel is now Close, and asks first when something isn't saved, like the ✕
+
 ## [0.6.13] - 2026-11-18
 
 ### Fixed

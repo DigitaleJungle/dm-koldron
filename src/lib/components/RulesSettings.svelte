@@ -51,7 +51,7 @@
       })
       .catch((e) => (loadError = errorMessage(e)));
     listAddons()
-      .then((list) => (panels = list.filter((a) => a.errors.length === 0 && panelIn(a, "rules"))))
+      .then((list) => (panels = list.filter((a) => a.loadedVersion !== null && !a.removed && panelIn(a, "rules"))))
       .catch((e) => (addonsError = errorMessage(e)));
   });
 

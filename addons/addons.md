@@ -6,14 +6,16 @@ Content packs are not addons (see `packs/packs.md`). An addon can produce packs,
 
 ## Installing
 
-There's no install screen yet. Put the addon's folder in the app's data folder, `addons/<id>/`, and restart the app. The app creates the empty `addons` folder when it starts:
+In **Settings → Addons**, **Install addon…** and pick the addon's `.zip`: its files at the top of the zip, or the addon's folder zipped (one folder with `addon.json` in it). The app checks it, shows the permissions it asks for, and installs it when you click **Save**; an addon with the same id is replaced, its saved data kept. It loads after a restart (**Restart now**).
+
+Or put the addon's folder in the app's data folder, `addons/<id>/`, and restart the app. The app creates the empty `addons` folder when it starts:
 
 - Windows: `%APPDATA%\be.digitalejungle.koldron\addons\`
 - macOS: `~/Library/Application Support/be.digitalejungle.koldron/addons/`
 
-A development build uses `be.digitalejungle.koldron.dev` instead. Settings → About lists the addons, and an invalid one with its errors.
+A development build uses `be.digitalejungle.koldron.dev` instead. Settings → Addons lists the addons, and an invalid one with its errors.
 
-Removing the folder removes the addon. Data it saved (`addon-data/<id>/`, with `storage.*File` files in `files/`) and packs it installed (`packs/<id>/`) stay.
+Settings → Addons can also disable, enable and uninstall an addon (on **Save**, taking effect after a restart). Uninstalling, or removing the folder by hand, removes the addon. Data it saved (`addon-data/<id>/`, with `storage.*File` files in `files/`) and packs it installed (`packs/<id>/`) stay, unless you tick **Also delete its saved data and secrets** when uninstalling: then its data folder and the secrets it stored with `secrets.set` go too (packs always stay).
 
 ## The folder
 
@@ -47,7 +49,7 @@ File names: plain ASCII, no spaces.
 |---|---|
 | `api` | The addon API version it's written for. This app speaks `1`; an addon for another version isn't loaded. |
 | `id` | Lowercase letters, digits and dashes; the same as the folder name. |
-| `name`, `version`, `license` | Required, shown in Settings → About. |
+| `name`, `version`, `license` | Required, shown in Settings → Addons. |
 | `permissions` | Optional. See below. Unknown permissions make the addon invalid. |
 | `settings` | Optional. A page shown as a panel in a Settings section, `{ section, entry }`, or a list of them, at most one per section: `rules` (below the pack list), `library` (a Library section) or `integrations` (an Integrations section, for connections to other services). Library and Integrations show only when an addon adds a panel to them; every addon's panel in a section is shown there, one under another. The addon's `library` page is closed while Settings is open and loads again when it closes. |
 | `characters` | Optional. An item labelled `label` (at most 40 characters) in the Characters screen's **Add character** menu, opening the page `entry` in a dialog. Add character is a menu only when an addon adds an item. The same page opens from **Edit link** on the form of a character linked to the addon. `owns`: the fields of the characters it adds that the addon keeps up to date (see below). |
@@ -95,7 +97,7 @@ A Settings panel stays loaded while the Settings dialog is open (hidden while an
 
 ### Saving settings
 
-The Settings dialog has one **Save** and **Cancel** for all its sections, and closing it with changes not saved asks first (Save, Discard or Keep editing). A panel joins in like this:
+The Settings dialog has one **Save** for all its sections; **Close** (or the ✕, Escape) with changes not saved asks first (Save, Discard or Keep editing). A panel joins in like this:
 
 - When something on it changes, it calls `ui.setUnsaved(true)` and keeps the change to itself (nothing is saved yet); `ui.setUnsaved(false)` when it's back as saved.
 - The app then sends `{ koldron: 1, event: "settings", action, id }`: `action` is `"save"` (keep the changes; start what they lead to, or leave that to another page) or `"discard"` (go back to what's saved, and undo what was already done for the changes, such as a folder given with `folders.add`). It is sent only to a panel that said it has unsaved changes.

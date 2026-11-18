@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 /// The addon API version this app speaks. An addon written for another one isn't loaded.
 pub const API: u32 = 1;
-const MANIFEST: &str = "addon.json";
+pub const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
 const PERMISSIONS: [&str; 7] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search"];
@@ -127,6 +127,15 @@ fn load_addon(folder: &Path, folder_name: &str) -> Result<Option<Manifest>, Load
     let manifest: Manifest = serde_json::from_str(&text).map_err(|e| (None, vec![format!("{MANIFEST}: {e}")]))?;
     let errors = check(&manifest, folder, folder_name);
     if errors.is_empty() { Ok(Some(manifest)) } else { Err((Some(manifest.name), errors)) }
+}
+
+/// An addon not in `addons/` yet (unzipped to install): its manifest, checked as if its folder were already named
+/// after its id. Errors list every problem found.
+pub fn read_new(folder: &Path) -> Result<Manifest, Vec<String>> {
+    let text = fs::read_to_string(folder.join(MANIFEST)).map_err(|e| vec![format!("{MANIFEST}: {e}")])?;
+    let manifest: Manifest = serde_json::from_str(&text).map_err(|e| vec![format!("{MANIFEST}: {e}")])?;
+    let errors = check(&manifest, folder, &manifest.id);
+    if errors.is_empty() { Ok(manifest) } else { Err(errors) }
 }
 
 fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {

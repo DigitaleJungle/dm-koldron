@@ -7,11 +7,11 @@ export const addons = $state<{ list: AddonSummary[]; live: number; charactersCha
 
 let loading: Promise<void> | null = null;
 
-/** Reads the addons once per run (they only change on a restart). Invalid ones are left out here; About lists them. */
+/** Reads the addons once per run (they only change on a restart). Only the running ones (valid and enabled); Settings → Addons lists them all. */
 export function loadAddons(): Promise<void> {
   loading ??= listAddons().then(
-    (list) => void (addons.list = list.filter((a) => a.errors.length === 0)),
-    () => {}, // Settings → About and Rules show why the addons couldn't be read
+    (list) => void (addons.list = list.filter((a) => a.loadedVersion !== null)),
+    () => {}, // Settings → Addons and Rules show why the addons couldn't be read
   );
   return loading;
 }

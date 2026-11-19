@@ -14,7 +14,7 @@ pub const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
 const PERMISSIONS: [&str; 8] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search", "campaigns:read"];
-/// The longest label an addon's Add character item, Library tab or Home widget may have.
+/// The longest label an addon's Add character item, Library tab, Home widget or campaign screen may have.
 const MAX_LABEL: usize = 40;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -42,6 +42,22 @@ pub struct Manifest {
     pub library: Option<Tab>,
     /// A widget on a campaign's Home labelled `label` (its name for screen readers and in Add widget), showing `entry`.
     pub home: Option<Widget>,
+    /// A screen in every campaign's sidebar, labelled `label` with the app's icon `icon`, showing `entry`.
+    pub campaign: Option<CampaignScreen>,
+}
+
+/// An addon's screen in a campaign's sidebar.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CampaignScreen {
+    pub label: String,
+    /// The name of one of the app's icons (Tabler's), e.g. `map`.
+    pub icon: String,
+    /// The page, relative to the addon folder.
+    pub entry: String,
+    /// The page has a side column: the campaign header gets a button to hide it, sent as `sidebarHidden` in the context.
+    #[serde(default)]
+    pub sidebar: bool,
 }
 
 /// An addon's widget on a campaign's Home.
@@ -209,6 +225,14 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
         check_label("home", &widget.label, &mut errors);
         check_page("home", &widget.entry, folder, &mut errors);
     }
+    if let Some(screen) = &m.campaign {
+        check_label("campaign", &screen.label, &mut errors);
+        check_page("campaign", &screen.entry, folder, &mut errors);
+        let plain = !screen.icon.is_empty() && screen.icon.len() <= 64 && screen.icon.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if !plain {
+            errors.push(format!("campaign: the icon \"{}\" must be an icon name: lowercase letters, digits and dashes.", screen.icon));
+        }
+    }
     errors
 }
 
@@ -266,7 +290,8 @@ mod tests {
             "start": "ui/settings.html",
             "preview": "ui/settings.html",
             "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true },
-            "home": { "label": "Widget", "entry": "ui/settings.html" }
+            "home": { "label": "Widget", "entry": "ui/settings.html" },
+            "campaign": { "label": "Lore", "icon": "map-2", "entry": "ui/settings.html", "sidebar": true }
         })
     }
 
@@ -285,17 +310,20 @@ mod tests {
         bad["preview"] = "../preview.html".into();
         bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
         bad["home"] = serde_json::json!({ "label": "", "entry": "ui/home.js" });
+        bad["campaign"] = serde_json::json!({ "label": "Lore", "icon": "ti ti-map\"", "entry": "../lore.html" });
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
         assert!(addons[0].allows("links:github.com") && addons[0].manifest.home.is_some());
+        assert!(addons[0].manifest.campaign.as_ref().is_some_and(|c| c.sidebar && c.icon == "map-2"));
         assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);
         assert_eq!(addons[0].manifest.settings[1].label.as_deref(), Some("Service"));
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
         // api, id, 4 permissions, section, entry, a panel label, a second library panel, label, characters page, an unknown owned
-        // field, background page, start page, preview page, library label and page, home label and page
-        assert_eq!(invalid[0].errors.len(), 20, "{:?}", invalid[0].errors);
+        // field, background page, start page, preview page, library label and page, home label and page, campaign page
+        // and icon
+        assert_eq!(invalid[0].errors.len(), 22, "{:?}", invalid[0].errors);
     }
 
     #[test]

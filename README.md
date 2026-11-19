@@ -1,6 +1,6 @@
 # DM's Koldron
 
-**Current version:** 0.7.2
+**Current version:** 0.7.3
 
 An open-source desktop companion for Dungeon Masters running in-person sessions: rules search, session prep, encounters, player characters and a player-facing display, extendable with addons (see `addons/addons.md`).
 

@@ -31,9 +31,10 @@
     hidden?: boolean;
     onpackschange?: () => void;
     onclose?: () => void;
-    /** Only the addon's Library tab page: `ui.navigate` moves the app to this state of the tab. */
+    /** Only the addon's Library tab or campaign screen page: `ui.navigate` moves the app to this state of it. */
     onnavigate?: (state: string | null, replace: boolean) => Promise<void>;
-    /** Only a Library tab page with `sidebar`: `ui.setSidebarButton` shows or hides the header's sidebar button. */
+    /** Only a Library tab or campaign screen page with `sidebar`: `ui.setSidebarButton` shows or hides the header's
+     * sidebar button. */
     onsidebarbutton?: (shown: boolean) => void;
     /** A Settings panel (its section): its changes wait for the dialog's Save (`ui.setUnsaved`, `ui.settingsDone`). */
     panel?: string;
@@ -96,12 +97,12 @@
       // Always says which addon speaks, so its words can't pass for the app's.
       notify: (message: string) => notify(strings.addons.notice(addon.name, message)),
       navigate: async (state: string | null, replace: boolean) => {
-        if (!onnavigate) throw new Error("ui.navigate works only from the addon's Library tab.");
+        if (!onnavigate) throw new Error("ui.navigate works only from the addon's Library tab or campaign screen.");
         await onnavigate(state, replace);
       },
       libraryVisible: (visible: boolean) => setLibraryVisible(addon.id, visible),
       sidebarButton: (shown: boolean) => {
-        if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab with a sidebar.");
+        if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab or campaign screen with a sidebar.");
         onsidebarbutton(shown);
       },
       openLibrary: async (state: string | null) => {

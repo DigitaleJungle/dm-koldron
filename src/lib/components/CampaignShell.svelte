@@ -13,6 +13,7 @@
   import OrderList from "$lib/components/OrderList.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { header } from "$lib/stores/header.svelte";
   import { strings } from "$lib/strings";
@@ -67,6 +68,7 @@
   onMount(() => {
     if (!campaigns.list) refreshCampaigns();
   });
+  loadAddons();
 
   function closeDrawer() {
     drawerOpen = false;
@@ -92,6 +94,16 @@
         { id: "characters", href: `${base}/characters`, label: t.characters, icon: "ti-users", current: page.url.pathname.startsWith(`${base}/characters`) },
         { id: "encounters", href: `${base}/encounters`, label: t.encounters, icon: "ti-swords", current: page.url.pathname.startsWith(`${base}/encounters`) },
         { id: "sessions", href: `${base}/sessions`, label: t.sessions, icon: "ti-notebook", current: page.url.pathname.startsWith(`${base}/sessions`) },
+        // Addons' campaign screens (their manifest's `campaign`), after the app's own until moved.
+        ...addons.list
+          .filter((a) => a.campaign)
+          .map((a) => ({
+            id: `addon:${a.id}`,
+            href: `${base}/addon/${a.id}`,
+            label: a.campaign!.label,
+            icon: `ti-${a.campaign!.icon}`,
+            current: page.url.pathname === `${base}/addon/${a.id}`,
+          })),
       ],
       order,
     ),

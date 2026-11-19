@@ -42,7 +42,8 @@ File names: plain ASCII, no spaces.
   "characters": { "label": "D&D Beyond", "entry": "ui/add.html" },
   "background": "ui/background.html",
   "library": { "label": "My tab", "entry": "ui/tab.html" },
-  "home": { "label": "My widget", "entry": "ui/home.html" }
+  "home": { "label": "My widget", "entry": "ui/home.html" },
+  "campaign": { "label": "My screen", "icon": "map-2", "entry": "ui/screen.html", "sidebar": true }
 }
 ```
 
@@ -58,6 +59,7 @@ File names: plain ASCII, no spaces.
 | `start` | Optional. A page on the Start screen, in a column beside the campaigns (under them in a narrow window). The page sets its own height with `ui.setHeight`; at 0 it's hidden, and the column takes no room until one of its pages is taller than 0. Call `ui.setHeight` once the page has drawn what it shows: until then the frame is 0 tall and out of sight, and the browser doesn't run resize observers in it. From there, `ui.openLibrary` opens the addon's Library tab. |
 | `preview` | Optional. A page shown in the search screen's preview pane, under the result's name and the app's Open button, for the addon's own search results (`search.setEntries`); without it, the pane shows only those two. Its context says which entry (see Context); the page sets its own height with `ui.setHeight`, and can open the addon's Library tab with `ui.openLibrary`. |
 | `library` | Optional. A tab labelled `label` (at most 40 characters) in the app-wide Library, after Catalog unless reordered in Settings → UI, showing the page `entry` across the whole pane (not inside a campaign's Library). The page scrolls itself; keep its bottom-left corner clear, where the Settings gear sits. With `"sidebar": true` the page has a side column: the Library's header then shows a button to hide or show it (remembered per addon on this device), and the page hears which in its context. The addon can hide and show the tab (`library.setVisible`); a hidden tab isn't in the tab bar, and an address to it shows the first tab. |
+| `campaign` | Optional. A screen in every campaign's sidebar, labelled `label` (at most 40 characters) with the app's icon `icon` (a [Tabler icon](https://tabler.io/icons) name, e.g. `map-2`), after the app's own screens until moved (the sidebar's grip moves it, like the others). Its page `entry` fills the screen below the campaign header and scrolls itself; it hears the campaign in its context. With `"sidebar": true` the page has a side column: the campaign header then shows a button to hide or show it (remembered per addon on this device), and the page hears which in its context. The page is closed while Settings is open and loads again when it closes. Without the addon, the item is gone and its address shows the campaign's Home. |
 | `home` | Optional. A widget on every campaign's Home, showing the page `entry`. `label` (at most 40 characters) is its name for screen readers and in **Add widget**. It moves, resizes and comes off Home like the app's own widgets (one column wide at first). The page sets its own height with `ui.setHeight`, hears which campaign and its width in its context, and can open the addon's Library tab with `ui.openLibrary`. |
 
 ### Permissions
@@ -96,6 +98,7 @@ The app tells a page where it is with a message (not a call, so there's no answe
 - `home` page: `{ campaign, width }`, the campaign whose Home it's on and the widget's width in columns (1 to 3), sent again when it's resized.
 - `preview` page: `{ id, state }`, the entry shown: its `id` and `state` as the addon gave them to `search.setEntries`. Sent again when another of the addon's results is picked; the page stays loaded.
 - `start` page: `{ tileHeight, tileTop }`, a campaign tile's height and its top measured from the top of the page's column, in pixels (null when there are no campaigns, or when the column is under them in a narrow window), sent again when they change, so the page can line up with the tiles.
+- `campaign` page: `{ campaign, state }`, the campaign shown and the state the page last moved to with `ui.navigate`, as for a `library` page (`?state=` in the address); with `"sidebar": true` also `sidebarHidden`.
 - `library` page: `{ state }`, the state the page last moved to with `ui.navigate` (a string), or null; with `"sidebar": true` also `sidebarHidden` (true or false), set by the header's button: hide or show the side column when it changes. It's in the address (`?tab=<id>&state=…`), so Back and Forward send it again as a new context; the page stays loaded and shows that state.
 
 A Settings panel stays loaded while the Settings dialog is open (hidden while another section is shown) and closes with it; its work then stops. A `packs.install` already sent still finishes (or changes nothing). Keep work short, or save progress with `storage.set` so it can pick up again.
@@ -170,10 +173,10 @@ function koldron(call, ...args) {
 | `ui.theme` | | `"light"` or `"dark"`, the app's current theme. |
 | `ui.close` | | `null`. Closes the dialog the page is in. |
 | `ui.notify` | message | `null`. Shows the message (at most 200 characters) as the app's notification, after the addon's name. |
-| `ui.navigate` | state (a string of at most 2000 characters, or `null`), optional `replace` | `null`. From the `library` page only: moves the app to that state of the tab as a step Back returns from, or in place of the current one with `replace: true`. The page then gets the new context. |
+| `ui.navigate` | state (a string of at most 2000 characters, or `null`), optional `replace` | `null`. From the `library` or `campaign` page only: moves the app to that state of the tab as a step Back returns from, or in place of the current one with `replace: true`. The page then gets the new context. |
 | `ui.openLibrary` | state (a string of at most 2000 characters, or `null`) | `null`. From the `start`, `preview` and `home` pages only, of an addon with a shown `library` tab: opens that tab at the state (as `ui.navigate` moves it), as a step Back returns from. |
 | `ui.openExternal` | `https://` address (at most 2000 characters, URL characters only) | `null`. Opens it in the system's browser; its host needs a `links:<host>` permission. Not from the `background` page. |
-| `ui.setSidebarButton` | `true` or `false` | `null`. From a `library` page with `"sidebar": true` only: shows or hides the Library header's sidebar button, for while the page has no side column to show (the button's place stays, so the tabs don't move). Each time the tab opens, the button shows. |
+| `ui.setSidebarButton` | `true` or `false` | `null`. From a `library` or `campaign` page with `"sidebar": true` only: shows or hides the header's sidebar button, for while the page has no side column to show (the button's place stays, so the tabs don't move). Each time the tab opens, the button shows. |
 | `ui.setUnsaved` | `true` or `false` | `null`. From a Settings panel only: it has (or no longer has) changes waiting for the dialog's Save (see Saving settings). |
 | `ui.settingsDone` | the `settings` event's `id`, `null` or an error message | `null`. From a Settings panel only: it saved or discarded as asked, or couldn't. |
 

@@ -26,6 +26,9 @@ export type AddonSummary = {
   libraryVisible: boolean;
   /** A widget on a campaign's Home labelled `label`, showing `entry` (`{ campaign, width }` in its context). */
   home: { label: string; entry: string } | null;
+  /** A screen in every campaign's sidebar labelled `label` with the app's icon `icon` (a Tabler name), showing `entry`;
+   * `sidebar`: the campaign header can hide its side column (`sidebarHidden` in the page's context). */
+  campaign: { label: string; icon: string; entry: string; sidebar: boolean } | null;
   licenseText: string | null;
   errors: string[];
   /** Whether the user has it enabled; a disabled one isn't loaded on the next start. */

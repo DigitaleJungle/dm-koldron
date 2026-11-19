@@ -4,6 +4,10 @@
   /** Counts every time any Settings dialog closes (packs may have been switched on or off there): screens showing
    *  pack content read it to load again, whichever gear opened Settings (theirs or the campaign sidebar's). */
   export const settingsClosed = $state({ count: 0 });
+
+  /** How many Settings dialogs are open: an addon's campaign screen closes while one is, as its Library tab does, so
+   *  its page and its Settings panels never save at the same time. */
+  export const settingsOpen = $state({ count: 0 });
 </script>
 
 <script lang="ts">
@@ -24,6 +28,11 @@
 
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
+  $effect(() => {
+    if (!open) return;
+    settingsOpen.count++;
+    return () => void settingsOpen.count--;
+  });
 
   const t = strings.settings;
   loadAddons();

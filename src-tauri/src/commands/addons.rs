@@ -129,6 +129,7 @@ pub struct AddonSummary {
     pub preview: Option<String>,
     pub library: Option<crate::addons::Tab>,
     pub home: Option<crate::addons::Widget>,
+    pub campaign: Option<crate::addons::CampaignScreen>,
     /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
     pub library_visible: bool,
     /// The license file in its folder, if it has one.
@@ -157,6 +158,7 @@ fn summary(addon: &Addon, data: &Path) -> AddonSummary {
         preview: m.preview.clone(),
         library: m.library.clone(),
         home: m.home.clone(),
+        campaign: m.campaign.clone(),
         library_visible: library_visible(data, &m.id),
         license_text: license_in(&addon.folder),
         errors: Vec::new(),
@@ -190,6 +192,7 @@ fn summaries_of(on_disk: &Loaded, running: &[Addon], data: &Path) -> Vec<AddonSu
         preview: None,
         library: None,
         home: None,
+        campaign: None,
         library_visible: true,
         errors: capped(&i.errors),
         enabled: !off.contains(&i.folder),

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.3] - 2026-11-19
+
+### Added
+
+- Addon API: a campaign screen in every campaign's sidebar (manifest "campaign": label, icon, page, optional side column), told the campaign and keeping its state in the address.
+
 ## [0.7.2] - 2026-11-19
 
 ### Added

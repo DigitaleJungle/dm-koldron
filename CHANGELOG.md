@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.4] - 2026-11-19
+
+### Added
+
+- Addon API: campaign.setVisible shows or hides an addon's campaign screen in one campaign (remembered); manifest "visible": false starts it hidden everywhere.
+
 ## [0.7.3] - 2026-11-19
 
 ### Added

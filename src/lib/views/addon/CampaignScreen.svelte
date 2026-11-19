@@ -3,12 +3,12 @@
   // header, told the campaign and its own place (`ui.navigate`, `?state=` in the address so Back and Forward reach
   // it). With `sidebar`, the header gets a button that hides the page's side column, remembered per addon on this
   // device. The page is left out while Settings is open, as an addon's Library tab is. Without the addon (removed or
-  // disabled), the campaign's Home.
+  // disabled, or hidden in this campaign), the campaign's Home.
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { settingsOpen } from "$lib/components/SettingsDialog.svelte";
-  import { addons, loadAddons } from "$lib/stores/addons.svelte";
+  import { addons, campaignScreenShown, loadAddons } from "$lib/stores/addons.svelte";
   import { showHeaderLead } from "$lib/stores/header.svelte";
   import { gotoReplacing } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
@@ -18,7 +18,8 @@
   const t = strings.library;
   let loaded = $state(false);
   loadAddons().then(() => (loaded = true));
-  const addon = $derived(addons.list.find((a) => a.id === addonId && a.campaign));
+  // Hidden in this campaign (`campaign.setVisible`) counts as not there.
+  const addon = $derived(addons.list.find((a) => a.id === addonId && campaignScreenShown(a, campaign)));
   const base = $derived(`/campaign/${campaign}/addon/${addonId}`);
   $effect(() => {
     if (loaded && !addon) void gotoReplacing(`/campaign/${campaign}`);

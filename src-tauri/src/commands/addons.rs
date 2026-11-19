@@ -12,6 +12,7 @@ use crate::packs::{self, safe_path, Invalid, NewPack};
 use crate::storage::{blocking, data_dir, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -130,6 +131,9 @@ pub struct AddonSummary {
     pub library: Option<crate::addons::Tab>,
     pub home: Option<crate::addons::Widget>,
     pub campaign: Option<crate::addons::CampaignScreen>,
+    /// The campaigns the addon showed (true) or hid (false) its `campaign` screen in; others follow the manifest's
+    /// `visible`.
+    pub campaign_visibility: BTreeMap<String, bool>,
     /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
     pub library_visible: bool,
     /// The license file in its folder, if it has one.
@@ -159,6 +163,7 @@ fn summary(addon: &Addon, data: &Path) -> AddonSummary {
         library: m.library.clone(),
         home: m.home.clone(),
         campaign: m.campaign.clone(),
+        campaign_visibility: campaign_visibility(data, &m.id),
         library_visible: library_visible(data, &m.id),
         license_text: license_in(&addon.folder),
         errors: Vec::new(),
@@ -193,6 +198,7 @@ fn summaries_of(on_disk: &Loaded, running: &[Addon], data: &Path) -> Vec<AddonSu
         library: None,
         home: None,
         campaign: None,
+        campaign_visibility: BTreeMap::new(),
         library_visible: true,
         errors: capped(&i.errors),
         enabled: !off.contains(&i.folder),
@@ -761,6 +767,32 @@ pub async fn addon_set_library_visible(app: AppHandle, addon: String, visible: b
         }
         let file = data_dir(&app)?.join("addon-data").join(&addon).join("library.json");
         write_atomic(&file, &serde_json::json!({ "visible": visible }).to_string())
+    })
+    .await
+}
+
+/// The campaigns an addon showed or hid its `campaign` screen in. Missing or unreadable means none: then every
+/// campaign follows the manifest's `visible`, and `campaign.setVisible` writes the file again.
+fn campaign_visibility(data: &Path, addon: &str) -> BTreeMap<String, bool> {
+    let file = data.join("addon-data").join(addon).join("campaign.json");
+    fs::read_to_string(file).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// `campaign.setVisible`: shows or hides the addon's `campaign` screen in one campaign, kept across restarts.
+#[tauri::command]
+pub async fn addon_set_campaign_visible(app: AppHandle, addon: String, campaign: String, visible: bool) -> Result<(), StorageError> {
+    static WRITING: Mutex<()> = Mutex::new(());
+    blocking(move || {
+        let found = self::addon(&app, &addon)?;
+        if found.manifest.campaign.is_none() {
+            return Err(StorageError::Invalid(format!("{} has no campaign screen.", found.manifest.name)));
+        }
+        crate::storage::check_id(&campaign, "campaign")?;
+        let data = data_dir(&app)?;
+        let _one_at_a_time = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+        let mut shown = campaign_visibility(&data, &addon);
+        shown.insert(campaign, visible);
+        write_atomic(&data.join("addon-data").join(&addon).join("campaign.json"), &serde_json::to_string(&shown).expect("a map serializes"))
     })
     .await
 }
@@ -1441,6 +1473,18 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn campaign_visibility_reads_what_was_saved_and_nothing_from_a_damaged_file() {
+        let data = temp_dir("campaign-visibility");
+        assert!(campaign_visibility(&data, "lore").is_empty());
+        let file = data.join("addon-data/lore/campaign.json");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, r#"{"c1":true,"c2":false}"#).unwrap();
+        assert_eq!(campaign_visibility(&data, "lore"), BTreeMap::from([("c1".to_string(), true), ("c2".to_string(), false)]));
+        fs::write(&file, "{ not json").unwrap();
+        assert!(campaign_visibility(&data, "lore").is_empty());
     }
 
     #[test]

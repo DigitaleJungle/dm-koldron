@@ -13,7 +13,7 @@
   import OrderList from "$lib/components/OrderList.svelte";
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
-  import { addons, loadAddons } from "$lib/stores/addons.svelte";
+  import { addons, campaignScreenShown, loadAddons } from "$lib/stores/addons.svelte";
   import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { header } from "$lib/stores/header.svelte";
   import { strings } from "$lib/strings";
@@ -96,7 +96,7 @@
         { id: "sessions", href: `${base}/sessions`, label: t.sessions, icon: "ti-notebook", current: page.url.pathname.startsWith(`${base}/sessions`) },
         // Addons' campaign screens (their manifest's `campaign`), after the app's own until moved.
         ...addons.list
-          .filter((a) => a.campaign)
+          .filter((a) => campaignScreenShown(a, campaign.id))
           .map((a) => ({
             id: `addon:${a.id}`,
             href: `${base}/addon/${a.id}`,

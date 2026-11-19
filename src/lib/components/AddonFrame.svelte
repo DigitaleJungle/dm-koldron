@@ -1,7 +1,7 @@
 <script lang="ts">
   import { addonUrl, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
-  import { charactersChanged, setLibraryVisible } from "$lib/stores/addons.svelte";
+  import { charactersChanged, setCampaignVisible, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { registerPanel, unsavedPanels } from "$lib/stores/settingsPanels.svelte";
   import { strings } from "$lib/strings";
@@ -101,6 +101,7 @@
         await onnavigate(state, replace);
       },
       libraryVisible: (visible: boolean) => setLibraryVisible(addon.id, visible),
+      campaignVisible: (campaign: string, visible: boolean) => setCampaignVisible(addon.id, campaign, visible),
       sidebarButton: (shown: boolean) => {
         if (!onsidebarbutton) throw new Error("ui.setSidebarButton works only from a Library tab or campaign screen with a sidebar.");
         onsidebarbutton(shown);

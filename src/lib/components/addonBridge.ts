@@ -16,6 +16,7 @@ import {
   addonSetSearch,
   addonSecretSet,
   addonSecretDelete,
+  addonSetCampaignVisible,
   addonSetLibraryVisible,
   addonFolders,
   addonReadFile,
@@ -58,6 +59,8 @@ export type FrameHost = {
   navigate: (state: string | null, replace: boolean) => Promise<void>;
   /** The addon's Library tab was shown or hidden. */
   libraryVisible: (visible: boolean) => void;
+  /** The addon's campaign screen was shown or hidden in a campaign. */
+  campaignVisible: (campaign: string, visible: boolean) => void;
   /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
   sidebarButton: (shown: boolean) => void;
   /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only its Start, preview and Home pages can. */
@@ -179,6 +182,12 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       if (typeof args[0] !== "boolean") throw new Error("library.setVisible needs true or false.");
       await addonSetLibraryVisible(addon, args[0]);
       host.libraryVisible(args[0]);
+      return null;
+    }
+    case "campaign.setVisible": {
+      if (typeof args[0] !== "string" || typeof args[1] !== "boolean") throw new Error("campaign.setVisible needs a campaign id and true or false.");
+      await addonSetCampaignVisible(addon, args[0], args[1]);
+      host.campaignVisible(args[0], args[1]);
       return null;
     }
     case "ui.navigate": {

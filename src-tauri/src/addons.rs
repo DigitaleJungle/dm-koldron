@@ -58,6 +58,13 @@ pub struct CampaignScreen {
     /// The page has a side column: the campaign header gets a button to hide it, sent as `sidebarHidden` in the context.
     #[serde(default)]
     pub sidebar: bool,
+    /// Whether it shows in a campaign the addon hasn't shown or hidden it in (`campaign.setVisible`).
+    #[serde(default = "shown")]
+    pub visible: bool,
+}
+
+const fn shown() -> bool {
+    true
 }
 
 /// An addon's widget on a campaign's Home.
@@ -316,7 +323,7 @@ mod tests {
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
         assert!(addons[0].allows("links:github.com") && addons[0].manifest.home.is_some());
-        assert!(addons[0].manifest.campaign.as_ref().is_some_and(|c| c.sidebar && c.icon == "map-2"));
+        assert!(addons[0].manifest.campaign.as_ref().is_some_and(|c| c.sidebar && c.icon == "map-2" && c.visible));
         assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);
         assert_eq!(addons[0].manifest.settings[1].label.as_deref(), Some("Service"));
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));

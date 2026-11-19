@@ -77,6 +77,7 @@ pub fn run() {
             commands::addons::addon_set_library_visible,
             commands::addons::addon_campaigns,
             commands::addons::addon_open_external,
+            commands::addons::addon_set_campaign_visible,
             commands::addons::stage_addon,
             commands::addons::install_staged_addon,
             commands::addons::discard_staged_addon,

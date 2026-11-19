@@ -32,6 +32,15 @@ export function setLibraryVisible(addon: string, visible: boolean) {
   if (found) found.libraryVisible = visible;
 }
 
+/** An addon showed or hid its campaign screen in one campaign: the sidebar follows at once. */
+export function setCampaignVisible(addon: string, campaign: string, visible: boolean) {
+  const found = addons.list.find((a) => a.id === addon);
+  if (found) found.campaignVisibility = { ...found.campaignVisibility, [campaign]: visible };
+}
+
+/** Whether an addon's campaign screen shows in a campaign: as the addon set it there, else as its manifest says. */
+export const campaignScreenShown = (addon: AddonSummary, campaign: string) => !!addon.campaign && (addon.campaignVisibility[campaign] ?? addon.campaign.visible);
+
 /** The fields of a character its addon owns (keeps up to date), while that addon is loaded; none otherwise. */
 export function ownedFields(character: { linked?: string | null } | undefined): string[] {
   return addons.list.find((a) => a.id === character?.linked)?.characters?.owns ?? [];

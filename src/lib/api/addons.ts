@@ -28,7 +28,10 @@ export type AddonSummary = {
   home: { label: string; entry: string } | null;
   /** A screen in every campaign's sidebar labelled `label` with the app's icon `icon` (a Tabler name), showing `entry`;
    * `sidebar`: the campaign header can hide its side column (`sidebarHidden` in the page's context). */
-  campaign: { label: string; icon: string; entry: string; sidebar: boolean } | null;
+  campaign: { label: string; icon: string; entry: string; sidebar: boolean; visible: boolean } | null;
+  /** The campaigns the addon showed (true) or hid (false) that screen in (`campaign.setVisible`); others follow its
+   * `visible`. */
+  campaignVisibility: Record<string, boolean>;
   licenseText: string | null;
   errors: string[];
   /** Whether the user has it enabled; a disabled one isn't loaded on the next start. */
@@ -222,6 +225,10 @@ export function addonSecretSet(addon: string, name: string, value: string): Prom
 
 export function addonSecretDelete(addon: string, name: string): Promise<void> {
   return invoke("addon_secret_delete", { addon, name });
+}
+
+export function addonSetCampaignVisible(addon: string, campaign: string, visible: boolean): Promise<void> {
+  return invoke("addon_set_campaign_visible", { addon, campaign, visible });
 }
 
 export function addonSetLibraryVisible(addon: string, visible: boolean): Promise<void> {

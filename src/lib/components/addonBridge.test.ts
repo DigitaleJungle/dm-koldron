@@ -18,15 +18,24 @@ vi.mock("$lib/api/addons", () => ({
   addonSecretSet: vi.fn(async () => undefined),
   addonSetSearch: vi.fn(async () => undefined),
   addonOpenExternal: vi.fn(async () => undefined),
+  addonSetCampaignVisible: vi.fn(async () => undefined),
 }));
 
-import { addonFetch, addonOpenExternal, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ hidden: false, setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
+const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("shows or hides the campaign screen in one campaign and tells the frame", async () => {
+    const h = host();
+    await answer("lore", "campaign.setVisible", ["c1", false], h);
+    expect(addonSetCampaignVisible).toHaveBeenCalledWith("lore", "c1", false);
+    expect(h.campaignVisible).toHaveBeenCalledWith("c1", false);
+    await expect(answer("lore", "campaign.setVisible", ["c1", "no"], h)).rejects.toThrow("true or false");
+  });
 
   it("opens links only from a page on screen", async () => {
     await answer("lore", "ui.openExternal", ["https://example.com/a"], host());

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SearchHit } from "$lib/api/search";
+import type { AddonSummary } from "$lib/api/addons";
+import { addons } from "$lib/stores/addons.svelte";
 import { groupByKind, hitAddress, hitMeta, kindLabel, placeLabel, searchAddress } from "./search";
 
 const hit = (kind: string, name: string, chapter?: [string, string]): SearchHit => ({
@@ -36,6 +38,17 @@ describe("search results", () => {
   it("open an addon's result in its tab of the app-wide Library, at its place there, from inside a campaign too", () => {
     const found: SearchHit = { ...hit("addon:shelf", "Tomb"), pack: "shelf", source: "Shelf", state: "page=3", detail: "swamp" };
     expect(hitAddress(found, "/campaign/c1/library")).toBe("/library?tab=shelf&state=page%3D3");
+  });
+
+  it("open a campaign's addon result in the addon's campaign screen there, while it shows", () => {
+    const screen = { label: "Lore", icon: "map-2", entry: "ui/r.html", sidebar: false, visible: true };
+    addons.list = [{ id: "lore", name: "Lore", library: null, campaign: screen, campaignVisibility: { c2: false } } as unknown as AddonSummary];
+    const found: SearchHit = { ...hit("addon:lore", "Harbour"), pack: "lore", source: "Lore", state: "p=x1", campaign: "c1" };
+    expect(hitAddress(found)).toBe("/campaign/c1/addon/lore?state=p%3Dx1");
+    expect(placeLabel(found)).toBe("Lore");
+    // Hidden in its campaign: where any addon result opens.
+    expect(hitAddress({ ...found, campaign: "c2" })).toBe("/library?tab=lore&state=p%3Dx1");
+    addons.list = [];
   });
 
   it("group by kind in display order, keeping the best first within a kind", () => {

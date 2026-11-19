@@ -340,6 +340,10 @@ pub struct SearchEntry {
     pub text: String,
     #[serde(default)]
     pub state: Option<String>,
+    /// The campaign it belongs to: found like that campaign's characters, and opened in the addon's campaign screen
+    /// there. Left out of search while that campaign isn't active (deleted or archived).
+    #[serde(default)]
+    pub campaign: Option<String>,
 }
 
 fn check_search_entries(entries: &[SearchEntry]) -> Result<(), StorageError> {
@@ -360,7 +364,8 @@ fn check_search_entries(entries: &[SearchEntry]) -> Result<(), StorageError> {
             && e.tags.iter().all(|t| chars(t) <= 100)
             && chars(&e.summary) <= 2_000
             && chars(&e.text) <= 20_000
-            && e.state.as_ref().is_none_or(|s| chars(s) <= 2_000);
+            && e.state.as_ref().is_none_or(|s| chars(s) <= 2_000)
+            && e.campaign.as_deref().is_none_or(|c| crate::storage::check_id(c, "campaign").is_ok());
         if !fits {
             return Err(StorageError::Invalid(format!("Search entry \"{}\" is too long or has no id or name.", e.id.chars().take(40).collect::<String>())));
         }
@@ -1550,13 +1555,14 @@ mod tests {
 
     #[test]
     fn search_entries_need_an_id_and_a_name_and_stay_within_limits() {
-        let ok = SearchEntry { id: "a".into(), name: "Name".into(), tags: vec!["t".into()], summary: String::new(), text: String::new(), state: None };
+        let ok = SearchEntry { id: "a".into(), name: "Name".into(), tags: vec!["t".into()], summary: String::new(), text: String::new(), state: None, campaign: Some("c1".into()) };
         assert!(check_search_entries(std::slice::from_ref(&ok)).is_ok());
         for bad in [
             SearchEntry { id: String::new(), ..ok.clone() },
             SearchEntry { name: " ".into(), ..ok.clone() },
             SearchEntry { text: "x".repeat(20_001), ..ok.clone() },
             SearchEntry { state: Some("x".repeat(2_001)), ..ok.clone() },
+            SearchEntry { campaign: Some("../c1".into()), ..ok.clone() },
         ] {
             assert!(check_search_entries(&[bad]).is_err());
         }

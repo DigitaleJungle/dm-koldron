@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.5] - 2026-11-20
+
+### Added
+
+- Addon API: a search entry can belong to a campaign (campaign field): found like that campaign's characters, opened in the addon's campaign screen there, and left out while the campaign isn't active.
+
 ## [0.7.4] - 2026-11-19
 
 ### Added

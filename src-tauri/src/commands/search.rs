@@ -11,6 +11,7 @@ use crate::packs::Pack;
 use crate::storage::{blocking, StorageError};
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::AppHandle;
@@ -101,12 +102,13 @@ fn character_docs(dirs: &campaigns::Dirs) -> Vec<Doc> {
         .collect()
 }
 
-/// What addons make findable (`search.setEntries`): every campaign sees it. Kind `addon:<id>`, source the addon's name.
-pub fn addon_docs(addons: Vec<(String, String, Vec<SearchEntry>)>) -> Vec<Doc> {
+/// What addons make findable (`search.setEntries`). Kind `addon:<id>`, source the addon's name. An entry of a
+/// campaign is found like that campaign's characters; one of a campaign not in `active` is left out.
+pub fn addon_docs(addons: Vec<(String, String, Vec<SearchEntry>)>, active: &HashSet<String>) -> Vec<Doc> {
     addons
         .into_iter()
         .flat_map(|(id, name, entries)| {
-            entries.into_iter().map(move |e| {
+            entries.into_iter().filter(|e| e.campaign.as_ref().is_none_or(|c| active.contains(c))).map(move |e| {
                 let tags = e.tags.join(" · ");
                 Doc {
                     body: format!("{} {}", e.summary, e.text),
@@ -118,7 +120,7 @@ pub fn addon_docs(addons: Vec<(String, String, Vec<SearchEntry>)>) -> Vec<Doc> {
                         name: e.name,
                         chapter_index: None,
                         chapter_name: None,
-                        campaign: None,
+                        campaign: e.campaign,
                         detail: (!tags.is_empty()).then(|| tags.clone()),
                         state: e.state,
                     },
@@ -214,8 +216,10 @@ fn with_index<T>(app: &AppHandle, work: impl FnOnce(&Connection) -> Result<T, St
     let mut index = INDEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if index.as_ref().is_none_or(|(built_for, _)| *built_for != wanted) {
         let mut docs = pack_docs(&enabled(&loaded(app)?.0, &wanted.0));
-        docs.extend(character_docs(&campaigns::dirs(app)?));
-        docs.extend(addon_docs(search_entries(app)?));
+        let dirs = campaigns::dirs(app)?;
+        docs.extend(character_docs(&dirs));
+        let active = campaigns::list(&dirs).map(|l| l.campaigns.into_iter().map(|c| c.id).collect()).unwrap_or_default();
+        docs.extend(addon_docs(search_entries(app)?, &active));
         *index = Some((wanted, build(&docs)?));
     }
     work(&index.as_ref().expect("built above").1)
@@ -255,15 +259,34 @@ mod tests {
             summary: summary.into(),
             text: String::new(),
             state: Some(format!("state-{id}")),
+            campaign: None,
         };
         let entries = vec![entry("1", "Tomb of Doom", &["swamp", "undead"], "A crypt."), entry("2", "Coastal Maps", &[], "Swamp encounters.")];
-        let db = build(&addon_docs(vec![("shelf".into(), "Shelf".into(), entries)])).unwrap();
+        let db = build(&addon_docs(vec![("shelf".into(), "Shelf".into(), entries)], &HashSet::new())).unwrap();
         let hit = search(&db, "tomb", None, Some("any-campaign")).unwrap().remove(0);
         assert_eq!((hit.kind.as_str(), hit.pack.as_str(), hit.source.as_str(), hit.index.as_str()), ("addon:shelf", "shelf", "Shelf", "1"));
         assert_eq!((hit.detail.as_deref(), hit.state.as_deref()), (Some("swamp · undead"), Some("state-1")));
         // A tag counts more than a summary.
         let swamp: Vec<_> = search(&db, "swamp", None, None).unwrap().into_iter().map(|h| h.index).collect();
         assert_eq!(swamp, ["1", "2"]);
+    }
+
+    #[test]
+    fn a_campaign_s_addon_entries_are_found_in_that_campaign_only_and_not_once_it_is_gone() {
+        let entry = |id: &str, campaign: &str| SearchEntry {
+            id: id.into(),
+            name: format!("Harbour {id}"),
+            tags: vec![],
+            summary: String::new(),
+            text: String::new(),
+            state: None,
+            campaign: Some(campaign.into()),
+        };
+        let active = HashSet::from(["a".to_string(), "b".to_string()]);
+        let db = build(&addon_docs(vec![("lore".into(), "Lore".into(), vec![entry("1", "a"), entry("2", "b"), entry("3", "deleted")])], &active)).unwrap();
+        let ids = |campaign| search(&db, "harbour", None, campaign).unwrap().into_iter().map(|h| (h.index, h.campaign.unwrap_or_default())).collect::<Vec<_>>();
+        assert_eq!(ids(Some("a")), [("1".to_string(), "a".to_string())]);
+        assert_eq!(ids(None).len(), 2, "everything: both active campaigns, not the deleted one");
     }
 
     fn names(db: &Connection, query: &str, limit: Option<u32>) -> Vec<String> {

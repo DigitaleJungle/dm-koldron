@@ -37,7 +37,7 @@
     onsidebarbutton?: (shown: boolean) => void;
     /** A Settings panel (its section): its changes wait for the dialog's Save (`ui.setUnsaved`, `ui.settingsDone`). */
     panel?: string;
-    /** Only the Start screen and search preview pages: `ui.openLibrary` opens the addon's Library tab at a state. */
+    /** Only the Start screen, search preview and Home widget pages: `ui.openLibrary` opens the addon's Library tab at a state. */
     onopenlibrary?: (state: string | null) => Promise<void>;
     /** Hears the height the page asks for (`ui.setHeight`). */
     onheight?: (px: number) => void;
@@ -84,6 +84,7 @@
     const reply = (message: object, transfer: Transferable[] = []) =>
       frame?.contentWindow?.postMessage({ koldron: 1, id, ...message }, "*", transfer);
     const host = {
+      hidden,
       setHeight: (px: number) => {
         height = px;
         onheight?.(px);
@@ -104,7 +105,7 @@
         onsidebarbutton(shown);
       },
       openLibrary: async (state: string | null) => {
-        if (!onopenlibrary) throw new Error("ui.openLibrary works only from the Start screen or search preview page of an addon with a Library tab.");
+        if (!onopenlibrary) throw new Error("ui.openLibrary works only from the Start screen, search preview or Home widget page of an addon with a Library tab.");
         await onopenlibrary(state);
       },
       unsaved: (has: boolean) => {

@@ -3,6 +3,7 @@
 import type { Character } from "$lib/api/characters";
 import {
   addonAddFolder,
+  addonCampaigns,
   addonCharacters,
   addonDeleteFile,
   addonGetFile,
@@ -23,6 +24,7 @@ import {
   addonScanFolder,
   addonFetch,
   addonInstallPack,
+  addonOpenExternal,
   addonPacks,
   addonPickFile,
   addonPickFolder,
@@ -44,6 +46,8 @@ export function isCall(data: unknown): data is AddonCall {
 
 /** What the frame around the addon does for it. */
 export type FrameHost = {
+  /** A page out of sight (a background page): it can't open links, so it can't fill the browser unseen. */
+  hidden: boolean;
   setHeight: (px: number) => void;
   packsChanged: () => void;
   charactersChanged: () => void;
@@ -56,7 +60,7 @@ export type FrameHost = {
   libraryVisible: (visible: boolean) => void;
   /** `ui.setSidebarButton`: shows or hides the Library header's sidebar button. Only that page's host can; others throw. */
   sidebarButton: (shown: boolean) => void;
-  /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only its Start and preview pages can. */
+  /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only its Start, preview and Home pages can. */
   openLibrary: (state: string | null) => Promise<void>;
   /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
   unsaved: (has: boolean) => void;
@@ -136,6 +140,8 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     case "secrets.delete":
       await addonSecretDelete(addon, String(args[0]));
       return null;
+    case "campaigns.list":
+      return addonCampaigns(addon);
     case "characters.list":
       return addonCharacters(addon, String(args[0]));
     case "characters.save": {
@@ -211,6 +217,11 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       host.setHeight(Math.min(Math.max(Math.round(px), 0), MAX_HEIGHT));
       return null;
     }
+    case "ui.openExternal":
+      if (host.hidden) throw new Error("ui.openExternal works only from a page on screen.");
+      if (typeof args[0] !== "string") throw new Error("ui.openExternal needs an https:// address.");
+      await addonOpenExternal(addon, args[0]);
+      return null;
     case "ui.theme":
       return host.theme();
     case "ui.close":

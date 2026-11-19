@@ -128,6 +128,7 @@ pub struct AddonSummary {
     pub start: Option<String>,
     pub preview: Option<String>,
     pub library: Option<crate::addons::Tab>,
+    pub home: Option<crate::addons::Widget>,
     /// Whether the `library` tab is shown (`library.setVisible`); true for an addon without one.
     pub library_visible: bool,
     /// The license file in its folder, if it has one.
@@ -155,6 +156,7 @@ fn summary(addon: &Addon, data: &Path) -> AddonSummary {
         start: m.start.clone(),
         preview: m.preview.clone(),
         library: m.library.clone(),
+        home: m.home.clone(),
         library_visible: library_visible(data, &m.id),
         license_text: license_in(&addon.folder),
         errors: Vec::new(),
@@ -187,6 +189,7 @@ fn summaries_of(on_disk: &Loaded, running: &[Addon], data: &Path) -> Vec<AddonSu
         start: None,
         preview: None,
         library: None,
+        home: None,
         library_visible: true,
         errors: capped(&i.errors),
         enabled: !off.contains(&i.folder),
@@ -1070,6 +1073,66 @@ pub async fn addon_save_file(app: AppHandle, addon: String, name: String, bytes:
     .await
 }
 
+// --- Campaigns and links ---------------------------------------------------------------------------------------------
+
+/// One active campaign as an addon sees it.
+#[derive(Debug, Serialize)]
+pub struct CampaignSummary {
+    pub id: String,
+    pub name: String,
+}
+
+/// `campaigns.list`: the active campaigns, most recently opened first.
+#[tauri::command]
+pub async fn addon_campaigns(app: AppHandle, addon: String) -> Result<Vec<CampaignSummary>, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "campaigns:read")?;
+        let list = crate::commands::campaigns::list(&dirs(&app)?)?;
+        Ok(list.campaigns.into_iter().map(|c| CampaignSummary { id: c.id, name: c.name }).collect())
+    })
+    .await
+}
+
+/// The longest address `ui.openExternal` opens.
+const MAX_LINK: usize = 2000;
+
+/// An address `ui.openExternal` may hand to the system: plain `https://`, at most `MAX_LINK` long, and only URL
+/// characters (no spaces, quotes or shell characters), so the system's opener reads it as one address. Its host.
+fn link_host(url: &str) -> Option<String> {
+    const OK: &[u8] = b"-._~:/?#[]@!$&'()*+,;=%";
+    let plain = url.len() <= MAX_LINK && url.bytes().all(|b| b.is_ascii_alphanumeric() || OK.contains(&b));
+    if plain { https_host(url) } else { None }
+}
+
+/// `ui.openExternal`: opens an https address in the system's browser, to a host the manifest names (`links:<host>`).
+#[tauri::command]
+pub async fn addon_open_external(app: AppHandle, addon: String, url: String) -> Result<(), StorageError> {
+    blocking(move || {
+        let host = link_host(&url).ok_or_else(|| StorageError::Invalid(format!("\"{}\" isn't a plain https:// address.", shown_url(&url))))?;
+        require(self::addon(&app, &addon)?, &format!("links:{host}"))?;
+        open_in_browser(&url)
+    })
+    .await
+}
+
+#[cfg(target_os = "windows")]
+fn open_in_browser(url: &str) -> Result<(), StorageError> {
+    // The URL handler, not `cmd /c start`, so nothing in the address is read by a shell.
+    std::process::Command::new("rundll32").arg("url.dll,FileProtocolHandler").arg(url).status()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn open_in_browser(url: &str) -> Result<(), StorageError> {
+    std::process::Command::new("open").arg(url).status()?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn open_in_browser(_url: &str) -> Result<(), StorageError> {
+    Err(StorageError::Invalid("Opening a link isn't supported on this system.".into()))
+}
+
 /// The addon pages' own policy: scripts, styles and images from the addon scheme only; no network (`net.fetch` is the
 /// way out), no frames, no forms.
 const ADDON_CSP: &str = "default-src 'none'; \
@@ -1375,6 +1438,15 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn links_are_plain_https_addresses_only() {
+        assert_eq!(link_host("https://app.example.com/a/b?c=1&d=%20#e").as_deref(), Some("app.example.com"));
+        let long = format!("https://a.com/{}", "x".repeat(MAX_LINK));
+        for bad in ["http://a.com/", "https://a.com/x y", "https://a.com/\"&calc", "https://a.com/^x", "https://a.com/<x>", r"https://a.com/x\y", "https://user@a.com/", long.as_str()] {
+            assert_eq!(link_host(bad), None, "{bad}");
+        }
     }
 
     #[test]

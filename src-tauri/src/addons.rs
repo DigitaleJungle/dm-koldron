@@ -13,8 +13,8 @@ pub const API: u32 = 1;
 pub const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
-const PERMISSIONS: [&str; 7] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search"];
-/// The longest label an addon's Add character item or Library tab may have.
+const PERMISSIONS: [&str; 8] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search", "campaigns:read"];
+/// The longest label an addon's Add character item, Library tab or Home widget may have.
 const MAX_LABEL: usize = 40;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -40,6 +40,17 @@ pub struct Manifest {
     pub preview: Option<String>,
     /// A tab in the app-wide Library labelled `label`, showing the page `entry`.
     pub library: Option<Tab>,
+    /// A widget on a campaign's Home labelled `label` (its name for screen readers and in Add widget), showing `entry`.
+    pub home: Option<Widget>,
+}
+
+/// An addon's widget on a campaign's Home.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Widget {
+    pub label: String,
+    /// The page, relative to the addon folder.
+    pub entry: String,
 }
 
 /// An addon's tab in the Library.
@@ -73,6 +84,9 @@ pub struct Panel {
     pub section: String,
     /// The page, relative to the addon folder.
     pub entry: String,
+    /// Its tab's name in Integrations, which shows each panel as a tab; the addon's name without one.
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 /// `settings` as one panel (as addons first wrote it) or a list of them.
@@ -155,7 +169,7 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
         }
     }
     for p in &m.permissions {
-        let known = PERMISSIONS.contains(&p.as_str()) || p.strip_prefix("net:").is_some_and(valid_host);
+        let known = PERMISSIONS.contains(&p.as_str()) || [p.strip_prefix("net:"), p.strip_prefix("links:")].into_iter().flatten().any(valid_host);
         if !known {
             errors.push(format!("Unknown permission \"{p}\"."));
         }
@@ -167,6 +181,9 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
             errors.push(format!("settings: more than one panel in \"{}\".", panel.section));
         }
         check_page("settings", &panel.entry, folder, &mut errors);
+        if let Some(label) = &panel.label {
+            check_label("settings", label, &mut errors);
+        }
     }
     if let Some(page) = &m.characters {
         check_label("characters", &page.label, &mut errors);
@@ -187,6 +204,10 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
     if let Some(tab) = &m.library {
         check_label("library", &tab.label, &mut errors);
         check_page("library", &tab.entry, folder, &mut errors);
+    }
+    if let Some(widget) = &m.home {
+        check_label("home", &widget.label, &mut errors);
+        check_page("home", &widget.entry, folder, &mut errors);
     }
     errors
 }
@@ -238,13 +259,14 @@ mod tests {
     fn manifest(id: &str) -> serde_json::Value {
         serde_json::json!({
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
-            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "net:api.github.com"],
-            "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html" }],
+            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "campaigns:read", "net:api.github.com", "links:github.com"],
+            "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html", "label": "Service" }],
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
             "start": "ui/settings.html",
             "preview": "ui/settings.html",
-            "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true }
+            "library": { "label": "Tab", "entry": "ui/settings.html", "sidebar": true },
+            "home": { "label": "Widget", "entry": "ui/settings.html" }
         })
     }
 
@@ -255,23 +277,25 @@ mod tests {
         fs::create_dir_all(dir.join("notes")).unwrap();
         let mut bad = manifest("other");
         bad["api"] = (API + 1).into();
-        bad["permissions"] = serde_json::json!(["files:write", "net:", "net:Evil.com/x"]);
-        bad["settings"] = serde_json::json!([{ "section": "ui", "entry": "../x.html" }, { "section": "library", "entry": "ui/settings.html" }, { "section": "library", "entry": "ui/settings.html" }]);
+        bad["permissions"] = serde_json::json!(["files:write", "net:", "net:Evil.com/x", "links:"]);
+        bad["settings"] = serde_json::json!([{ "section": "ui", "entry": "../x.html" }, { "section": "library", "entry": "ui/settings.html", "label": "" }, { "section": "library", "entry": "ui/settings.html" }]);
         bad["characters"] = serde_json::json!({ "label": " ", "entry": "ui/missing.html", "owns": ["currentHp", "picture"] });
         bad["background"] = "bg.js".into();
         bad["start"] = "start.js".into();
         bad["preview"] = "../preview.html".into();
         bad["library"] = serde_json::json!({ "label": "", "entry": "ui/tab.html" });
+        bad["home"] = serde_json::json!({ "label": "", "entry": "ui/home.js" });
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
         assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
+        assert!(addons[0].allows("links:github.com") && addons[0].manifest.home.is_some());
         assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);
-        assert_eq!(addons[0].manifest.settings.len(), 2);
+        assert_eq!(addons[0].manifest.settings[1].label.as_deref(), Some("Service"));
         assert_eq!((invalid[0].folder.as_str(), invalid[0].name.as_deref()), ("broken", Some("Importer")));
-        // api, id, 3 permissions, section, entry, a second library panel, label, characters page, an unknown owned
-        // field, background page, start page, preview page, library label and page
-        assert_eq!(invalid[0].errors.len(), 16, "{:?}", invalid[0].errors);
+        // api, id, 4 permissions, section, entry, a panel label, a second library panel, label, characters page, an unknown owned
+        // field, background page, start page, preview page, library label and page, home label and page
+        assert_eq!(invalid[0].errors.len(), 20, "{:?}", invalid[0].errors);
     }
 
     #[test]

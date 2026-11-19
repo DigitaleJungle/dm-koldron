@@ -12,6 +12,14 @@ describe("home widgets", () => {
     expect([r.order, r.removed]).toEqual([["summary", "nextSession", "encounter"], ["party"]]); // removed stays off
   });
 
+  it("places loaded addons' widgets and leaves out ones whose addon isn't loaded", () => {
+    const saved = { widgets: ["addon:lore", "party", "addon:gone"], widths: { "addon:lore": 3 }, locked: false };
+    const l = fromSaved(saved, ["addon:lore", "addon:new"]);
+    expect(l.order).toEqual(["addon:lore", "party", "nextSession", "summary", "encounter", "addon:new"]);
+    expect([l.widths["addon:lore"], l.widths["addon:new"]]).toEqual([3, 1]);
+    expect(fromSaved(saved).order).toEqual(["party", "nextSession", "summary", "encounter"]);
+  });
+
   it("moves a widget, clamped to the list", () => {
     expect(moveWidget(["party", "nextSession", "summary"], "party", 2)).toEqual(["nextSession", "summary", "party"]);
     expect(moveWidget(["party", "nextSession"], "nextSession", -5)).toEqual(["nextSession", "party"]);

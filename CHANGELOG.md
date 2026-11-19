@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.2] - 2026-11-19
+
+### Added
+
+- Addon API: campaigns.list (campaigns:read permission) lists the active campaigns.
+- Addon API: a home widget on every campaign's Home, moved, resized and removed like the built-in widgets.
+- Addon API: ui.openExternal (links:<host> permission) opens an https link in the system browser.
+
+### Changed
+
+- Settings → Integrations shows each addon's panel as a tab, named by the panel's optional label.
+
 ## [0.7.1] - 2026-11-18
 
 ### Fixed

@@ -13,6 +13,12 @@ use tauri::AppHandle;
 
 /// Every widget Home knows; each appears at most once.
 pub const WIDGET_IDS: [&str; 4] = ["party", "nextSession", "summary", "encounter"];
+
+/// A built-in widget, or an addon's (`addon:<id>`, its manifest's `home`), kept in the layout whether or not that
+/// addon is installed now.
+fn known(id: &str) -> bool {
+    WIDGET_IDS.contains(&id) || id.strip_prefix("addon:").is_some_and(|a| crate::storage::check_id(a, "addon").is_ok())
+}
 const FILE_NAME: &str = "home-layout.json";
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -31,7 +37,7 @@ pub struct Layout {
 
 fn validate(layout: &Layout) -> Result<(), String> {
     for (i, id) in layout.widgets.iter().enumerate() {
-        if !WIDGET_IDS.contains(&id.as_str()) {
+        if !known(id) {
             return Err(format!("Unknown widget \"{id}\"."));
         }
         if layout.widgets[..i].contains(id) {
@@ -39,7 +45,7 @@ fn validate(layout: &Layout) -> Result<(), String> {
         }
     }
     for (i, id) in layout.removed.iter().enumerate() {
-        if !WIDGET_IDS.contains(&id.as_str()) {
+        if !known(id) {
             return Err(format!("Unknown widget \"{id}\"."));
         }
         if layout.removed[..i].contains(id) || layout.widgets.contains(id) {
@@ -47,7 +53,7 @@ fn validate(layout: &Layout) -> Result<(), String> {
         }
     }
     for (id, width) in &layout.widths {
-        if !WIDGET_IDS.contains(&id.as_str()) {
+        if !known(id) {
             return Err(format!("Unknown widget \"{id}\"."));
         }
         if !(1..=3).contains(width) {
@@ -114,7 +120,7 @@ mod tests {
     fn nothing_saved_then_saves_and_reads_back() {
         let dir = temp_dir("roundtrip");
         assert_eq!(load(&dir), Ok(None));
-        let saved = Layout { locked: true, removed: vec!["encounter".into()], ..layout(&["summary", "party"], &[("party", 3)]) };
+        let saved = Layout { locked: true, removed: vec!["encounter".into(), "addon:gone".into()], ..layout(&["summary", "addon:lore", "party"], &[("party", 3), ("addon:lore", 2)]) };
         save(&dir, &saved).unwrap();
         assert_eq!(load(&dir), Ok(Some(saved)));
     }
@@ -125,6 +131,8 @@ mod tests {
         let removing = |ids: &[&str]| Layout { removed: ids.iter().map(|s| s.to_string()).collect(), ..layout(&["party"], &[]) };
         for bad in [
             layout(&["tools"], &[]),
+            layout(&["addon:"], &[]),
+            layout(&["addon:Bad/x"], &[]),
             layout(&["party", "party"], &[]),
             layout(&["party"], &[("party", 4)]),
             removing(&["tools"]),

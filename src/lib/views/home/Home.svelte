@@ -5,15 +5,18 @@
   // menu does both from the keyboard, and Remove takes it off Home (a dashed slot at the grid's end puts it back). The layout is saved in the campaign's folder as soon as it changes.
   import { tick } from "svelte";
   import { flip } from "svelte/animate";
+  import { goto } from "$app/navigation";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { getHomeLayout, setHomeLayout } from "$lib/api/home";
   import { errorMessage } from "$lib/api/storage";
+  import AddonFrame from "$lib/components/AddonFrame.svelte";
   import Menu from "$lib/components/Menu.svelte";
-  import { addons } from "$lib/stores/addons.svelte";
+  import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import { campaigns } from "$lib/stores/campaigns.svelte";
   import { showHeaderAction } from "$lib/stores/header.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
+  import { libraryTabAddress } from "$lib/views/search/search";
   import EncounterWidget from "./EncounterWidget.svelte";
   import NextSessionWidget from "./NextSessionWidget.svelte";
   import PartyWidget from "./PartyWidget.svelte";
@@ -42,13 +45,20 @@
   let loadError = $state<string | null>(null);
   let saveError = $state<string | null>(null);
 
-  getHomeLayout(campaign).then(
-    (saved) => ({ order, widths, locked, removed } = fromSaved(saved)),
-    (e) => {
-      loadError = t.loadError(errorMessage(e));
-      ({ order, widths, locked, removed } = fromSaved(null));
-    },
-  );
+  // Addons' widgets (their manifest's `home`), as `addon:<id>`; they only change on a restart.
+  const addonOf = (id: WidgetId) => (id.startsWith("addon:") ? addons.list.find((a) => `addon:${a.id}` === id && a.home) : undefined);
+  const title = (id: WidgetId) => addonOf(id)?.home?.label ?? t.titles[id as keyof typeof t.titles];
+
+  loadAddons().then(() => {
+    const addonWidgets = addons.list.filter((a) => a.home).map((a): WidgetId => `addon:${a.id}`);
+    getHomeLayout(campaign).then(
+      (saved) => ({ order, widths, locked, removed } = fromSaved(saved, addonWidgets)),
+      (e) => {
+        loadError = t.loadError(errorMessage(e));
+        ({ order, widths, locked, removed } = fromSaved(null, addonWidgets));
+      },
+    );
+  });
 
   async function save() {
     if (!order) return;
@@ -197,16 +207,16 @@
           }}
         >
           <!-- No visible title: the content says what it is; screen readers hear its name. -->
-          <section class="widget" aria-label={t.titles[id]}>
+          <section class="widget" aria-label={title(id)}>
             {#if !locked}
               <header>
-                <span class="grip" draggable="true" role="img" aria-label={t.move(t.titles[id])} ondragstart={(e) => onDragStart(e, id)} ondragend={onDragEnd}>
+                <span class="grip" draggable="true" role="img" aria-label={t.move(title(id))} ondragstart={(e) => onDragStart(e, id)} ondragend={onDragEnd}>
                   <i class="ti ti-grip-vertical" aria-hidden="true"></i>
                 </span>
                 <span class="spacer"></span>
                 <Menu
                   id="widget-menu-{id}"
-                  label={t.options(t.titles[id])}
+                  label={t.options(title(id))}
                   triggerClass="icon-btn"
                   items={[
                     { label: t.moveLeft, disabled: i === 0, onselect: () => move(id, -1) },
@@ -226,19 +236,29 @@
                 <NextSessionWidget />
               {:else if id === "summary"}
                 <SummaryWidget />
-              {:else}
+              {:else if id === "encounter"}
                 <EncounterWidget {characters} width={widths[id]} />
+              {:else}
+                {@const addon = addonOf(id)}
+                {#if addon}
+                  <AddonFrame
+                    {addon}
+                    entry={addon.home!.entry}
+                    context={{ campaign, width: widths[id] }}
+                    onopenlibrary={addon.library && addon.libraryVisible ? (state) => goto(libraryTabAddress(addon.id, state)) : undefined}
+                  />
+                {/if}
               {/if}
             </div>
             <!-- The right edge: drag it to 1, 2 or 3 columns (the ⋯ menu's Width does the same from the keyboard). -->
-            {#if !locked}<span class="edge" role="img" aria-label={t.resize(t.titles[id])} onpointerdown={(e) => startResize(e, id)}></span>{/if}
+            {#if !locked}<span class="edge" role="img" aria-label={t.resize(title(id))} onpointerdown={(e) => startResize(e, id)}></span>{/if}
           </section>
         </li>
       {/each}
       <!-- Unlocked, with widgets taken off: a dashed slot that lists them to put back at the end. -->
       {#if !locked && removed.length > 0}
         <li class="slot add-slot">
-          <Menu id="widget-add" label={t.addWidget} align="start" triggerClass="add-widget" items={removed.map((w) => ({ label: t.titles[w], onselect: () => putBack(w) }))}>
+          <Menu id="widget-add" label={t.addWidget} align="start" triggerClass="add-widget" items={removed.map((w) => ({ label: title(w), onselect: () => putBack(w) }))}>
             {#snippet trigger()}<i class="ti ti-plus" aria-hidden="true"></i>{t.addWidget}{/snippet}
           </Menu>
         </li>
@@ -259,6 +279,11 @@
 
   .error {
     margin: 0;
+  }
+
+  /* While a widget is dragged, an addon's frame mustn't swallow the drag events its slot listens for. */
+  .grid:has(.dragging) :global(iframe) {
+    pointer-events: none;
   }
 
   .grid {

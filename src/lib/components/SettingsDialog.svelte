@@ -41,6 +41,24 @@
   ]);
   let active = $state<SectionId>("ui");
 
+  // Integrations shows each addon's panel as a tab, named by the panel's label (else the addon's name).
+  const integrationTabs = $derived(
+    integrationPanels.map((a) => ({ addon: a, label: a.settings.find((p) => p.section === "integrations")?.label ?? a.name })),
+  );
+  let integration = $state<string | null>(null);
+  const currentIntegration = $derived(integrationTabs.some((tab) => tab.addon.id === integration) ? integration : (integrationTabs[0]?.addon.id ?? null));
+
+  // Horizontal tabs: Left/Right (and Home/End) move between them; only the selected one is in the Tab order.
+  function onIntegrationKeydown(event: KeyboardEvent) {
+    const n = integrationTabs.length;
+    const at = integrationTabs.findIndex((tab) => tab.addon.id === currentIntegration);
+    const to = { ArrowRight: (at + 1) % n, ArrowLeft: (at - 1 + n) % n, Home: 0, End: n - 1 }[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    integration = integrationTabs[to].addon.id;
+    document.getElementById(`integration-tab-${integration}`)?.focus();
+  }
+
   // Vertical tabs: Up/Down (and Home/End) move between sections; only the selected tab is in the Tab order.
   function onTabKeydown(event: KeyboardEvent) {
     const at = sections.findIndex((s) => s.id === active);
@@ -253,8 +271,26 @@
       {/if}
       {#if integrationPanels.length}
         <div id="settings-panel-integrations" class="panel" role="tabpanel" aria-labelledby="settings-tab-integrations" hidden={active !== "integrations"}>
-          {#each integrationPanels as addon (addon.id)}
-            <AddonFrame {addon} entry={panelIn(addon, "integrations")!} panel="integrations" />
+          <div class="integration-tabs" role="tablist" aria-label={t.integrations.tabs}>
+            {#each integrationTabs as tab (tab.addon.id)}
+              <button
+                id="integration-tab-{tab.addon.id}"
+                role="tab"
+                aria-selected={currentIntegration === tab.addon.id}
+                aria-controls="integration-panel-{tab.addon.id}"
+                tabindex={currentIntegration === tab.addon.id ? 0 : -1}
+                onclick={() => (integration = tab.addon.id)}
+                onkeydown={onIntegrationKeydown}
+              >
+                {tab.label}
+              </button>
+            {/each}
+          </div>
+          <!-- Every tab's panel stays loaded (only the chosen one shows), so changes not saved yet survive switching. -->
+          {#each integrationTabs as tab (tab.addon.id)}
+            <div id="integration-panel-{tab.addon.id}" role="tabpanel" aria-labelledby="integration-tab-{tab.addon.id}" hidden={currentIntegration !== tab.addon.id}>
+              <AddonFrame addon={tab.addon} entry={panelIn(tab.addon, "integrations")!} panel="integrations" />
+            </div>
           {/each}
         </div>
       {/if}
@@ -354,6 +390,36 @@
 
   /* Every section is loaded while Settings is open; only the chosen one shows. */
   .panel[hidden] {
+    display: none;
+  }
+
+  /* Integrations' tabs, one per addon panel, in the Library's tab look. */
+  .integration-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-self: flex-start;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-sunken);
+  }
+
+  .integration-tabs button {
+    padding: var(--space-1) var(--space-4);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-text-muted);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+  }
+
+  .integration-tabs button[aria-selected="true"] {
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+  }
+
+  [role="tabpanel"][hidden] {
     display: none;
   }
 

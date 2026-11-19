@@ -17,15 +17,23 @@ vi.mock("$lib/api/addons", () => ({
   addonSetLibraryVisible: vi.fn(async () => undefined),
   addonSecretSet: vi.fn(async () => undefined),
   addonSetSearch: vi.fn(async () => undefined),
+  addonOpenExternal: vi.fn(async () => undefined),
 }));
 
-import { addonFetch, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonOpenExternal, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
+const host = () => ({ hidden: false, setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("opens links only from a page on screen", async () => {
+    await answer("lore", "ui.openExternal", ["https://example.com/a"], host());
+    expect(addonOpenExternal).toHaveBeenCalledWith("lore", "https://example.com/a");
+    await expect(answer("lore", "ui.openExternal", ["https://example.com/b"], { ...host(), hidden: true })).rejects.toThrow("on screen");
+    expect(addonOpenExternal).toHaveBeenCalledTimes(1);
+  });
 
   it("only takes well-formed calls", () => {
     expect(isCall({ koldron: 1, id: 1, call: "packs.list" })).toBe(true);

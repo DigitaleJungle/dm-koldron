@@ -924,6 +924,7 @@ export const strings = {
     },
     integrations: {
       title: "Integrations",
+      tabs: "Services",
     },
     addons: {
       title: "Addons",

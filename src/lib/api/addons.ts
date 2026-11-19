@@ -8,8 +8,8 @@ export type AddonSummary = {
   name: string;
   version: string;
   license: string;
-  /** Its pages in Settings sections, at most one per section. */
-  settings: { section: string; entry: string }[];
+  /** Its pages in Settings sections, at most one per section; `label`: its tab's name in Integrations. */
+  settings: { section: string; entry: string; label: string | null }[];
   /** An item in the Characters screen's Add character menu, opening `entry` in a dialog; `owns`: the fields of the
    * characters it adds that it keeps up to date (the app can't change those while the addon is loaded). */
   characters: { label: string; entry: string; owns: string[] } | null;
@@ -24,6 +24,8 @@ export type AddonSummary = {
   library: { label: string; entry: string; sidebar: boolean } | null;
   /** Whether that tab is shown (the addon's `library.setVisible`). */
   libraryVisible: boolean;
+  /** A widget on a campaign's Home labelled `label`, showing `entry` (`{ campaign, width }` in its context). */
+  home: { label: string; entry: string } | null;
   licenseText: string | null;
   errors: string[];
   /** Whether the user has it enabled; a disabled one isn't loaded on the next start. */
@@ -221,4 +223,15 @@ export function addonSecretDelete(addon: string, name: string): Promise<void> {
 
 export function addonSetLibraryVisible(addon: string, visible: boolean): Promise<void> {
   return invoke("addon_set_library_visible", { addon, visible });
+}
+
+/** Mirrors `CampaignSummary`: an active campaign as an addon sees it. */
+export type AddonCampaign = { id: string; name: string };
+
+export function addonCampaigns(addon: string): Promise<AddonCampaign[]> {
+  return invoke("addon_campaigns", { addon });
+}
+
+export function addonOpenExternal(addon: string, url: string): Promise<void> {
+  return invoke("addon_open_external", { addon, url });
 }

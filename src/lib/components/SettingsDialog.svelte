@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { untrack } from "svelte";
   import { strings } from "$lib/strings";
   import { theme, chooseTheme, chooseAnimations } from "$lib/stores/theme.svelte";
   import type { Animations, Theme } from "$lib/api/settings";
@@ -28,10 +29,11 @@
 
   let { open = $bindable(false), section }: { open?: boolean; section?: SectionId } = $props();
   let dialog: HTMLDialogElement | undefined = $state();
+  // Counted untracked: `count++` reads the count too, which would make this effect run itself again and again.
   $effect(() => {
     if (!open) return;
-    settingsOpen.count++;
-    return () => void settingsOpen.count--;
+    untrack(() => settingsOpen.count++);
+    return () => untrack(() => void settingsOpen.count--);
   });
 
   const t = strings.settings;

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.6] - 2026-11-20
+
+### Added
+
+- Addons: a campaign screen's sidebar icon can be an SVG file in the addon's folder (at most 16 KB), drawn in the text colour like the app's icons.
+
+### Fixed
+
+- Settings no longer slows down while open: the dialog's open counter kept triggering itself.
+
 ## [0.7.5] - 2026-11-20
 
 ### Added

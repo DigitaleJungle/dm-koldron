@@ -131,6 +131,8 @@ pub struct AddonSummary {
     pub library: Option<crate::addons::Tab>,
     pub home: Option<crate::addons::Widget>,
     pub campaign: Option<crate::addons::CampaignScreen>,
+    /// The text of the `campaign` screen's icon when it's an SVG file in the addon folder.
+    pub campaign_icon_svg: Option<String>,
     /// The campaigns the addon showed (true) or hid (false) its `campaign` screen in; others follow the manifest's
     /// `visible`.
     pub campaign_visibility: BTreeMap<String, bool>,
@@ -163,6 +165,7 @@ fn summary(addon: &Addon, data: &Path) -> AddonSummary {
         library: m.library.clone(),
         home: m.home.clone(),
         campaign: m.campaign.clone(),
+        campaign_icon_svg: m.campaign.as_ref().and_then(|c| crate::addons::svg_icon(&addon.folder, c)),
         campaign_visibility: campaign_visibility(data, &m.id),
         library_visible: library_visible(data, &m.id),
         license_text: license_in(&addon.folder),
@@ -198,6 +201,7 @@ fn summaries_of(on_disk: &Loaded, running: &[Addon], data: &Path) -> Vec<AddonSu
         library: None,
         home: None,
         campaign: None,
+        campaign_icon_svg: None,
         campaign_visibility: BTreeMap::new(),
         library_visible: true,
         errors: capped(&i.errors),

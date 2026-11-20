@@ -26,9 +26,11 @@ export type AddonSummary = {
   libraryVisible: boolean;
   /** A widget on a campaign's Home labelled `label`, showing `entry` (`{ campaign, width }` in its context). */
   home: { label: string; entry: string } | null;
-  /** A screen in every campaign's sidebar labelled `label` with the app's icon `icon` (a Tabler name), showing `entry`;
+  /** A screen in every campaign's sidebar labelled `label` with the icon `icon` (a Tabler name, or an .svg file in the
+   * addon folder: its text is `campaignIconSvg`), showing `entry`;
    * `sidebar`: the campaign header can hide its side column (`sidebarHidden` in the page's context). */
   campaign: { label: string; icon: string; entry: string; sidebar: boolean; visible: boolean } | null;
+  campaignIconSvg: string | null;
   /** The campaigns the addon showed (true) or hid (false) that screen in (`campaign.setVisible`); others follow its
    * `visible`. */
   campaignVisibility: Record<string, boolean>;

@@ -16,6 +16,8 @@ const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
 const PERMISSIONS: [&str; 8] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search", "campaigns:read"];
 /// The longest label an addon's Add character item, Library tab, Home widget or campaign screen may have.
 const MAX_LABEL: usize = 40;
+/// The largest SVG file a campaign screen's `icon` may be.
+const MAX_ICON_BYTES: u64 = 16 * 1024;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -42,7 +44,7 @@ pub struct Manifest {
     pub library: Option<Tab>,
     /// A widget on a campaign's Home labelled `label` (its name for screen readers and in Add widget), showing `entry`.
     pub home: Option<Widget>,
-    /// A screen in every campaign's sidebar, labelled `label` with the app's icon `icon`, showing `entry`.
+    /// A screen in every campaign's sidebar, labelled `label` with the icon `icon`, showing `entry`.
     pub campaign: Option<CampaignScreen>,
 }
 
@@ -51,7 +53,8 @@ pub struct Manifest {
 #[serde(deny_unknown_fields)]
 pub struct CampaignScreen {
     pub label: String,
-    /// The name of one of the app's icons (Tabler's), e.g. `map`.
+    /// The name of one of the app's icons (Tabler's), e.g. `map`, or an `.svg` file in the addon folder (at most
+    /// 16 KB), drawn as a shape in the text colour.
     pub icon: String,
     /// The page, relative to the addon folder.
     pub entry: String,
@@ -235,12 +238,31 @@ fn check(m: &Manifest, folder: &Path, folder_name: &str) -> Vec<String> {
     if let Some(screen) = &m.campaign {
         check_label("campaign", &screen.label, &mut errors);
         check_page("campaign", &screen.entry, folder, &mut errors);
-        let plain = !screen.icon.is_empty() && screen.icon.len() <= 64 && screen.icon.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-        if !plain {
-            errors.push(format!("campaign: the icon \"{}\" must be an icon name: lowercase letters, digits and dashes.", screen.icon));
+        if screen.icon.ends_with(".svg") {
+            match fs::metadata(folder.join(&screen.icon)) {
+                _ if !safe_path(&screen.icon) => errors.push(format!("campaign: the icon \"{}\" must be an .svg file inside the addon folder.", screen.icon)),
+                Ok(meta) if meta.is_file() && meta.len() <= MAX_ICON_BYTES => {}
+                Ok(meta) if meta.is_file() => errors.push(format!("campaign: the icon \"{}\" is larger than {} KB.", screen.icon, MAX_ICON_BYTES / 1024)),
+                _ => errors.push(format!("campaign: the icon \"{}\" doesn't exist.", screen.icon)),
+            }
+        } else {
+            let plain = !screen.icon.is_empty() && screen.icon.len() <= 64 && screen.icon.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            if !plain {
+                errors.push(format!("campaign: the icon \"{}\" must be an icon name (lowercase letters, digits and dashes) or an .svg file.", screen.icon));
+            }
         }
     }
     errors
+}
+
+/// The text of a campaign screen's SVG icon (an `icon` ending in `.svg`, checked when the addon loaded); `None` for an
+/// icon name, or a file that changed since into something that isn't a small SVG.
+pub fn svg_icon(folder: &Path, screen: &CampaignScreen) -> Option<String> {
+    if !screen.icon.ends_with(".svg") || !safe_path(&screen.icon) {
+        return None;
+    }
+    let text = fs::read_to_string(folder.join(&screen.icon)).ok()?;
+    (text.len() as u64 <= MAX_ICON_BYTES && text.contains("<svg")).then_some(text)
 }
 
 fn check_label(field: &str, label: &str, errors: &mut Vec<String>) {
@@ -331,6 +353,31 @@ mod tests {
         // field, background page, start page, preview page, library label and page, home label and page, campaign page
         // and icon
         assert_eq!(invalid[0].errors.len(), 22, "{:?}", invalid[0].errors);
+    }
+
+    #[test]
+    fn a_campaign_screen_icon_may_be_a_small_svg_file_inside_the_addon() {
+        let dir = temp_dir("svg");
+        let mut m = manifest("importer");
+        m["campaign"]["icon"] = "ui/mark.svg".into();
+        write_addon(&dir, "importer", m.clone());
+        fs::write(dir.join("importer/ui/mark.svg"), r#"<svg viewBox="0 0 16 12"><path d="M0 0h16v12z"/></svg>"#).unwrap();
+        let (addons, invalid) = load_dir(&dir).unwrap();
+        assert!(invalid.is_empty(), "{invalid:?}");
+        let screen = addons[0].manifest.campaign.as_ref().unwrap();
+        assert!(svg_icon(&addons[0].folder, screen).is_some_and(|svg| svg.starts_with("<svg")));
+        // Not a picture any more: no icon, the screen still loads.
+        fs::write(dir.join("importer/ui/mark.svg"), "hello").unwrap();
+        assert_eq!(svg_icon(&addons[0].folder, screen), None);
+
+        for (icon, error) in [("../mark.svg", "inside the addon folder"), ("ui/missing.svg", "doesn't exist"), ("ui/big.svg", "larger than 16 KB")] {
+            let dir = temp_dir("svg-bad");
+            m["campaign"]["icon"] = icon.into();
+            write_addon(&dir, "importer", m.clone());
+            fs::write(dir.join("importer/ui/big.svg"), format!("<svg>{}</svg>", " ".repeat(17 * 1024))).unwrap();
+            let (_, invalid) = load_dir(&dir).unwrap();
+            assert!(invalid[0].errors.iter().any(|e| e.contains(error)), "{icon}: {:?}", invalid[0].errors);
+        }
     }
 
     #[test]

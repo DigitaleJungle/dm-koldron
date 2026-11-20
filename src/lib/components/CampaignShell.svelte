@@ -102,6 +102,8 @@
             href: `${base}/addon/${a.id}`,
             label: a.campaign!.label,
             icon: `ti-${a.campaign!.icon}`,
+            // An addon's own SVG is drawn as a mask in the text colour (an image: nothing in it runs).
+            mask: a.campaignIconSvg ? `url("data:image/svg+xml,${encodeURIComponent(a.campaignIconSvg)}")` : undefined,
             current: page.url.pathname === `${base}/addon/${a.id}`,
           })),
       ],
@@ -159,7 +161,11 @@
         <OrderList items={links} onmove={move}>
           {#snippet row(link)}
             <a href={link.href} aria-current={link.current ? "page" : undefined} aria-label={link.label}>
-              <i class="ti {link.icon}" aria-hidden="true"></i>
+              {#if "mask" in link && link.mask}
+                <i class="ti svg-icon" style:mask-image={link.mask} aria-hidden="true"></i>
+              {:else}
+                <i class="ti {link.icon}" aria-hidden="true"></i>
+              {/if}
               <span class="text">{link.label}</span>
             </a>
           {/snippet}
@@ -340,6 +346,15 @@
 
   .ti {
     font-size: var(--icon-size);
+  }
+
+  .svg-icon {
+    width: 1em;
+    height: 1em;
+    background: currentColor;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
   }
 
   /* Takes the room between the switcher and the bottom buttons; nothing of it shows. */

@@ -13,7 +13,7 @@ pub const API: u32 = 1;
 pub const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
-const PERMISSIONS: [&str; 8] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "search", "campaigns:read"];
+const PERMISSIONS: [&str; 9] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "search", "campaigns:read"];
 /// The longest label an addon's Add character item, Library tab, Home widget or campaign screen may have.
 const MAX_LABEL: usize = 40;
 /// The largest SVG file a campaign screen's `icon` may be.
@@ -312,7 +312,7 @@ mod tests {
     fn manifest(id: &str) -> serde_json::Value {
         serde_json::json!({
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
-            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "secrets", "campaigns:read", "net:api.github.com", "links:github.com"],
+            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "campaigns:read", "net:api.github.com", "links:github.com"],
             "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html", "label": "Service" }],
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",
@@ -343,7 +343,7 @@ mod tests {
         write_addon(&dir, "broken", bad);
         let (addons, invalid) = load_dir(&dir).unwrap();
         assert_eq!(addons.len(), 1);
-        assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com"));
+        assert!(addons[0].allows("net:api.github.com") && !addons[0].allows("net:example.com") && addons[0].allows("files:read"));
         assert!(addons[0].allows("links:github.com") && addons[0].manifest.home.is_some());
         assert!(addons[0].manifest.campaign.as_ref().is_some_and(|c| c.sidebar && c.icon == "map-2" && c.visible));
         assert!(addons[0].manifest.library.as_ref().unwrap().sidebar);

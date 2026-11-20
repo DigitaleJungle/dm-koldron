@@ -1,6 +1,7 @@
 // The window's side of the addon message API (addons/addons.md): maps an addon frame's call to a command. Permissions
 // are checked in Rust, so nothing here decides what an addon may do.
 import type { Character } from "$lib/api/characters";
+import { forgetPictures } from "$lib/stores/monsterPictures";
 import {
   addonAddFolder,
   addonCampaigns,
@@ -20,6 +21,9 @@ import {
   addonSetLibraryVisible,
   addonFolders,
   addonReadFile,
+  addonReadOpened,
+  addonOpenFiles,
+  addonPutImages,
   addonRemoveFolder,
   addonSaveFile,
   addonScanFolder,
@@ -94,6 +98,24 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       await addonRemovePack(addon, String(args[0]));
       host.packsChanged();
       return null;
+    case "packs.putImages": {
+      const images = args[1];
+      if (!Array.isArray(images) || images.some((i) => typeof i?.path !== "string" || !(i?.bytes instanceof ArrayBuffer)))
+        throw new Error("packs.putImages needs a pack id and a list of { path, bytes } with each image as an ArrayBuffer.");
+      if (images.some((i) => !/^[ -~]+$/.test(i.path))) throw new Error("packs.putImages takes plain ASCII paths.");
+      const total = images.reduce((sum, i) => sum + i.bytes.byteLength, 0);
+      // Same limit as Rust's MAX_BATCH, checked here too so a too-large call never builds its buffer.
+      if (total > 100 * 1024 * 1024) throw new Error("packs.putImages takes at most 100 MB of images at once.");
+      const body = new Uint8Array(total);
+      let at = 0;
+      for (const i of images) {
+        body.set(new Uint8Array(i.bytes), at);
+        at += i.bytes.byteLength;
+      }
+      await addonPutImages(addon, String(args[0]), images.map((i) => ({ path: i.path, size: i.bytes.byteLength })), body);
+      forgetPictures(); // the encounter screens ask again: a picture may be there now
+      return null;
+    }
     case "net.fetch": {
       const options = args[1] ?? {};
       if (typeof options !== "object") throw new Error("net.fetch's options are an object.");
@@ -105,6 +127,13 @@ export async function answer(addon: string, call: string, args: unknown[], host:
     case "files.pickFile": {
       const bytes = await addonPickFile(addon, Array.isArray(args[0]) ? args[0].map(String) : []);
       return bytes.byteLength > 0 ? bytes : null;
+    }
+    case "files.open":
+      return addonOpenFiles(addon, Array.isArray(args[0]) ? args[0].map(String) : []);
+    case "files.read": {
+      const [offset, length] = [Number(args[1]), Number(args[2])];
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) throw new Error("files.read needs a byte offset and length.");
+      return addonReadOpened(addon, String(args[0]), offset, length);
     }
     case "files.pickFolder":
       return addonPickFolder(addon);

@@ -172,6 +172,24 @@ export function addonReadFile(addon: string, folder: string, path: string, offse
   return invoke("addon_read_file", { addon, folder, path, offset, length });
 }
 
+/** Mirrors `OpenedFile`: a file the user picked with `files.open`, known to the addon by its id. */
+export type OpenedFile = { id: string; name: string; size: number };
+
+/** Null when the user cancelled. */
+export function addonOpenFiles(addon: string, extensions: string[]): Promise<OpenedFile[] | null> {
+  return invoke("addon_open_files", { addon, extensions });
+}
+
+export function addonReadOpened(addon: string, id: string, offset: number, length: number): Promise<ArrayBuffer> {
+  return invoke("addon_read_opened", { addon, id, offset, length });
+}
+
+/** The images go as the raw request body, one after another; `files` lists each one's path and size in that order
+ *  (plain ASCII, checked in Rust). */
+export function addonPutImages(addon: string, pack: string, files: { path: string; size: number }[], bytes: Uint8Array): Promise<void> {
+  return invoke("addon_put_images", bytes, { headers: { addon, pack, files: JSON.stringify(files) } });
+}
+
 /** False when the user cancelled. */
 export function addonSaveFile(addon: string, name: string, bytes: Uint8Array): Promise<boolean> {
   return invoke("addon_save_file", { addon, name, bytes: Array.from(bytes) });

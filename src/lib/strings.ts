@@ -943,6 +943,7 @@ export const strings = {
         "characters:write": "Add characters and keep them up to date",
         "folders:read": "Read folders you choose",
         "folders:write": "Download files into folders you choose",
+        "files:read": "Read files you choose",
         secrets: "Keep secrets, such as API keys, in the system keychain",
         search: "Add entries to search",
       } as Record<string, string>,

@@ -19,15 +19,29 @@ vi.mock("$lib/api/addons", () => ({
   addonSetSearch: vi.fn(async () => undefined),
   addonOpenExternal: vi.fn(async () => undefined),
   addonSetCampaignVisible: vi.fn(async () => undefined),
+  addonPutImages: vi.fn(async () => undefined),
+  addonReadOpened: vi.fn(async () => new ArrayBuffer(2)),
 }));
 
-import { addonFetch, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonPutImages, addonReadOpened, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
 const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("sends a pack's images as one body with their paths and sizes, and checks the read range", async () => {
+    const h = host();
+    const images = [{ path: "a/b.webp", bytes: new Uint8Array([1, 2]).buffer }, { path: "c.png", bytes: new Uint8Array([3]).buffer }];
+    await answer("importer", "packs.putImages", ["home", images], h);
+    expect(addonPutImages).toHaveBeenCalledWith("importer", "home", [{ path: "a/b.webp", size: 2 }, { path: "c.png", size: 1 }], new Uint8Array([1, 2, 3]));
+    await expect(answer("importer", "packs.putImages", ["home", [{ path: "é.png", bytes: new ArrayBuffer(1) }]], h)).rejects.toThrow("ASCII");
+    await expect(answer("importer", "packs.putImages", ["home", [{ path: "a.png", bytes: [1] }]], h)).rejects.toThrow("ArrayBuffer");
+    await answer("importer", "files.read", ["7", 0, 16], h);
+    expect(addonReadOpened).toHaveBeenCalledWith("importer", "7", 0, 16);
+    await expect(answer("importer", "files.read", ["7", -1, 16], h)).rejects.toThrow("offset");
+  });
 
   it("shows or hides the campaign screen in one campaign and tells the frame", async () => {
     const h = host();

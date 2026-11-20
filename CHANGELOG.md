@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.8] - 2026-11-20
+
+### Added
+
+- Addon API: files.open and files.read let an addon read large files the user picks, in pieces, without seeing their path (permission files:read).
+- Addon API: packs.putImages keeps pictures (.png, .jpg, .webp) for a pack the addon installed; its entries show them without Enable images.
+
+### Changed
+
+- Removing an installed pack also deletes its kept pictures, unless a bundled pack with the same id comes back.
+
 ## [0.7.7] - 2026-11-20
 
 ### Added

@@ -6,10 +6,11 @@ use crate::addons::{https_host, load_dir, read_new, Addon, Manifest, MANIFEST};
 use crate::commands::about::license_in;
 use crate::commands::campaigns::{active_dir, dirs, now_ms};
 use crate::commands::characters::{self, Character, Editor};
+use crate::commands::images;
 use crate::commands::search;
 use crate::commands::packs::{capped, disabled, installed_dir, loaded, reload, summaries, PackSummary};
 use crate::packs::{self, safe_path, Invalid, NewPack};
-use crate::storage::{blocking, data_dir, write_atomic, write_atomic_bytes, StorageError};
+use crate::storage::{blocking, check_id, data_dir, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -245,8 +246,11 @@ pub async fn addon_install_pack(app: AppHandle, addon: String, pack: NewPack) ->
         let id = {
             let _guard = lock_pack_change();
             let staging = data_dir(&app)?.join("packs-staging").join(&addon);
-            let id = packs::install(&installed_dir(&app)?, &staging, &pack)?.manifest.id;
+            let installed = installed_dir(&app)?;
+            let id = packs::install(&installed, &staging, &pack)?.manifest.id;
             reload();
+            // Which addon installed it, for `packs.putImages`; it goes with the folder when the pack is replaced or removed.
+            write_atomic(&installed.join(&id).join(PACK_OWNER), &addon)?;
             id
         };
         let summary = summaries(&*loaded(&app)?, &disabled(&app)?).into_iter().find(|p| p.id == id);
@@ -263,6 +267,94 @@ pub async fn addon_remove_pack(app: AppHandle, addon: String, pack: String) -> R
         let _guard = lock_pack_change();
         packs::remove(&installed_dir(&app)?, &pack)?;
         reload();
+        // Its kept images go too, unless a bundled pack with that id came back and still uses them.
+        if !loaded(&app)?.0.iter().any(|p| p.manifest.id == pack) {
+            match fs::remove_dir_all(data_dir(&app)?.join(images::DIR).join(&pack)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                _ => {}
+            }
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// In an installed pack's folder: the id of the addon that installed it.
+const PACK_OWNER: &str = ".installed-by";
+/// `packs.putImages`: at most this many images per call, each at most this large.
+const MAX_IMAGES: usize = 100;
+const MAX_IMAGE: u64 = 20 * 1024 * 1024;
+/// `packs.putImages`: at most this many bytes per call, all images together.
+const MAX_BATCH: u64 = 100 * 1024 * 1024;
+/// The image types the window shows from a pack's kept images (the asset scope in tauri.conf.json).
+const IMAGE_TYPES: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
+
+fn installed_by(installed: &Path, pack: &str, addon: &str) -> bool {
+    check_id(pack, "pack").is_ok() && fs::read_to_string(installed.join(pack).join(PACK_OWNER)).is_ok_and(|owner| owner == addon)
+}
+
+/// A kept image's path: relative, inside its folder, plain printable ASCII, and one of `IMAGE_TYPES` (lowercase).
+fn image_path_ok(path: &str) -> bool {
+    path.len() <= 500
+        && path.bytes().all(|b| (0x20..0x7f).contains(&b) && b != b'\\')
+        && safe_path(path)
+        && IMAGE_TYPES.iter().any(|ext| path.ends_with(ext))
+}
+
+#[derive(Debug, Deserialize)]
+struct ImageFile {
+    path: String,
+    size: u64,
+}
+
+/// Checks the list of images a call sends against the body's length; each image's bytes follow the one before.
+fn check_images(files: &[ImageFile], body_len: usize) -> Result<(), StorageError> {
+    if files.len() > MAX_IMAGES {
+        return Err(StorageError::Invalid(format!("At most {MAX_IMAGES} images at once.")));
+    }
+    if let Some(bad) = files.iter().find(|f| !image_path_ok(&f.path)) {
+        return Err(StorageError::Invalid(format!("\"{}\" isn't a plain relative .png, .jpg, .jpeg or .webp path.", bad.path)));
+    }
+    if files.iter().any(|f| f.size > MAX_IMAGE) {
+        return Err(StorageError::Invalid(format!("An image can be at most {} MB.", MAX_IMAGE / 1024 / 1024)));
+    }
+    if body_len as u64 > MAX_BATCH {
+        return Err(StorageError::Invalid(format!("At most {} MB of images at once.", MAX_BATCH / 1024 / 1024)));
+    }
+    if files.iter().map(|f| f.size).sum::<u64>() != body_len as u64 {
+        return Err(StorageError::Invalid("The images' sizes don't add up to the bytes sent.".into()));
+    }
+    Ok(())
+}
+
+/// `packs.putImages`: keeps images for a pack this addon installed, where the window shows a pack's images from
+/// (`images/<pack>/`). The bytes come as the raw request body, one image after another; the addon, pack and the list
+/// of `{ path, size }` in headers.
+#[tauri::command]
+pub async fn addon_put_images(app: AppHandle, request: ipc::Request<'_>) -> Result<(), StorageError> {
+    let header = |key: &str| request.headers().get(key).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let (Some(addon), Some(pack), Some(list)) = (header("addon"), header("pack"), header("files")) else {
+        return Err(StorageError::Invalid("packs.putImages needs the addon, the pack and the list of images.".into()));
+    };
+    let ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(StorageError::Invalid("packs.putImages needs the images as raw bytes.".into()));
+    };
+    let bytes = bytes.clone();
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "packs:write")?;
+        let files: Vec<ImageFile> = serde_json::from_str(&list).map_err(|e| StorageError::Invalid(format!("The list of images: {e}")))?;
+        check_images(&files, bytes.len())?;
+        if !installed_by(&installed_dir(&app)?, &pack, &addon) {
+            return Err(StorageError::Invalid(format!("\"{pack}\" isn't a pack this addon installed.")));
+        }
+        let dir = data_dir(&app)?.join(images::DIR).join(&pack);
+        fs::create_dir_all(&dir)?;
+        let mut at = 0;
+        for f in &files {
+            let end = at + f.size as usize;
+            write_atomic_bytes(&images::file_for(&dir, &f.path), &bytes[at..end])?;
+            at = end;
+        }
         Ok(())
     })
     .await
@@ -921,16 +1013,94 @@ pub async fn addon_scan_folder(app: AppHandle, addon: String, folder: String) ->
 #[tauri::command]
 pub async fn addon_read_file(app: AppHandle, addon: String, folder: String, path: String, offset: u64, length: u64) -> Result<ipc::Response, StorageError> {
     blocking(move || {
-        if length > MAX_READ {
-            return Err(StorageError::Invalid(format!("At most {} MB can be read at once.", MAX_READ / 1024 / 1024)));
-        }
         let root = find_folder(&granted(&app, &addon)?.1, &folder)?.path.clone();
         let full = file_inside(&root, &path).ok_or_else(|| StorageError::NotFound(format!("\"{path}\" isn't a file in the folder.")))?;
-        let mut file = fs::File::open(full)?;
-        file.seek(SeekFrom::Start(offset))?;
-        let mut bytes = Vec::new();
-        file.take(length).read_to_end(&mut bytes)?;
-        Ok(ipc::Response::new(bytes))
+        read_range(&full, offset, length).map(ipc::Response::new)
+    })
+    .await
+}
+
+/// At most `length` bytes of `path` from `offset` (fewer at its end), at most `MAX_READ`.
+fn read_range(path: &Path, offset: u64, length: u64) -> Result<Vec<u8>, StorageError> {
+    if length > MAX_READ {
+        return Err(StorageError::Invalid(format!("At most {} MB can be read at once.", MAX_READ / 1024 / 1024)));
+    }
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut bytes = Vec::new();
+    file.take(length).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// A file the user picked with `files.open`: the addon knows it only by `id`. Kept for this run of the app, never saved.
+struct Opened {
+    addon: String,
+    id: String,
+    path: PathBuf,
+}
+
+/// `files.open`: the most files kept per addon; the oldest are forgotten first.
+const MAX_OPENED: usize = 1000;
+static OPENED: Mutex<Vec<Opened>> = Mutex::new(Vec::new());
+static NEXT_OPENED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn opened() -> std::sync::MutexGuard<'static, Vec<Opened>> {
+    OPENED.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// The path of a file this addon opened; another addon's id, or an unknown one, is refused.
+fn opened_path(list: &[Opened], addon: &str, id: &str) -> Result<PathBuf, StorageError> {
+    list.iter().find(|o| o.addon == addon && o.id == id).map(|o| o.path.clone()).ok_or_else(|| StorageError::NotFound(format!("No opened file \"{id}\".")))
+}
+
+/// Keeps `path` for `addon` and returns its new id, forgetting the addon's oldest when it has `MAX_OPENED`.
+fn remember_opened(list: &mut Vec<Opened>, addon: &str, path: PathBuf) -> String {
+    if list.iter().filter(|o| o.addon == addon).count() >= MAX_OPENED {
+        let oldest = list.iter().position(|o| o.addon == addon).expect("has one");
+        list.remove(oldest);
+    }
+    let id = NEXT_OPENED.fetch_add(1, std::sync::atomic::Ordering::Relaxed).to_string();
+    list.push(Opened { addon: addon.to_string(), id: id.clone(), path });
+    id
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct OpenedFile {
+    id: String,
+    name: String,
+    size: u64,
+}
+
+/// `files.open`: the user picks one or more files (of `extensions`, when given); the addon gets an id, name and size
+/// for each, never a path, and reads them with `files.read`. Null when cancelled.
+#[tauri::command]
+pub async fn addon_open_files(app: AppHandle, addon: String, extensions: Vec<String>) -> Result<Option<Vec<OpenedFile>>, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "files:read")?;
+        let mut builder = dialog(&app);
+        if !extensions.is_empty() {
+            builder = builder.add_filter(extensions.join(", "), &extensions.iter().map(String::as_str).collect::<Vec<_>>());
+        }
+        let Some(picked) = builder.blocking_pick_files() else { return Ok(None) };
+        let mut files = Vec::new();
+        for path in picked.into_iter().filter_map(|p| picked_path(Some(p)).transpose()) {
+            let path = path?;
+            let size = fs::metadata(&path)?.len();
+            let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            files.push(OpenedFile { id: remember_opened(&mut opened(), &addon, path), name, size });
+        }
+        Ok(Some(files))
+    })
+    .await
+}
+
+/// `files.read`: at most `length` bytes (at most 16 MB) of a file the addon opened, from `offset` (fewer at its end).
+#[tauri::command]
+pub async fn addon_read_opened(app: AppHandle, addon: String, id: String, offset: u64, length: u64) -> Result<ipc::Response, StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "files:read")?;
+        let path = opened_path(&opened(), &addon, &id)?;
+        read_range(&path, offset, length).map(ipc::Response::new)
     })
     .await
 }
@@ -1518,6 +1688,55 @@ mod tests {
         }
         assert_eq!(content_type("ui/page.HTML"), "text/html; charset=utf-8");
         assert_eq!(content_type("data"), "application/octet-stream");
+    }
+
+    #[test]
+    fn an_opened_file_is_read_only_by_its_addon_and_within_the_limit() {
+        let dir = temp_dir("opened");
+        fs::write(dir.join("a.bin"), b"0123456789").unwrap();
+        let mut list = Vec::new();
+        let id = remember_opened(&mut list, "importer", dir.join("a.bin"));
+        let path = opened_path(&list, "importer", &id).unwrap();
+        assert_eq!(read_range(&path, 2, 3).unwrap(), b"234");
+        assert_eq!(read_range(&path, 8, 100).unwrap(), b"89", "fewer at the end");
+        assert!(matches!(opened_path(&list, "other", &id), Err(StorageError::NotFound(_))), "another addon's id");
+        assert!(matches!(opened_path(&list, "importer", "nope"), Err(StorageError::NotFound(_))), "an unknown id");
+        assert!(matches!(read_range(&path, 0, MAX_READ + 1), Err(StorageError::Invalid(_))));
+        assert!(read_range(&path, 0, MAX_READ).is_ok());
+        // Each addon keeps at most MAX_OPENED; the oldest go first.
+        for _ in 0..MAX_OPENED {
+            remember_opened(&mut list, "importer", dir.join("a.bin"));
+        }
+        assert_eq!(list.len(), MAX_OPENED);
+        assert!(opened_path(&list, "importer", &id).is_err());
+    }
+
+    #[test]
+    fn put_images_takes_plain_image_paths_within_limits_for_its_own_packs_only() {
+        for ok in ["a.png", "bestiary/MM/Aboleth.webp", "x/y.jpg", "c d.jpeg"] {
+            assert!(image_path_ok(ok), "{ok}");
+        }
+        for bad in ["", "../a.png", "/a.png", "a/../../b.png", "a.PNG", "a.gif", "a.svg", r"C:\a.png", r"a\b.png", "é.png", "a\n.png"] {
+            assert!(!image_path_ok(bad), "{bad}");
+        }
+        let file = |path: &str, size| ImageFile { path: path.into(), size };
+        assert!(check_images(&[file("a.png", 3), file("b.webp", 2)], 5).is_ok());
+        assert!(check_images(&[file("a.png", 3)], 4).is_err(), "sizes must add up");
+        assert!(check_images(&[file("a.png", MAX_IMAGE + 1)], (MAX_IMAGE + 1) as usize).is_err());
+        let many: Vec<_> = (0..=MAX_IMAGES).map(|i| file(&format!("{i}.png"), 0)).collect();
+        assert!(check_images(&many, 0).is_err());
+        assert!(check_images(&many[..MAX_IMAGES], 0).is_ok());
+        let big: Vec<_> = (0..6).map(|i| file(&format!("{i}.png"), MAX_IMAGE)).collect();
+        assert!(check_images(&big, (6 * MAX_IMAGE) as usize).is_err(), "over MAX_BATCH together");
+
+        let installed = temp_dir("owner");
+        fs::create_dir_all(installed.join("mine")).unwrap();
+        fs::write(installed.join("mine").join(PACK_OWNER), "importer").unwrap();
+        fs::create_dir_all(installed.join("bundled-copy")).unwrap();
+        assert!(installed_by(&installed, "mine", "importer"));
+        assert!(!installed_by(&installed, "mine", "other"));
+        assert!(!installed_by(&installed, "bundled-copy", "importer"), "no owner: by hand or bundled");
+        assert!(!installed_by(&installed, "../mine", "importer"));
     }
 
     #[test]

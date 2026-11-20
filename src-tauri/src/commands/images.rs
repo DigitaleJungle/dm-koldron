@@ -5,7 +5,7 @@
 use crate::commands::packs::loaded;
 use crate::commands::settings;
 use crate::packs::Images;
-use crate::storage::{blocking, data_dir, write_atomic_bytes, StorageError};
+use crate::storage::{blocking, check_id, data_dir, write_atomic_bytes, StorageError};
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Cursor};
@@ -50,7 +50,7 @@ pub struct Progress {
 
 /// The kept file for an image path: the path with anything but letters, digits, `.` and `-` turned into `_`, so it's
 /// always one file name inside the pack's folder.
-fn file_for(dir: &Path, image: &str) -> PathBuf {
+pub(crate) fn file_for(dir: &Path, image: &str) -> PathBuf {
     let name: String = image.trim_start_matches('/').chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).collect();
     dir.join(name)
 }
@@ -186,14 +186,27 @@ pub async fn list_pack_images(app: AppHandle) -> Result<Vec<PackImages>, Storage
 }
 
 /// The kept image for an entry, downloading it when needed; None when the pack's images are off or it has none.
+/// A pack without an `images.json` has nothing to download: the images an addon kept for it (`packs.putImages`)
+/// always show.
 #[tauri::command]
 pub async fn entry_image(app: AppHandle, pack: String, image: String) -> Result<Option<PathBuf>, StorageError> {
-    let on = settings::load(&data_dir(&app)?.join(settings::FILE_NAME)).map(|s| s.image_packs.contains(&pack)).unwrap_or(false);
+    let data = data_dir(&app)?;
+    let (found, dir) = match pack_images(&app, &pack).await {
+        Ok(found) => found,
+        Err(StorageError::NotFound(_)) if check_id(&pack, "pack").is_ok() => return Ok(kept_only(&data.join(DIR).join(&pack), &image)),
+        Err(_) => return Ok(None),
+    };
+    let on = settings::load(&data.join(settings::FILE_NAME)).map(|s| s.image_packs.contains(&pack)).unwrap_or(false);
     if !on {
         return Ok(None);
     }
-    let Ok((found, dir)) = pack_images(&app, &pack).await else { return Ok(None) };
     blocking(move || self::image(&dir, &found, &image, download)).await
+}
+
+/// The kept file for an entry's `image` in a pack's folder, if there is one; nothing is downloaded.
+fn kept_only(dir: &Path, image: &str) -> Option<PathBuf> {
+    let path = file_for(dir, image);
+    path.is_file().then_some(path)
 }
 
 #[tauri::command]
@@ -278,6 +291,16 @@ mod tests {
         let other = listed(&["/a.png"]);
         assert_eq!(image(&dir, &other, "/a.png", |_| None).unwrap(), None);
         assert_eq!(image(&dir, &other, "/a.png", |_| Some(b"nope".to_vec())).unwrap(), None);
+    }
+
+    #[test]
+    fn a_kept_image_shows_without_a_list_and_a_missing_one_doesnt() {
+        let dir = temp_dir("kept");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("bestiary_MM_Aboleth.webp"), b"img").unwrap();
+        assert_eq!(kept_only(&dir, "/bestiary/MM/Aboleth.webp"), Some(dir.join("bestiary_MM_Aboleth.webp")));
+        assert_eq!(kept_only(&dir, "bestiary/MM/Aboleth.webp"), Some(dir.join("bestiary_MM_Aboleth.webp")));
+        assert_eq!(kept_only(&dir, "/other.webp"), None);
     }
 
     #[test]

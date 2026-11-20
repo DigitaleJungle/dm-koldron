@@ -48,7 +48,7 @@ Markdown is CommonMark with tables. The reader shows the chapter and section nam
 
 ## images.json (optional)
 
-The images the pack's entries name (an entry's `image`, e.g. `/api/images/monsters/aboleth.png`) that can be downloaded when the user turns on **Enable images** for the pack in Settings → Rules. Images are never shipped in a pack.
+The images the pack's entries name (an entry's `image`, e.g. `/api/images/monsters/aboleth.png`) that can be downloaded when the user turns on **Enable images** for the pack in Settings → Rules. Images are never shipped in a pack. A pack without `images.json` can instead show images that the addon which installed it keeps for it (`packs.putImages` in `addons/addons.md`).
 
 ```json
 { "host": "https://www.dnd5eapi.co", "images": { "/api/images/monsters/aboleth.png": 757000 } }

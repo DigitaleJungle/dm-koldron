@@ -11,7 +11,7 @@
   import { campaigns, createCampaign, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
-  import { libraryTabAddress } from "$lib/views/search/search";
+  import { campaignScreenAddress, libraryTabAddress } from "$lib/views/search/search";
   import { version } from "../../../../package.json";
 
   const t = strings.start;
@@ -169,6 +169,7 @@
             context={startContext}
             onheight={(px) => (heights[addon.id] = px)}
             onopenlibrary={addon.library && addon.libraryVisible ? openLibrary(addon.id) : undefined}
+            onopencampaignscreen={(campaign, state) => goto(campaignScreenAddress(campaign, addon.id, state))}
           />
         {/each}
       </aside>

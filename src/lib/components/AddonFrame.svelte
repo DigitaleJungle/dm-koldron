@@ -1,7 +1,7 @@
 <script lang="ts">
   import { addonUrl, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
-  import { charactersChanged, setCampaignVisible, setLibraryVisible } from "$lib/stores/addons.svelte";
+  import { campaignScreenShown, charactersChanged, setCampaignVisible, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { registerPanel, unsavedPanels } from "$lib/stores/settingsPanels.svelte";
   import { strings } from "$lib/strings";
@@ -22,6 +22,7 @@
     onsidebarbutton,
     panel,
     onopenlibrary,
+    onopencampaignscreen,
     onheight,
   }: {
     addon: AddonSummary;
@@ -40,6 +41,9 @@
     panel?: string;
     /** Only the Start screen, search preview and Home widget pages: `ui.openLibrary` opens the addon's Library tab at a state. */
     onopenlibrary?: (state: string | null) => Promise<void>;
+    /** Only the Start screen, search preview and Home widget pages: `ui.openCampaignScreen` opens the addon's campaign
+     * screen in a campaign at a state. */
+    onopencampaignscreen?: (campaign: string, state: string | null) => Promise<void>;
     /** Hears the height the page asks for (`ui.setHeight`). */
     onheight?: (px: number) => void;
   } = $props();
@@ -109,6 +113,11 @@
       openLibrary: async (state: string | null) => {
         if (!onopenlibrary) throw new Error("ui.openLibrary works only from the Start screen, search preview or Home widget page of an addon with a Library tab.");
         await onopenlibrary(state);
+      },
+      openCampaignScreen: async (campaign: string, state: string | null) => {
+        if (!onopencampaignscreen) throw new Error("ui.openCampaignScreen works only from the Start screen, search preview or Home widget page.");
+        if (!campaignScreenShown(addon, campaign)) throw new Error(`${addon.name}'s campaign screen isn't shown in that campaign.`);
+        await onopencampaignscreen(campaign, state);
       },
       unsaved: (has: boolean) => {
         if (!panelKey) throw new Error("ui.setUnsaved works only from a Settings panel.");

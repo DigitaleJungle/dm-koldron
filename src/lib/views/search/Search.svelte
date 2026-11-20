@@ -15,7 +15,7 @@
   import { strings } from "$lib/strings";
   import "$lib/styles/prose.css";
   import { loadPreview, type Preview as Loaded } from "./preview";
-  import { groupByKind, hitAddress, hitMeta, kindLabel, libraryTabAddress } from "./search";
+  import { campaignScreenAddress, groupByKind, hitAddress, hitMeta, kindLabel, libraryTabAddress } from "./search";
 
   const t = strings.search;
   const key = (hit: SearchHit) => `${hit.kind}/${hit.pack}/${hit.index}`;
@@ -79,6 +79,8 @@
   const previewContext = $derived(selected ? { id: selected.index, state: selected.state } : undefined);
   /** Its page's `ui.openLibrary`: the addon's Library tab, at that state. */
   const openLibrary = (id: string) => (state: string | null) => goto(libraryTabAddress(id, state));
+  /** Its page's `ui.openCampaignScreen`: the addon's campaign screen in a campaign, at that state. */
+  const openCampaignScreen = (id: string) => (campaign: string, state: string | null) => goto(campaignScreenAddress(campaign, id, state));
 
   // Typing and the chips refine the results in place (no Back step).
   function address(changes: Record<string, string | null>) {
@@ -172,6 +174,7 @@
                   entry={previewAddon.preview!}
                   context={previewContext}
                   onopenlibrary={previewAddon.library && previewAddon.libraryVisible ? openLibrary(previewAddon.id) : undefined}
+                  onopencampaignscreen={openCampaignScreen(previewAddon.id)}
                 />
               {/key}
             {:else if selected.kind.startsWith("addon:")}

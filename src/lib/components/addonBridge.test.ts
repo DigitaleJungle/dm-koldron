@@ -24,7 +24,7 @@ vi.mock("$lib/api/addons", () => ({
 import { addonFetch, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}) });
+const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -112,6 +112,11 @@ describe("addon bridge", () => {
     await answer("a", "ui.openLibrary", ["page=3"], h);
     expect(h.openLibrary).toHaveBeenCalledWith("page=3");
     await expect(answer("a", "ui.openLibrary", [5], h)).rejects.toThrow("string or null");
+    await answer("a", "ui.openCampaignScreen", ["c1", "p=mill"], h);
+    await answer("a", "ui.openCampaignScreen", ["c1"], h);
+    expect(h.openCampaignScreen.mock.calls).toEqual([["c1", "p=mill"], ["c1", null]]);
+    await expect(answer("a", "ui.openCampaignScreen", ["../settings", null], h)).rejects.toThrow("campaign id");
+    await expect(answer("a", "ui.openCampaignScreen", ["c1", 5], h)).rejects.toThrow("string or null");
     await answer("a", "ui.setUnsaved", [true], h);
     expect(h.unsaved).toHaveBeenCalledWith(true);
     await answer("a", "ui.settingsDone", [3, null], h);

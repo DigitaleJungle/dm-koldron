@@ -16,7 +16,7 @@
   import { showHeaderAction } from "$lib/stores/header.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
-  import { libraryTabAddress } from "$lib/views/search/search";
+  import { campaignScreenAddress, libraryTabAddress } from "$lib/views/search/search";
   import EncounterWidget from "./EncounterWidget.svelte";
   import NextSessionWidget from "./NextSessionWidget.svelte";
   import PartyWidget from "./PartyWidget.svelte";
@@ -246,6 +246,7 @@
                     entry={addon.home!.entry}
                     context={{ campaign, width: widths[id] }}
                     onopenlibrary={addon.library && addon.libraryVisible ? (state) => goto(libraryTabAddress(addon.id, state)) : undefined}
+                    onopencampaignscreen={(c, state) => goto(campaignScreenAddress(c, addon.id, state))}
                   />
                 {/if}
               {/if}

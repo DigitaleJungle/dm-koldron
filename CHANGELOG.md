@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.7] - 2026-11-20
+
+### Added
+
+- Addons: ui.openCampaignScreen opens an addon's campaign screen in a campaign at a state, from its Start, search preview and Home widget pages.
+
 ## [0.7.6] - 2026-11-20
 
 ### Added

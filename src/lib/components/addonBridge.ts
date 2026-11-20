@@ -65,6 +65,9 @@ export type FrameHost = {
   sidebarButton: (shown: boolean) => void;
   /** `ui.openLibrary`: opens the addon's Library tab at a state (as `ui.navigate`). Only its Start, preview and Home pages can. */
   openLibrary: (state: string | null) => Promise<void>;
+  /** `ui.openCampaignScreen`: opens the addon's campaign screen in a campaign at a state. Only its Start, preview and
+   * Home pages can, and only where that screen is shown. */
+  openCampaignScreen: (campaign: string, state: string | null) => Promise<void>;
   /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
   unsaved: (has: boolean) => void;
   /** `ui.settingsDone`: a Settings panel saved or discarded, as asked by request `id`; `error` when it couldn't. */
@@ -202,6 +205,15 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       if (state !== null && typeof state !== "string") throw new Error("ui.openLibrary needs a string or null.");
       if (state !== null && state.length > MAX_STATE) throw new Error(`ui.openLibrary takes at most ${MAX_STATE} characters.`);
       await host.openLibrary(state);
+      return null;
+    }
+    case "ui.openCampaignScreen": {
+      const [campaign, state = null] = args;
+      // A campaign id as the app makes them (it goes into the address).
+      if (typeof campaign !== "string" || !/^[a-z0-9-]{1,100}$/.test(campaign)) throw new Error("ui.openCampaignScreen needs a campaign id.");
+      if (state !== null && typeof state !== "string") throw new Error("ui.openCampaignScreen needs a string or null as its state.");
+      if (state !== null && state.length > MAX_STATE) throw new Error(`ui.openCampaignScreen takes at most ${MAX_STATE} characters.`);
+      await host.openCampaignScreen(campaign, state);
       return null;
     }
     case "ui.setSidebarButton": {

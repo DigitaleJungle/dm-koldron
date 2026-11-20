@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1] - 2026-11-21
+
+### Changed
+
+- Update installers are signed with a new key.
+
 ## [0.8.0] - 2026-11-20
 
 ### Added

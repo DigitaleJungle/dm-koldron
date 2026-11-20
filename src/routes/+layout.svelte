@@ -7,6 +7,10 @@
   import { onMount } from "svelte";
   import AddonBackground from "$lib/components/AddonBackground.svelte";
   import Notification from "$lib/components/Notification.svelte";
+  import SettingsDialog, { settingsOpen } from "$lib/components/SettingsDialog.svelte";
+  import { notify } from "$lib/stores/notifications.svelte";
+  import { checkForUpdate } from "$lib/stores/updates.svelte";
+  import { strings } from "$lib/strings";
   import { loadTheme } from "$lib/stores/theme.svelte";
   import { trackHistory } from "$lib/stores/history.svelte";
 
@@ -14,6 +18,18 @@
 
   trackHistory();
   onMount(loadTheme);
+
+  // Settings on About, opened from the "new version" notification.
+  let aboutOpen = $state(false);
+  onMount(() => {
+    checkForUpdate().then((latest) => {
+      if (latest) notify(strings.updateAvailable(latest), {
+          label: strings.viewUpdate,
+          // Not over a Settings dialog that's already open: About is one click away in it.
+          run: () => !settingsOpen.count && (aboutOpen = true),
+        });
+    });
+  });
 </script>
 
 <!-- How the user last moved around: a click or tap hides focus rings, Tab brings them back (base.css). Only Tab, not
@@ -25,4 +41,5 @@
 
 {@render children()}
 <Notification />
+<SettingsDialog bind:open={aboutOpen} section="about" />
 <AddonBackground />

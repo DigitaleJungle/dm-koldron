@@ -2,6 +2,8 @@ export const strings = {
   back: "Back",
   appName: "DM's Koldron",
   notification: { dismiss: "Close notification" },
+  updateAvailable: (v: string) => `Version ${v} is available.`,
+  viewUpdate: "View update",
 
   start: {
     campaigns: "Campaigns",
@@ -975,6 +977,10 @@ export const strings = {
     about: {
       title: "About",
       version: (v: string) => `Version ${v}`,
+      update: "Update",
+      updating: "Updating…",
+      checkError: (reason: string) => `Couldn't check for updates. ${reason}`,
+      installError: (reason: string) => `Couldn't update. ${reason}`,
       licenses: "Licenses",
       licenseList: [
         { part: "Code", license: "Mozilla Public License 2.0 (MPL-2.0)" },

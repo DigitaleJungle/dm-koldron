@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0] - 2026-11-20
+
+### Added
+
+- Update check at startup: a notification says when a newer version is published, and Settings → About shows it with an Update button that downloads, verifies, installs it and restarts the app.
+- Notifications can carry a link, such as View update.
+
 ## [0.7.9] - 2026-11-20
 
 ### Changed

@@ -31,4 +31,13 @@ describe("notifications", () => {
     dismiss();
     expect(notification.current).toBeNull();
   });
+
+  it("keeps its action until it's replaced", () => {
+    const run = vi.fn();
+    notify("Version 1.0.0 is available.", { label: "View update", run });
+    notification.current?.action?.run();
+    expect(run).toHaveBeenCalledOnce();
+    notify("Saved");
+    expect(notification.current?.action).toBeUndefined();
+  });
 });

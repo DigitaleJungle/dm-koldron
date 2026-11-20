@@ -309,7 +309,7 @@
         <AddonSettings bind:this={addonSettings} bind:dirty={addonsDirty} unsaved={dirty} />
       </div>
       <div id="settings-panel-about" class="panel" role="tabpanel" aria-labelledby="settings-tab-about" hidden={active !== "about"}>
-        <AboutSettings />
+        <AboutSettings unsaved={dirty} />
       </div>
     {/if}
   </div>

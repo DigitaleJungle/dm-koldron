@@ -3,7 +3,11 @@
   import { licenseTexts, type LicenseText } from "$lib/api/about";
   import { listAddons, type AddonSummary } from "$lib/api/addons";
   import { errorMessage } from "$lib/api/storage";
+  import { installNewVersion, update } from "$lib/stores/updates.svelte";
   import { version } from "../../../package.json";
+
+  // `unsaved`: Settings has changes not saved; Update restarts the app, which would lose them.
+  let { unsaved }: { unsaved: boolean } = $props();
 
   const t = strings.settings.about;
   let texts = $state<LicenseText[]>();
@@ -23,6 +27,25 @@
 <section>
   <h3>{strings.appName}</h3>
   <p class="muted">{t.version(version)}</p>
+  {#if update.latest}
+    <div class="update">
+      <p>{strings.updateAvailable(update.latest)}</p>
+      <button
+        class="btn btn-primary"
+        disabled={update.installing || unsaved}
+        aria-describedby={unsaved ? "about-update-unsaved" : undefined}
+        onclick={installNewVersion}
+      >
+        {update.installing ? t.updating : t.update}
+      </button>
+    </div>
+    {#if unsaved}<p id="about-update-unsaved" class="muted">{strings.settings.addons.restartUnsaved}</p>{/if}
+  {/if}
+  {#if update.installError}
+    <p class="error" role="alert">{t.installError(update.installError)}</p>
+  {:else if update.checkError}
+    <p class="muted">{t.checkError(update.checkError)}</p>
+  {/if}
 </section>
 
 <section>
@@ -85,6 +108,12 @@
 
   .muted {
     color: var(--color-text-muted);
+  }
+
+  .update {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   dl {

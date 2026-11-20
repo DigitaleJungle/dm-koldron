@@ -2,15 +2,18 @@
 export const SHOW_MS = 5000;
 
 /** The one notification on screen, if any. `id` changes with every new one, so it replays its entrance. */
-export const notification = $state({ current: null as { id: number; message: string } | null });
+export const notification = $state({ current: null as { id: number; message: string; action?: Action } | null });
+
+/** What clicking a notification does instead of only closing it, with the text that says so. */
+export type Action = { label: string; run: () => void };
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 let lastId = 0;
 
 /** Shows a short message in the bottom-right corner. A new one replaces the one already showing. */
-export function notify(message: string) {
+export function notify(message: string, action?: Action) {
   clearTimeout(timer);
-  notification.current = { id: ++lastId, message };
+  notification.current = { id: ++lastId, message, action };
   timer = setTimeout(dismiss, SHOW_MS);
 }
 

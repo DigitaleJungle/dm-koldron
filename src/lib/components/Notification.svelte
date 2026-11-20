@@ -4,7 +4,7 @@
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
 
-  // The single notification popup in the bottom-right corner. Clicking it closes it.
+  // The single notification popup in the bottom-right corner. Clicking it closes it, and runs its action if it has one.
   const motion = () => ({ y: 16, duration: reduceMotion() ? 0 : 200 });
   // Fades out when dismissed or timed out. A replaced one (a new notification is already set)
   // vanishes at once, so there's never two on screen. Params are read when the outro starts.
@@ -18,10 +18,26 @@
 <div class="region" role="status" aria-live="polite">
   {#if notification.current}
     {#key notification.current.id}
-      <button class="popup" popover="manual" use:topLayer in:fly={motion()} out:fade|global={fadeOut()} onclick={dismiss}>
-        <span class="message">{notification.current.message}</span>
-        <i class="ti ti-x" aria-hidden="true"></i>
-        <span class="sr-only">{strings.notification.dismiss}</span>
+      {@const action = notification.current.action}
+      <button
+        class="popup"
+        popover="manual"
+        use:topLayer
+        in:fly={motion()}
+        out:fade|global={fadeOut()}
+        onclick={() => {
+          dismiss();
+          action?.run();
+        }}
+      >
+        <span class="message">
+          {notification.current.message}
+          {#if action}<span class="action">{action.label}</span>{/if}
+        </span>
+        {#if !action}
+          <i class="ti ti-x" aria-hidden="true"></i>
+          <span class="sr-only">{strings.notification.dismiss}</span>
+        {/if}
       </button>
     {/key}
   {/if}
@@ -56,6 +72,12 @@
   .message {
     flex: 1;
     min-width: 0;
+  }
+
+  .action {
+    color: var(--color-accent);
+    font-weight: var(--weight-medium);
+    text-decoration: underline;
   }
 
   .ti {

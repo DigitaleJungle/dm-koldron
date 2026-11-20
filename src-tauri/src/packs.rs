@@ -321,8 +321,9 @@ fn check_entries(entries: &BTreeMap<String, Vec<Map<String, Value>>>) -> Vec<Str
                 errors.push(at("\"name\" is missing."));
             }
             if kind == "monsters" {
+                // Either may be left out (or null), as for summoned creatures; given, it's a number.
                 for field in ["challenge_rating", "xp"] {
-                    if !entry.get(field).is_some_and(Value::is_number) {
+                    if entry.get(field).is_some_and(|v| !v.is_null() && !v.is_number()) {
                         errors.push(at(&format!("\"{field}\" must be a number.")));
                     }
                 }
@@ -460,7 +461,9 @@ mod tests {
     fn entry_problems_are_all_listed() {
         let dir = temp_dir("entries");
         let feats = serde_json::json!([{ "index": "a", "name": "A" }, { "index": "a" }, { "name": "C" }]);
-        let monsters = serde_json::json!([{ "index": "m", "name": "M", "xp": 10 }]);
+        // A monster without CR and XP (a summoned creature) is fine; a CR that isn't a number isn't.
+        let monsters = serde_json::json!([{ "index": "s", "name": "Spirit" }, { "index": "n", "name": "N", "challenge_rating": null, "xp": null },
+            { "index": "m", "name": "M", "challenge_rating": "1/2", "xp": 10 }]);
         let rules = serde_json::json!([{ "index": "ch", "name": "Ch", "subsections": [{ "index": "elsewhere" }, { "index": "elsewhere" }] }]);
         let budgets = serde_json::json!([{ "level": 1, "low": 1, "moderate": 2, "high": 3 }, { "level": 1, "low": -1, "moderate": 2, "high": 3 }]);
         let files = serde_json::json!([
@@ -473,6 +476,7 @@ mod tests {
             "\"challenge_rating\" must be a number", "no rule section \"elsewhere\"", "section \"elsewhere\" is listed twice", "level 1 is listed twice", "\"low\" must be a whole number"] {
             assert!(all.contains(want), "missing \"{want}\" in:\n{all}");
         }
+        assert!(!all.contains("monsters entry 1") && !all.contains("monsters entry 2") && !all.contains("\"xp\""), "{all}");
     }
 
     #[test]

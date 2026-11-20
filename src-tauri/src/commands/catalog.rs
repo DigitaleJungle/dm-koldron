@@ -1,7 +1,7 @@
 //! Library → Catalog: the entries of one category from the switched-on packs, and one entry with its text as HTML.
 //! Which columns a category shows is up to the frontend; this only hands out the fields it asks for.
 
-use crate::commands::packs::{disabled, enabled, loaded};
+use crate::commands::packs::{disabled, enabled, loaded, Loaded};
 use crate::commands::rules::render;
 use crate::bundles::{groups, norm};
 use crate::packs::Pack;
@@ -9,6 +9,7 @@ use crate::storage::{blocking, StorageError};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
 use tauri::AppHandle;
 
 /// The entry types the Catalog has a tab for.
@@ -80,9 +81,22 @@ fn list<'a>(pack: &'a Pack, kind: &str) -> &'a [Map<String, Value>] {
     pack.entries.get(kind).map_or(&[], Vec::as_slice)
 }
 
-pub fn rows(packs: &[&Pack], kind: &str, fields: &[String]) -> Result<Vec<CatalogRow>, StorageError> {
+fn entries_of<'a>(packs: &[&'a Pack], kind: &str) -> Vec<(&'a Pack, &'a Map<String, Value>)> {
+    packs.iter().flat_map(|p| list(p, kind).iter().map(move |e| (*p, e))).collect()
+}
+
+/// The rows without the cache (`catalog_rows` keeps `keepers`).
+#[cfg(test)]
+fn rows(packs: &[&Pack], kind: &str, fields: &[String]) -> Result<Vec<CatalogRow>, StorageError> {
     check_kind(kind)?;
-    let all: Vec<(&Pack, &Map<String, Value>)> = packs.iter().flat_map(|p| list(p, kind).iter().map(move |e| (*p, e))).collect();
+    let keeper = keepers(packs, kind);
+    rows_with(packs, kind, fields, &keeper)
+}
+
+/// For each entry of `kind` in `packs` (in order), the entry whose row it's bundled into (itself when it has its own).
+/// The costly part of `rows`: it compares the texts of same-named entries.
+fn keepers(packs: &[&Pack], kind: &str) -> Vec<usize> {
+    let all = entries_of(packs, kind);
     // Bundled entries become one row: the first (in pack order) keeps the others.
     let mut keeper: Vec<usize> = (0..all.len()).collect();
     let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
@@ -90,11 +104,19 @@ pub fn rows(packs: &[&Pack], kind: &str, fields: &[String]) -> Result<Vec<Catalo
         by_name.entry(norm(text(e, "name"))).or_default().push(i);
     }
     for same_name in by_name.values().filter(|ids| ids.len() > 1) {
-        let texts: Vec<String> = same_name.iter().map(|&i| description_text(all[i].1)).collect();
+        let texts: Vec<String> = same_name.iter().map(|&i| bundle_text(all[i].1)).collect();
         let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
         for (k, &i) in same_name.iter().enumerate() {
             keeper[i] = same_name[group[k]];
         }
+    }
+    keeper
+}
+
+fn rows_with(packs: &[&Pack], kind: &str, fields: &[String], keeper: &[usize]) -> Result<Vec<CatalogRow>, StorageError> {
+    let all = entries_of(packs, kind);
+    if keeper.len() != all.len() {
+        return Err(StorageError::Invalid("The bundled entries don't match the packs.".into()));
     }
     let mut others: HashMap<usize, Vec<Also>> = HashMap::new();
     for (i, &k) in keeper.iter().enumerate().filter(|(i, k)| *i != **k) {
@@ -151,7 +173,7 @@ fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>
         p.manifest.id == pack.manifest.id && *k == kind && text(e, "index") == text(entry, "index")
     };
     let Some(me) = candidates.iter().position(is_me) else { return Vec::new() };
-    let texts: Vec<String> = candidates.iter().map(|(_, _, e)| description_text(e)).collect();
+    let texts: Vec<String> = candidates.iter().map(|(_, _, e)| bundle_text(e)).collect();
     let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
     candidates
         .iter()
@@ -185,6 +207,21 @@ pub fn description_text(entry: &Map<String, Value>) -> String {
         Some(Value::Array(parts)) => parts.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("\n"),
         _ => String::new(),
     }
+}
+
+/// The text compared to spot the same entry twice: the description and, for a monster, its traits and actions (an
+/// SRD monster has its whole text there and no description at all).
+fn bundle_text(entry: &Map<String, Value>) -> String {
+    let mut text = description_text(entry);
+    for item in ACTION_LISTS.iter().filter_map(|l| entry.get(*l)).filter_map(Value::as_array).flatten() {
+        for key in ["name", "desc"] {
+            if let Some(s) = item.get(key).and_then(Value::as_str) {
+                text.push('\n');
+                text.push_str(s);
+            }
+        }
+    }
+    text
 }
 
 fn description_html(entry: &Map<String, Value>) -> String {
@@ -267,7 +304,33 @@ fn paragraphs(text: &str) -> String {
 
 #[tauri::command]
 pub async fn catalog_rows(app: AppHandle, kind: String, fields: Vec<String>) -> Result<Vec<CatalogRow>, StorageError> {
-    blocking(move || rows(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &fields)).await
+    blocking(move || {
+        check_kind(&kind)?;
+        let loaded = loaded(&app)?;
+        let packs = enabled(&loaded.0, &disabled(&app)?);
+        let ids: Vec<String> = packs.iter().map(|p| p.manifest.id.clone()).collect();
+        let keeper = cached_keepers(&KEEPERS, &loaded, &kind, ids, || keepers(&packs, &kind));
+        rows_with(&packs, &kind, &fields, &keeper)
+    })
+    .await
+}
+
+/// Per kind: which packs were loaded (a reload makes a new `Loaded`) and switched on, and their `keepers`.
+type KeeperCache = Mutex<HashMap<String, (Weak<Loaded>, Vec<String>, Arc<Vec<usize>>)>>;
+static KEEPERS: LazyLock<KeeperCache> = LazyLock::new(Default::default);
+
+/// `keepers` for these packs, worked out again only when the packs were reloaded or other packs are switched on.
+fn cached_keepers(cache: &KeeperCache, loaded: &Arc<Loaded>, kind: &str, ids: Vec<String>, compute: impl FnOnce() -> Vec<usize>) -> Arc<Vec<usize>> {
+    let mut cache = cache.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((was, was_ids, keeper)) = cache.get(kind)
+        && Weak::ptr_eq(was, &Arc::downgrade(loaded))
+        && *was_ids == ids
+    {
+        return keeper.clone();
+    }
+    let keeper = Arc::new(compute());
+    cache.insert(kind.to_string(), (Arc::downgrade(loaded), ids, keeper.clone()));
+    keeper
 }
 
 #[tauri::command]
@@ -367,6 +430,47 @@ mod tests {
         let list = rows(&packs.iter().collect::<Vec<_>>(), "conditions", &[]).unwrap();
         assert_eq!(list.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Blinded", "a", "b"]);
         assert_eq!(list[0].others.iter().map(|o| o.source.as_str()).collect::<Vec<_>>(), ["B"]);
+    }
+
+    #[test]
+    fn the_same_monster_in_two_packs_is_one_row_by_its_stat_block() {
+        // The SRD Aboleth has no description; the other pack's copy adds lore. Its traits and actions match.
+        let dir = std::env::temp_dir().join(format!("koldron-catalog-monsters-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("mm")).unwrap();
+        let mut aboleth = srd().iter().find_map(|p| list(p, "monsters").iter().find(|m| text(m, "index") == "aboleth").cloned()).unwrap();
+        aboleth.insert("desc".into(), "Aboleths lurk in the deep places of the world, remembering everything.".into());
+        let manifest = serde_json::json!({ "schema": 1, "id": "mm", "name": "MM", "version": "1", "license": "MIT",
+            "attribution": "", "ruleset": "2024", "files": [{ "type": "monsters", "path": "m.json" }] });
+        std::fs::write(dir.join("mm").join("pack.json"), manifest.to_string()).unwrap();
+        std::fs::write(dir.join("mm").join("m.json"), Value::Array(vec![Value::Object(aboleth)]).to_string()).unwrap();
+        let mut packs = srd();
+        packs.extend(load_dir(&dir).unwrap().0);
+        let on: Vec<_> = packs.iter().collect();
+        let abo: Vec<_> = rows(&on, "monsters", &[]).unwrap().into_iter().filter(|r| r.name == "Aboleth").collect();
+        assert_eq!(abo.len(), 1, "one row");
+        assert_eq!(abo[0].others.len(), 1);
+    }
+
+    #[test]
+    fn bundling_is_worked_out_again_only_after_a_reload_or_other_packs() {
+        let cache = KeeperCache::default();
+        let calls = std::cell::Cell::new(0);
+        let compute = || {
+            calls.set(calls.get() + 1);
+            vec![0]
+        };
+        let first: Arc<Loaded> = Arc::new((Vec::new(), Vec::new()));
+        cached_keepers(&cache, &first, "monsters", vec!["srd".into()], compute);
+        cached_keepers(&cache, &first, "monsters", vec!["srd".into()], compute);
+        assert_eq!(calls.get(), 1, "same packs: kept");
+        cached_keepers(&cache, &first, "monsters", vec!["srd".into(), "mm".into()], compute);
+        assert_eq!(calls.get(), 2, "another pack switched on");
+        cached_keepers(&cache, &first, "spells", vec!["srd".into(), "mm".into()], compute);
+        assert_eq!(calls.get(), 3, "per kind");
+        let reloaded: Arc<Loaded> = Arc::new((Vec::new(), Vec::new()));
+        cached_keepers(&cache, &reloaded, "monsters", vec!["srd".into(), "mm".into()], compute);
+        assert_eq!(calls.get(), 4, "a reload");
     }
 
     #[test]

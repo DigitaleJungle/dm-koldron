@@ -72,7 +72,7 @@ export function senses(s: Record<string, any> | undefined): string {
 
 /** "17 (XP 18,000; PB +6)". */
 export function challenge(m: Record<string, any>): string {
-  const extra = [m.xp !== undefined && t.xp(number.format(m.xp)), m.proficiency_bonus !== undefined && t.pb(signed(m.proficiency_bonus))].filter(Boolean);
+  const extra = [typeof m.xp === "number" && t.xp(number.format(m.xp)), m.proficiency_bonus !== undefined && t.pb(signed(m.proficiency_bonus))].filter(Boolean);
   return extra.length ? `${crText(m.challenge_rating)} (${extra.join("; ")})` : crText(m.challenge_rating);
 }
 

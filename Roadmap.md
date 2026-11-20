@@ -1,14 +1,12 @@
 Authentication architecture
 Plugin SDK
 Plugin Marketplace & licensing
+A real app icon and favicon (`static/favicon.png` is still the old app's; `src-tauri/icons/source.svg` is a placeholder); delete the unused `Square*Logo.png` / `StoreLogo.png`
 
 Plugins:
-- DnD5e tools importer
 - Character Builder + Print Layout
-
 - Homebrew items
 - Player facing screen management
-- LegendKeeper intergration
 - AI Integration (tagging pdf's, enhanced search, Session planning etc...)
 - Addressable RGB control
 - StreamDeck support

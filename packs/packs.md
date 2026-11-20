@@ -39,7 +39,7 @@ Types: `ability-scores`, `alignments`, `backgrounds`, `classes`, `conditions`, `
 
 Extra checks:
 
-- **`monsters`**: `challenge_rating` and `xp` are numbers.
+- **`monsters`**: `challenge_rating` and `xp` are numbers, or left out (or null) for a creature without a challenge rating, such as a summoned one; it then shows "—" and counts as unknown XP in encounters.
 - **`rules`** (chapters): `index`, `name`, `desc` (Markdown, the chapter's intro) and `subsections`, a list of `{ "index": "…" }` naming `rule-sections` entries **of the same pack**. A pack adds its own chapters only; it can't add sections to another pack's chapter.
 - **`rule-sections`**: `index`, `name` and `desc` (Markdown).
 - **`encounter-budgets`**: XP per character by level, no `index` or `name`: `{ "level": 1, "low": 50, "moderate": 75, "high": 100 }`, with whole numbers and each level once.

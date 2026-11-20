@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.9] - 2026-11-20
+
+### Changed
+
+- A monster in a pack may leave out its challenge rating and XP (summoned creatures); it shows "—" and its stat block leaves out the XP.
+- The Catalog and encounter screens work out bundled entries once per category, until the packs change, instead of on every load.
+
+### Fixed
+
+- The same monster in two packs (an imported book and the SRD) shows as one row again: bundling now compares its traits and actions, not only its description.
+
 ## [0.7.8] - 2026-11-20
 
 ### Added

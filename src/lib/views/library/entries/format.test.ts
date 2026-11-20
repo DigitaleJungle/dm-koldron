@@ -29,6 +29,8 @@ describe("monsters", () => {
     expect(damages(undefined)).toBe("");
     expect(senses({ darkvision: "120 ft.", passive_perception: 23 })).toBe("Darkvision 120 ft.; Passive Perception 23");
     expect(challenge({ challenge_rating: 0.5, xp: 1800, proficiency_bonus: 2 })).toMatch(/^1\/2 \(XP 1.800|^1\/2 \(XP 1,800|^1\/2 \(XP 1800/);
+    expect(challenge({ proficiency_bonus: 2 })).toBe("— (PB +2)");
+    expect(challenge({ challenge_rating: null, xp: null })).toBe("—");
   });
 });
 

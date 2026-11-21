@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0] - 2026-11-21
+
+### Added
+
+- Settings → Rules: Check for updates and Update bring the SRD data up to the newest 5e-database release; on any failure the current SRD stays, and removing the updated pack brings back the one the app ships with.
+
+### Changed
+
+- GitHub releases no longer carry the installer's .sig file or a SHA256SUMS.txt; the update manifest holds the signature.
+
 ## [0.8.3] - 2026-11-21
 
 ### Changed

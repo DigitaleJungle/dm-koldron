@@ -906,6 +906,17 @@ export const strings = {
       loadError: (reason: string) => `Couldn't load the packs. ${reason}`,
       saveFailed: (reason: string) => `Couldn't save the packs. ${reason}`,
       addonsError: (reason: string) => `Couldn't load the addons. ${reason}`,
+      update: {
+        check: "Check for updates",
+        checking: "Checking…",
+        upToDate: (version: string) => `The SRD is up to date (${version}).`,
+        available: (version: string) => `SRD data ${version} is available.`,
+        update: "Update",
+        updating: (version: string) => `Updating to ${version}…`,
+        updated: (version: string) => `Updated the SRD to ${version}.`,
+        checkError: (reason: string) => `Couldn't check for updates. ${reason}`,
+        updateError: (reason: string) => `Couldn't update the SRD; it stays as it was. ${reason}`,
+      },
       images: {
         enable: "Enable images",
         label: "Images",

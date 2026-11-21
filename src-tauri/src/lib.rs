@@ -51,6 +51,8 @@ pub fn run() {
             commands::addons::list_addons,
             commands::addons::addon_packs,
             commands::addons::addon_install_pack,
+            commands::rules_update::check_srd_update,
+            commands::rules_update::update_srd,
             commands::addons::addon_remove_pack,
             commands::addons::addon_fetch,
             commands::addons::addon_pick_file,

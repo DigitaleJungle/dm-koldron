@@ -123,6 +123,35 @@ pub struct NewPack {
 
 const LICENSE: &str = "LICENSE.md";
 
+/// The files of the valid pack with that id in `dir`, as `install` takes them (for Update rules).
+pub fn read(dir: &Path, id: &str) -> Result<NewPack, StorageError> {
+    let bad = |e: serde_json::Error| StorageError::Invalid(e.to_string());
+    for folder in subfolders(dir)? {
+        let folder = folder.path();
+        let Ok(text) = fs::read_to_string(folder.join(MANIFEST)) else { continue };
+        let Ok(parsed) = serde_json::from_str::<Manifest>(&text) else { continue };
+        if parsed.id != id {
+            continue;
+        }
+        let mut files = BTreeMap::new();
+        for file in &parsed.files {
+            files.insert(file.path.clone(), serde_json::from_slice(&fs::read(folder.join(&file.path))?).map_err(bad)?);
+        }
+        let images = match fs::read(folder.join(IMAGES)) {
+            Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(bad)?),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.into()),
+        };
+        return Ok(NewPack {
+            manifest: serde_json::from_str(&text).map_err(bad)?,
+            files,
+            images,
+            license: fs::read_to_string(folder.join(LICENSE)).ok(),
+        });
+    }
+    Err(StorageError::Invalid(format!("There's no pack \"{id}\".")))
+}
+
 /// Writes `new` to `staging`, validates it there completely, then swaps it in as `installed/<id>` (replacing the pack
 /// installed with that id). On any failure `installed` is left as it was. `staging` must be on the same disk.
 pub fn install(installed: &Path, staging: &Path, new: &NewPack) -> Result<Pack, StorageError> {
@@ -526,6 +555,17 @@ mod tests {
         escaping.files.insert("../evil.json".into(), serde_json::json!([]));
         assert!(matches!(install(&installed, &staging, &escaping), Err(StorageError::Invalid(_))));
         assert!(!dir.join("evil.json").exists());
+    }
+
+    #[test]
+    fn reading_a_pack_gives_back_what_installing_took() {
+        let dir = temp_dir("read");
+        let (installed, staging) = (dir.join("packs"), dir.join("staging/new"));
+        let given = new_pack("home", "1.0.0", serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]));
+        install(&installed, &staging, &given).unwrap();
+        let read = read(&installed, "home").unwrap();
+        assert_eq!((read.manifest, read.files, read.images, read.license), (given.manifest, given.files, None, given.license));
+        assert!(matches!(super::read(&installed, "gone"), Err(StorageError::Invalid(_))));
     }
 
     #[test]

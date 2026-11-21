@@ -2,7 +2,7 @@
   import { strings } from "$lib/strings";
   import { cancelImageDownload, deleteImages, listPackImages, type PackImages } from "$lib/api/images";
   import { listAddons, panelIn, type AddonSummary } from "$lib/api/addons";
-  import { listPacks, removePack, type PackSummary } from "$lib/api/packs";
+  import { checkSrdUpdate, listPacks, removePack, updateSrd, type PackSummary } from "$lib/api/packs";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { getSettings, setSettings } from "$lib/api/settings";
   import { errorMessage } from "$lib/api/storage";
@@ -86,6 +86,44 @@
       saveError = t.removeError(errorMessage(e));
     } finally {
       removing = null;
+    }
+  }
+
+  // ---- Update rules: the SRD pack from the newest 5e-database release; actions, not waiting for Save. ------------
+  const tu = t.update;
+  const SRD = "srd";
+  let srdBusy = $state<"checking" | "updating" | null>(null);
+  /** The newer release Check for updates found, which Update installs. */
+  let srdLatest = $state<string | null>(null);
+  let srdStatus = $state("");
+  let srdError = $state<string>();
+
+  async function checkSrd() {
+    srdBusy = "checking";
+    [srdLatest, srdStatus, srdError] = [null, "", undefined];
+    try {
+      const found = await checkSrdUpdate();
+      srdLatest = found.latest;
+      srdStatus = found.latest ? tu.available(found.latest) : tu.upToDate(found.installed);
+    } catch (e) {
+      srdError = tu.checkError(errorMessage(e));
+    } finally {
+      srdBusy = null;
+    }
+  }
+
+  async function updateSrdData(version: string) {
+    srdBusy = "updating";
+    [srdStatus, srdError] = ["", undefined];
+    try {
+      await updateSrd(version);
+      [srdLatest, srdStatus] = [null, tu.updated(version)];
+      forgetPictures();
+      packsChanged();
+    } catch (e) {
+      [srdStatus, srdError] = [tu.available(version), tu.updateError(errorMessage(e))];
+    } finally {
+      srdBusy = null;
     }
   }
 
@@ -185,9 +223,10 @@
           </span>
         {:else if pack.errors.length === 0}
           {@const progress = imageDownloads[pack.id]}
+          {@const work = packProgress[pack.id] ?? (pack.id === SRD && srdBusy === "updating" && srdLatest ? { name: pack.name, fraction: null, text: tu.updating(srdLatest) } : null)}
           <Switch id="pack-{pack.id}" label={pack.name} checked={packOn(pack)} disabled={saving} onchange={(on) => toggle(pack, on)} />
-          {#if packProgress[pack.id]}
-            {@render working(packProgress[pack.id])}
+          {#if work}
+            {@render working(work)}
           {:else}
             <span class="muted">{pack.version}</span>
             <span class="muted number">{t.entries(pack.entries)}</span>
@@ -241,13 +280,23 @@
       </li>
     {/each}
   </ul>
+  {#if packs.some((p) => p.id === SRD && p.errors.length === 0)}
+    <div class="update">
+      <button class="btn small" disabled={!!srdBusy} onclick={checkSrd}>{tu.check}</button>
+      {#if srdLatest}
+        <button class="btn small btn-primary" disabled={!!srdBusy} onclick={() => updateSrdData(srdLatest!)}>{tu.update}</button>
+      {/if}
+      <span class="muted" role="status">{srdBusy === "checking" ? tu.checking : srdStatus}</span>
+    </div>
+    {#if srdError}<p class="error" role="alert">{srdError}</p>{/if}
+  {/if}
 {/if}
 
 <!-- An installed pack's remove button, in the last column; a bundled pack has none. -->
 {#snippet trash(pack: PackSummary)}
   <span class="trash">
     {#if pack.installed}
-      <button class="icon-btn" aria-label={t.removeName(pack.name)} disabled={saving || !!packProgress[pack.id] || !!imageDownloads[pack.id]} onclick={() => (removing = pack.id)}>
+      <button class="icon-btn" aria-label={t.removeName(pack.name)} disabled={saving || !!packProgress[pack.id] || !!imageDownloads[pack.id] || (pack.id === SRD && !!srdBusy)} onclick={() => (removing = pack.id)}>
         <i class="ti ti-trash" aria-hidden="true"></i>
       </button>
     {/if}
@@ -255,7 +304,7 @@
 {/snippet}
 
 <!-- An addon's work on a pack, in place of its version, entries and license. -->
-{#snippet working(progress: PackProgress)}
+{#snippet working(progress: Pick<PackProgress, "name" | "fraction" | "text">)}
   <span class="working">
     <progress max="1" value={progress.fraction ?? undefined} aria-label={progress.name}></progress>
     <span class="muted">{progress.text}</span>
@@ -432,6 +481,17 @@
     padding-left: var(--space-4);
     list-style: disc;
     color: var(--color-text-muted);
+  }
+
+  /* Update rules, under the packs. */
+  .update {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+    font-size: var(--text-sm);
   }
 
   /* The addon panels under the packs, set apart from them. */

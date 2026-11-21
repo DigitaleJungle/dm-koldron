@@ -9,6 +9,7 @@ pub mod home;
 pub mod images;
 pub mod packs;
 pub mod rules;
+pub mod rules_update;
 pub mod search;
 pub mod sessions;
 pub mod settings;

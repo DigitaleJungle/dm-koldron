@@ -105,7 +105,7 @@ fn keepers(packs: &[&Pack], kind: &str) -> Vec<usize> {
     }
     for same_name in by_name.values().filter(|ids| ids.len() > 1) {
         let texts: Vec<String> = same_name.iter().map(|&i| bundle_text(all[i].1)).collect();
-        let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+        let group = groups(&texts.iter().map(|t| (kind, t.as_str())).collect::<Vec<_>>());
         for (k, &i) in same_name.iter().enumerate() {
             keeper[i] = same_name[group[k]];
         }
@@ -174,7 +174,7 @@ fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>
     };
     let Some(me) = candidates.iter().position(is_me) else { return Vec::new() };
     let texts: Vec<String> = candidates.iter().map(|(_, _, e)| bundle_text(e)).collect();
-    let group = groups(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+    let group = groups(&candidates.iter().zip(&texts).map(|((_, k, _), t)| (*k, t.as_str())).collect::<Vec<_>>());
     candidates
         .iter()
         .enumerate()

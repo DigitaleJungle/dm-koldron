@@ -1,5 +1,6 @@
 //! Spotting the same rule twice (a condition and its Rules Glossary term, an entry two packs both have): the same
-//! name, ignoring [tags], case and a plural s, and at least 80% of the shorter text repeated in order in the other.
+//! name, ignoring [tags], case and a plural s, and at least 80% of the shorter text repeated in order in the other; or,
+//! when either has no text to compare (an SRD background, species or class is fields only), the same name and kind.
 //! Only links entries for the Catalog; the data is never changed.
 
 /// The least text two same-named entries must share to be one rule (see `similarity`).
@@ -51,14 +52,18 @@ fn similarity(a: &[String], b: &[String]) -> u32 {
     (100.0 * row[b.len()] as f64 / a.len().min(b.len()) as f64).round() as u32
 }
 
-/// For texts of entries that share a `norm`ed name: for each text, the group it belongs to (the lowest index in it).
-/// Connected: a like b and b like c puts all three together. A text alone is its own group.
-pub fn groups(texts: &[&str]) -> Vec<usize> {
-    let words: Vec<_> = texts.iter().map(|t| words_of(t)).collect();
-    let mut group: Vec<usize> = (0..texts.len()).collect();
-    for a in 0..texts.len() {
-        for b in a + 1..texts.len() {
-            if group[a] != group[b] && similarity(&words[a], &words[b]) >= SAME_RULE {
+/// For entries that share a `norm`ed name, as (kind, text): for each, the group it belongs to (the lowest index in it).
+/// Connected: a like b and b like c puts all three together. An entry alone is its own group.
+pub fn groups(entries: &[(&str, &str)]) -> Vec<usize> {
+    let words: Vec<_> = entries.iter().map(|(_, t)| words_of(t)).collect();
+    let alike = |a: usize, b: usize| {
+        let nothing_to_compare = words[a].is_empty() || words[b].is_empty();
+        if nothing_to_compare { entries[a].0 == entries[b].0 } else { similarity(&words[a], &words[b]) >= SAME_RULE }
+    };
+    let mut group: Vec<usize> = (0..entries.len()).collect();
+    for a in 0..entries.len() {
+        for b in a + 1..entries.len() {
+            if group[a] != group[b] && alike(a, b) {
                 let (keep, merge) = (group[a].min(group[b]), group[a].max(group[b]));
                 group.iter_mut().filter(|g| **g == merge).for_each(|g| *g = keep);
             }
@@ -90,7 +95,15 @@ mod tests {
         let a = "one two three four five";
         let b = "one two three four five six seven";
         let c = "one two three four five six seven eight";
-        assert_eq!(groups(&[a, "something else entirely", b, c]), [0, 1, 0, 0]);
-        assert_eq!(groups(&["x y", ""]), [0, 1]);
+        let spells = |texts: &[&'static str]| texts.iter().map(|t| ("spells", *t)).collect::<Vec<_>>();
+        assert_eq!(groups(&spells(&[a, "something else entirely", b, c])), [0, 1, 0, 0]);
+    }
+
+    #[test]
+    fn an_entry_without_text_joins_a_same_named_one_of_its_kind_only() {
+        // An SRD background (fields only) and a book's written one; a glossary term of that name stays apart.
+        let found = groups(&[("backgrounds", ""), ("backgrounds", "Ability Scores: Intelligence, Wisdom"), ("rule-sections", "A term.")]);
+        assert_eq!(found, [0, 0, 2]);
+        assert_eq!(groups(&[("species", ""), ("species", "")]), [0, 0]);
     }
 }

@@ -804,7 +804,7 @@ export const strings = {
   },
 
   entry: {
-    alsoIn: "Also in:",
+    alsoIn: "Also in",
     feat: "Feat",
     cantrip: (school: string) => `${school} Cantrip`,
     spellLevel: (level: number, school: string) => `Level ${level} ${school}`,

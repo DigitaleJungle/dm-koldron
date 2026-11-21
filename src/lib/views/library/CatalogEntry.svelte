@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
+  import Menu from "$lib/components/Menu.svelte";
   import { entryImage } from "$lib/api/images";
   import { notify } from "$lib/stores/notifications.svelte";
   import { page } from "$app/state";
@@ -57,6 +59,8 @@
   const alsoHref = (a: Also) => (a.chapterIndex ? sectionAddress(a.pack, a.chapterIndex, a.index, libraryHome()) : entryAddress(a.kind, a.pack, a.index, libraryHome()));
   const alsoLabel = (a: Also) =>
     `${a.chapterName ?? entryCategory(a.kind).label} → ${a.name}${a.pack !== loaded?.pack ? ` (${a.source})` : ""}`;
+  // Each opens its place as a step, so Back returns here.
+  const alsoItems = $derived((loaded?.also ?? []).map((a) => ({ label: alsoLabel(a), onselect: () => goto(alsoHref(a)) })));
 </script>
 
 <div class="entry" use:keepScroll={{ id: "entry", url: page.url.href, ready: !!loaded }}>
@@ -69,14 +73,19 @@
       {#if picture}
         <img class="picture" src={picture} alt="" />
       {/if}
-      <h1>{loaded.entry.name}</h1>
+      <!-- The other places with the same rule, in a menu right of the name. -->
+      <div class="title">
+        <h1>{loaded.entry.name}</h1>
+        {#if alsoItems.length}
+          <Menu id="entry-also" label={strings.entry.alsoIn} items={alsoItems} align="start" triggerClass="btn small also">
+            {#snippet trigger()}
+              {strings.entry.alsoIn}
+              <i class="ti ti-chevron-down" aria-hidden="true"></i>
+            {/snippet}
+          </Menu>
+        {/if}
+      </div>
       <p class="source">{loaded.source}</p>
-      {#if loaded.also.length}
-        <p class="also">
-          {strings.entry.alsoIn}
-          {#each loaded.also as a, i (`${a.kind}/${a.pack}/${a.index}`)}{#if i > 0},{" "}{/if}<a href={alsoHref(a)}>{alsoLabel(a)}</a>{/each}
-        </p>
-      {/if}
       {#if category.id === "spells"}
         <SpellDetails {loaded} />
       {:else if category.id === "monsters"}
@@ -127,8 +136,25 @@
     object-fit: contain;
   }
 
-  .also {
-    margin-top: calc(-1 * var(--space-2));
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+
+  /* The row keeps the heading's space under it, so the source line sits as before. */
+  .title h1 {
+    margin-bottom: 0;
+  }
+
+  .title :global(.also) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3);
     font-size: var(--text-sm);
   }
 

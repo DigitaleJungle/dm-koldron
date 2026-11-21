@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.3] - 2026-11-21
+
+### Changed
+
+- Catalog entry: Also in is a menu beside the entry's name.
+
+### Fixed
+
+- Catalog: an entry without text (an SRD background, species or class) bundles with a same-named entry of its kind from another pack.
+
 ## [0.8.2] - 2026-11-21
 
 ### Added

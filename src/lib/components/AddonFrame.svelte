@@ -3,6 +3,7 @@
   import { errorMessage } from "$lib/api/storage";
   import { campaignScreenShown, charactersChanged, setCampaignVisible, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { clearProgressOf, packProgress } from "$lib/stores/packProgress.svelte";
   import { registerPanel, unsavedPanels } from "$lib/stores/settingsPanels.svelte";
   import { strings } from "$lib/strings";
   import { answer, isCall } from "./addonBridge";
@@ -48,6 +49,14 @@
     onheight?: (px: number) => void;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
+  // This frame's `packs.setProgress` rows, cleared when it closes (its work stops with it).
+  // A call still waiting for Rust's check when the frame closes is ignored, so it can't set a bar nothing clears.
+  const progressOwner = Symbol("progress");
+  let closed = false;
+  $effect(() => () => {
+    closed = true;
+    clearProgressOf(progressOwner);
+  });
   let height = $state<number>();
   let loaded = $state(false);
 
@@ -95,6 +104,11 @@
         onheight?.(px);
       },
       packsChanged: () => onpackschange?.(),
+      packProgress: (pack: string, progress: { name: string; fraction: number | null; text: string } | null) => {
+        if (closed) return;
+        if (progress) packProgress[pack] = { ...progress, owner: progressOwner };
+        else if (packProgress[pack]?.owner === progressOwner) delete packProgress[pack];
+      },
       charactersChanged,
       theme,
       close: () => onclose?.(),

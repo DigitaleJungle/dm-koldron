@@ -5,15 +5,30 @@
   import { errorMessage } from "$lib/api/storage";
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
-  import { CATEGORIES, ENTRY_CATEGORIES, categoryById, entryCategory, filterOptions, selectRows } from "./catalog";
+  import type { Snippet } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
+  import { CATEGORIES, ENTRY_CATEGORIES, categoryById, entryCategory, filterOptions, selectRows, sourceCounts } from "./catalog";
   import CatalogEntry from "./CatalogEntry.svelte";
+  import SideColumn from "./SideColumn.svelte";
 
-  let { reloadKey, onopensettings }: { reloadKey: number; onopensettings: () => void } = $props();
+  let {
+    reloadKey,
+    onopensettings,
+    collapsed,
+    bottom,
+  }: {
+    reloadKey: number;
+    onopensettings: () => void;
+    /** The Sources column is hidden. */
+    collapsed: boolean;
+    /** At the Sources column's foot (the Library's Settings gear). */
+    bottom?: Snippet;
+  } = $props();
 
   const t = strings.catalog;
   const PAGE_SIZE = 50;
 
-  // Everything is in the address: ?tab=catalog&cat=…&q=…&sort=[-]column&page=…&f.<filter>=…&entry=<pack>/<index>
+  // Everything is in the address: ?tab=catalog&cat=…&q=…&sort=[-]column&page=…&f.<filter>=…&src=<pack>…&entry=<pack>/<index>
   const params = $derived(page.url.searchParams);
   const category = $derived(categoryById(params.get("cat")));
   const sortParam = $derived(params.get("sort") ?? "name");
@@ -21,6 +36,7 @@
   const desc = $derived(sortParam.startsWith("-"));
   const chosen = $derived(Object.fromEntries(category.filters.map((f) => [f.id, params.getAll(`f.${f.id}`)])));
   const entry = $derived(params.get("entry"));
+  const sources = $derived(params.getAll("src"));
 
   // Typed text filters at once; the address follows, so it's kept when coming back from an entry.
   let search = $state(page.url.searchParams.get("q") ?? "");
@@ -40,13 +56,26 @@
     // The All tab loads every entry type, with no extra fields.
     const load = id === "all" ? Promise.all(ENTRY_CATEGORIES.map((cat) => catalogRows(cat.id, []))).then((lists) => lists.flat()) : catalogRows(id, fields);
     load
-      .then((list) => !stale && (rows = list))
+      .then((list) => {
+        if (stale) return;
+        rows = list;
+        for (const r of list) for (const { pack, source } of [r, ...r.others]) sourceNames.set(pack, source);
+      })
       .catch((e) => !stale && (error = errorMessage(e)));
     return () => (stale = true);
   });
 
+  // A ticked source stays listed (with 0) in a category it has no entries in, by the name it was last seen with.
+  const sourceNames = new SvelteMap<string, string>();
+  const sourceList = $derived.by(() => {
+    const list = rows ? sourceCounts(rows) : [];
+    const missing = sources.filter((p) => !list.some((s) => s.pack === p)).map((pack) => ({ pack, name: sourceNames.get(pack) ?? pack, count: 0 }));
+    return [...list, ...missing].sort((a, b) => a.name.localeCompare(b.name));
+  });
+  const count = new Intl.NumberFormat();
+
   const filters = $derived(rows ? category.filters.map((f) => ({ ...f, options: filterOptions(rows!, f) })).filter((f) => f.options.length > 1) : []);
-  const selected = $derived(rows ? selectRows(rows, category, { search, filters: chosen, sort, desc }) : []);
+  const selected = $derived(rows ? selectRows(rows, category, { search, filters: chosen, sort, desc, sources }) : []);
   const pages = $derived(Math.max(1, Math.ceil(selected.length / PAGE_SIZE)));
   const pageNumber = $derived(Math.min(pages, Math.max(1, Number(params.get("page")) || 1)));
   const shown = $derived(selected.slice((pageNumber - 1) * PAGE_SIZE, pageNumber * PAGE_SIZE));
@@ -81,6 +110,10 @@
     go({ [`f.${filterId}`]: current.includes(option) ? current.filter((o) => o !== option) : [...current, option] });
   }
 
+  function toggleSource(pack: string) {
+    go({ src: sources.includes(pack) ? sources.filter((p) => p !== pack) : [...sources, pack] });
+  }
+
   function sortBy(id: string) {
     go({ sort: sort === id && !desc ? `-${id}` : id });
   }
@@ -89,11 +122,13 @@
   const entryHref = (row: CatalogRow) => href({ entry: `${row.pack}/${row.index}`, kind: category.id === "all" ? row.kind : null, page: String(pageNumber) });
   const anyFilter = $derived(Object.values(chosen).some((options) => options.length > 0));
   const clearFilters = () => go(Object.fromEntries(category.filters.map((f) => [`f.${f.id}`, null])));
-  // A category tab starts without the last one's search, filters or sort; Back returns to them.
+  // A category tab starts without the last one's search, filters or sort, keeping the sources. It takes the current
+  // place in the history, as the Library's tabs do, so Back leaves the Catalog instead of stepping through categories.
+  const categoryHref = (id: string) => `?${new URLSearchParams([["tab", "catalog"], ["cat", id], ...sources.map((p) => ["src", p])])}`;
   function openCategory(event: MouseEvent, id: string) {
     event.preventDefault();
     search = "";
-    goto(`?tab=catalog&cat=${id}`);
+    gotoReplacing(categoryHref(id));
   }
 </script>
 
@@ -101,10 +136,28 @@
   {@const [pack, ...rest] = entry.split("/")}
   <CatalogEntry category={category.id === "all" ? entryCategory(params.get("kind") ?? "") : category} {pack} index={rest.join("/")} {reloadKey} />
 {:else}
+  <div class="body">
+  <SideColumn id="catalog-sources" {collapsed} {bottom}>
+    <div class="sources-head">
+      <h2 class="label" id="sources-title">{t.sources}</h2>
+      {#if sources.length}<button class="btn small" onclick={() => go({ src: null })}>{t.clearSources}</button>{/if}
+    </div>
+    <ul class="sources" aria-labelledby="sources-title">
+      {#each sourceList as source (source.pack)}
+        <li>
+          <label class="source">
+            <input type="checkbox" checked={sources.includes(source.pack)} onchange={() => toggleSource(source.pack)} />
+            <span class="source-name">{source.name}</span>
+            <span class="muted count">{count.format(source.count)}</span>
+          </label>
+        </li>
+      {/each}
+    </ul>
+  </SideColumn>
   <div class="catalog" bind:this={pane} use:keepScroll={{ id: "catalog", url: page.url.href, ready: !!rows }}>
     <nav class="categories" aria-label={t.categoriesLabel}>
       {#each CATEGORIES as cat (cat.id)}
-        <a href="?tab=catalog&cat={cat.id}" onclick={(e) => openCategory(e, cat.id)} aria-current={cat.id === category.id ? "page" : undefined}>{cat.label}</a>
+        <a href={categoryHref(cat.id)} onclick={(e) => openCategory(e, cat.id)} aria-current={cat.id === category.id ? "page" : undefined}>{cat.label}</a>
       {/each}
     </nav>
 
@@ -190,11 +243,62 @@
       {/if}
     {/if}
   </div>
+  </div>
 {/if}
 
 <style>
+  .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
+  .sources-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--control-height-sm);
+    margin-bottom: var(--space-2);
+  }
+
+  .sources {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+  }
+
+  .source {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .source input {
+    margin: 0;
+    accent-color: var(--color-accent);
+  }
+
+  .source-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .small {
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3);
+  }
+
   .catalog {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow-y: auto;
     display: flex;
@@ -343,6 +447,10 @@
   }
 
   @media (max-width: 720px) {
+    .body {
+      flex-direction: column;
+    }
+
     .catalog {
       padding: var(--space-3) var(--space-4) var(--corner-clearance);
     }

@@ -7,6 +7,7 @@
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import RulesContents from "./RulesContents.svelte";
+  import SideColumn from "./SideColumn.svelte";
 
   let {
     collapsed,
@@ -121,14 +122,9 @@
   </div>
 {:else}
   <div class="body">
-    <!-- Hidden, the column eases to no width and then can't be reached; shown, it eases back. -->
-    <aside id="library-contents" class:collapsed>
-      <!-- The sidebar's items (a layout container only, as in the campaign sidebar): they scroll, the foot stays. -->
-      <div class="items">
-        <RulesContents {contents} {current} {section} onopen={open} />
-      </div>
-      {#if bottom}<div class="bottom">{@render bottom()}</div>{/if}
-    </aside>
+    <SideColumn id="library-contents" {collapsed} {bottom}>
+      <RulesContents {contents} {current} {section} onopen={open} />
+    </SideColumn>
     <main bind:this={pane} use:keepScroll={{ id: "rules", url: page.url.href, ready: !!chapter }} onwheel={stopScroll}>
       {#if chapterError}
         <p class="message error" role="alert">{t.loadError(chapterError)}</p>
@@ -156,55 +152,6 @@
     flex: 1;
     min-height: 0;
     display: flex;
-  }
-
-  /* The contents column: its list scrolls, its foot (the gear) stays under it. Hiding and showing ease its width;
-     hidden, it turns invisible once closed (so the keyboard can't reach it) and visible at once when it opens. */
-  aside {
-    flex: 0 0 var(--library-contents-width);
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    border-right: var(--border-width) solid var(--color-border);
-    background: var(--color-surface);
-    transition:
-      flex-basis var(--duration-drawer) ease-in-out,
-      visibility 0s;
-  }
-
-  aside.collapsed {
-    flex-basis: 0;
-    border-right-width: 0;
-    visibility: hidden;
-    transition:
-      flex-basis var(--duration-drawer) ease-in-out,
-      visibility 0s var(--duration-drawer);
-  }
-
-  :global([data-motion="reduce"]) aside {
-    transition: none;
-  }
-
-  /* Their full width while the column eases, so the chapters don't rewrap as it narrows. */
-  .items,
-  .bottom {
-    flex: none;
-    width: var(--library-contents-width);
-    padding: 0 var(--space-3);
-  }
-
-  .items {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding-top: var(--space-3);
-    padding-bottom: var(--space-3);
-  }
-
-  .bottom {
-    padding-top: var(--space-2);
-    padding-bottom: var(--space-2);
   }
 
   main {
@@ -241,13 +188,6 @@
   @media (max-width: 720px) {
     .body {
       flex-direction: column;
-    }
-
-    aside {
-      flex: 0 0 var(--library-stacked-height);
-      padding-bottom: var(--space-3);
-      border-right: none;
-      border-bottom: var(--border-width) solid var(--color-border);
     }
 
     main {

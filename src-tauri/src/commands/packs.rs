@@ -1,6 +1,7 @@
 //! The packs, loaded on first use and again after an addon changes them, and Settings → Rules: each pack, valid or not, with whether it's switched on.
 
 use crate::commands::settings;
+use crate::commands::images;
 use crate::commands::search;
 use crate::packs::{load_all, Invalid, Pack};
 use crate::storage::{blocking, data_dir, StorageError};
@@ -106,6 +107,34 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
 #[tauri::command]
 pub async fn list_packs(app: AppHandle) -> Result<Vec<PackSummary>, StorageError> {
     blocking(move || Ok(summaries(&*loaded(&app)?, &disabled(&app)?))).await
+}
+
+/// One pack install or removal at a time (they share the staging folder); its own lock, so campaign saves never wait on one.
+static PACK_CHANGE: Mutex<()> = Mutex::new(());
+
+pub fn lock_pack_change() -> std::sync::MutexGuard<'static, ()> {
+    PACK_CHANGE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Removes an installed pack (a bundled one with the same id comes back) and its kept images, unless that bundled pack
+/// still uses them. Blocking: call it inside `blocking`.
+pub fn remove_installed(app: &AppHandle, pack: &str) -> Result<(), StorageError> {
+    let _guard = lock_pack_change();
+    crate::packs::remove(&installed_dir(app)?, pack)?;
+    reload();
+    if !loaded(app)?.0.iter().any(|p| p.manifest.id == pack) {
+        match std::fs::remove_dir_all(data_dir(app)?.join(images::DIR).join(pack)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Settings → Rules: removes an installed pack.
+#[tauri::command]
+pub async fn remove_pack(app: AppHandle, pack: String) -> Result<(), StorageError> {
+    blocking(move || remove_installed(&app, &pack)).await
 }
 
 #[cfg(test)]

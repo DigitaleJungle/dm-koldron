@@ -91,8 +91,10 @@
   // tab with a side column also hears whether the header's button hides it.
   const addonContext = $derived({ state: page.url.searchParams.get("state"), ...(sidebarTab ? { sidebarHidden: collapsed } : {}) });
 
-  // Outside a campaign the gear sits at the foot of the shown contents column, else in the corner.
-  const gearInContents = $derived(!embedded && tab === "rules" && rulesHasContents && !collapsed);
+  // The Catalog's list (not an entry page) has the Sources column.
+  const catalogList = $derived(tab === "catalog" && !page.url.searchParams.has("entry"));
+  // Outside a campaign the gear sits at the foot of the shown left column, else in the corner.
+  const gearInContents = $derived(!embedded && ((tab === "rules" && rulesHasContents) || catalogList) && !collapsed);
 
   // A hint opens Settings at Rules; once closed, the gear opens it where it was.
   $effect(() => {
@@ -112,12 +114,12 @@
     {#if !embedded}<BackButton fallback={backTo} />{/if}
     <!-- Inside a campaign the contents column is always shown (and there are no addon tabs). Outside, the button keeps
          its place even when a tab has none, so the tabs never move. -->
-    {#if !embedded}<span class="column-slot">{#if (tab === "rules" && rulesHasContents) || (sidebarTab && sidebarButton)}
+    {#if !embedded}<span class="column-slot">{#if (tab === "rules" && rulesHasContents) || catalogList || (sidebarTab && sidebarButton)}
       <button
         class="icon-btn icon-btn-lg"
         aria-expanded={!collapsed}
-        aria-controls={sidebarTab ? undefined : "library-contents"}
-        aria-label={sidebarTab ? (collapsed ? t.showSidebar : t.hideSidebar) : collapsed ? t.showContents : t.hideContents}
+        aria-controls={sidebarTab ? undefined : catalogList ? "catalog-sources" : "library-contents"}
+        aria-label={tab === "rules" ? (collapsed ? t.showContents : t.hideContents) : collapsed ? t.showSidebar : t.hideSidebar}
         onclick={() => setCollapsed(!collapsed)}
       >
         <i class="ti {collapsed ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse'}" aria-hidden="true"></i>
@@ -142,7 +144,7 @@
       <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} onsidebarbutton={sidebarTab ? (shown) => (sidebarButton = shown) : undefined} />{/if}</div>
     {/key}
   {:else if tab === "catalog"}
-    <Catalog {reloadKey} onopensettings={openRulesSettings} />
+    <Catalog {reloadKey} onopensettings={openRulesSettings} collapsed={collapsed && !embedded} bottom={gearInContents ? gear : undefined} />
   {:else}
     <RulesReader collapsed={collapsed && !embedded} {reloadKey} onopensettings={openRulesSettings} bind:hasContents={rulesHasContents} bottom={gearInContents ? gear : undefined} />
   {/if}

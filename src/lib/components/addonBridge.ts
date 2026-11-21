@@ -28,6 +28,7 @@ import {
   addonSaveFile,
   addonScanFolder,
   addonFetch,
+  addonCheckPackProgress,
   addonInstallPack,
   addonOpenExternal,
   addonPacks,
@@ -55,6 +56,8 @@ export type FrameHost = {
   hidden: boolean;
   setHeight: (px: number) => void;
   packsChanged: () => void;
+  /** `packs.setProgress`, checked: shows (or with null clears) progress in that pack's Settings → Rules row. */
+  packProgress: (pack: string, progress: { name: string; fraction: number | null; text: string } | null) => void;
   charactersChanged: () => void;
   theme: () => string;
   close: () => void;
@@ -82,6 +85,10 @@ export type FrameHost = {
 const MAX_HEIGHT = 4000;
 /** The longest message an addon can show. */
 const MAX_NOTICE = 200;
+/** The longest name or text `packs.setProgress` shows. */
+const MAX_PROGRESS_TEXT = 100;
+/** `packs.setProgress`: the number of the latest call per addon and pack. */
+const latestProgress = new Map<string, number>();
 /** The longest state `ui.navigate` keeps in the address. */
 const MAX_STATE = 2000;
 
@@ -98,6 +105,21 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       await addonRemovePack(addon, String(args[0]));
       host.packsChanged();
       return null;
+    case "packs.setProgress": {
+      const [pack, p] = [String(args[0] ?? ""), args[1] as { name?: unknown; fraction?: unknown; text?: unknown } | null];
+      const fraction = p?.fraction ?? null;
+      if (p !== null && (typeof p !== "object" || (fraction !== null && (typeof fraction !== "number" || !(fraction >= 0 && fraction <= 1)))))
+        throw new Error("packs.setProgress needs a pack id and { name, fraction (0–1 or null), text }, or null.");
+      // Each call waits for Rust's check; only the latest per pack is shown, so a quick set-then-clear can't end set.
+      const key = `${addon}/${pack}`;
+      const mine = (latestProgress.get(key) ?? 0) + 1;
+      latestProgress.set(key, mine);
+      await addonCheckPackProgress(addon, pack);
+      if (latestProgress.get(key) !== mine) return null;
+      const short = (v: unknown) => [...String(v ?? "")].slice(0, MAX_PROGRESS_TEXT).join("");
+      host.packProgress(pack, p && { name: short(p.name) || pack, fraction: fraction as number | null, text: short(p.text) });
+      return null;
+    }
     case "packs.putImages": {
       const images = args[1];
       if (!Array.isArray(images) || images.some((i) => typeof i?.path !== "string" || !(i?.bytes instanceof ArrayBuffer)))

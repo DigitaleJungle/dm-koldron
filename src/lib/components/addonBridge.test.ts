@@ -20,13 +20,16 @@ vi.mock("$lib/api/addons", () => ({
   addonOpenExternal: vi.fn(async () => undefined),
   addonSetCampaignVisible: vi.fn(async () => undefined),
   addonPutImages: vi.fn(async () => undefined),
+  addonCheckPackProgress: vi.fn(async (_a: string, pack: string) => {
+    if (pack === "srd") throw { kind: "invalid", message: "\"srd\" isn't a pack this addon installed." };
+  }),
   addonReadOpened: vi.fn(async () => new ArrayBuffer(2)),
 }));
 
 import { addonFetch, addonPutImages, addonReadOpened, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}) });
+const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), packProgress: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}) });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -41,6 +44,26 @@ describe("addon bridge", () => {
     await answer("importer", "files.read", ["7", 0, 16], h);
     expect(addonReadOpened).toHaveBeenCalledWith("importer", "7", 0, 16);
     await expect(answer("importer", "files.read", ["7", -1, 16], h)).rejects.toThrow("offset");
+  });
+
+  it("shows a pack's progress only once Rust allows it, with short texts and a fraction from 0 to 1", async () => {
+    const h = host();
+    await answer("importer", "packs.setProgress", ["phb", { name: "Player's Handbook", fraction: 0.4, text: "Reading… 40%" }], h);
+    expect(h.packProgress).toHaveBeenCalledWith("phb", { name: "Player's Handbook", fraction: 0.4, text: "Reading… 40%" });
+    await answer("importer", "packs.setProgress", ["phb", { fraction: null, text: "x".repeat(300) }], h);
+    expect(h.packProgress).toHaveBeenLastCalledWith("phb", { name: "phb", fraction: null, text: "x".repeat(100) });
+    await answer("importer", "packs.setProgress", ["phb", null], h);
+    expect(h.packProgress).toHaveBeenLastCalledWith("phb", null);
+    await expect(answer("importer", "packs.setProgress", ["phb", { fraction: 2 }], h)).rejects.toThrow("0–1");
+    await expect(answer("importer", "packs.setProgress", ["srd", null], h)).rejects.toMatchObject({ kind: "invalid" });
+    expect(h.packProgress).toHaveBeenCalledTimes(3);
+
+    // Sent together: the clear wins even if its check is answered first.
+    const set = answer("importer", "packs.setProgress", ["tce", { name: "TCE", fraction: 0.5, text: "Reading" }], h);
+    const clear = answer("importer", "packs.setProgress", ["tce", null], h);
+    await Promise.all([clear, set]);
+    expect(h.packProgress).toHaveBeenLastCalledWith("tce", null);
+    expect(h.packProgress).toHaveBeenCalledTimes(4);
   });
 
   it("shows or hides the campaign screen in one campaign and tells the frame", async () => {

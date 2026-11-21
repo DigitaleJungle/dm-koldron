@@ -186,6 +186,8 @@ export const strings = {
     hideSidebar: "Hide sidebar",
     showSidebar: "Show sidebar",
     showSections: (chapter: string) => `Sections of ${chapter}`,
+    searchContents: "Search books and chapters",
+    noContentsMatches: "No matches.",
     loading: "Loading…",
     empty: "No rules loaded",
     openSettings: "Rules settings",
@@ -195,6 +197,8 @@ export const strings = {
   catalog: {
     title: "Catalog",
     categoriesLabel: "Categories",
+    sources: "Sources",
+    clearSources: "Clear",
     categories: {
       all: "All",
       spells: "Spells",
@@ -892,14 +896,19 @@ export const strings = {
       title: "Rules",
       empty: "No packs installed.",
       loading: "Loading packs…",
-      details: (version: string, license: string, entries: number) =>
-        `${version} · ${license} · ${new Intl.NumberFormat().format(entries)} entries`,
+      entries: (entries: number) => `${new Intl.NumberFormat().format(entries)} entries`,
       invalid: "Not loaded",
+      removeName: (name: string) => `Remove ${name}`,
+      removeQuestion: (name: string) => `Remove ${name} and its images?`,
+      remove: "Remove",
+      cancel: "Cancel",
+      removeError: (reason: string) => `Couldn't remove the pack. ${reason}`,
       loadError: (reason: string) => `Couldn't load the packs. ${reason}`,
       saveFailed: (reason: string) => `Couldn't save the packs. ${reason}`,
       addonsError: (reason: string) => `Couldn't load the addons. ${reason}`,
       images: {
         enable: "Enable images",
+        label: "Images",
         enableQuestion: (name: string, count: string, size: string) =>
           `${name} has ${count} images. Download them all now (about ${size}), or each one the first time it's shown?`,
         now: (size: string) => `Download all now (${size})`,
@@ -911,7 +920,7 @@ export const strings = {
         cancel: "Cancel",
         progress: (done: string, total: string) => `${done} of ${total}`,
         cancelDownload: "Cancel download",
-        allKept: (count: string) => `All ${count} images downloaded`,
+        allKept: "Downloaded",
         size: (bytes: number) =>
           new Intl.NumberFormat(undefined, { style: "unit", unit: "megabyte", maximumFractionDigits: 0 }).format(bytes / 1e6),
         done: (name: string, done: number) => `Downloaded ${new Intl.NumberFormat().format(done)} images of ${name}.`,

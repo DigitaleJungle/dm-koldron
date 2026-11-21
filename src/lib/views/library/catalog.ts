@@ -181,15 +181,32 @@ export function filterOptions(rows: CatalogRow[], filter: Filter): string[] {
   return found.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
-export type Query = { search: string; filters: Record<string, string[]>; sort: string; desc: boolean };
+/** `sources`: pack ids ticked in the Sources column; none ticked shows every source. */
+export type Query = { search: string; filters: Record<string, string[]>; sort: string; desc: boolean; sources: string[] };
 
-/** Every search word in the name; options within a filter OR, filters AND; then sorted (ties by name). */
+/** The packs a row is in: its own, and those of the same entry bundled into it. */
+const packsOf = (row: CatalogRow) => [row.pack, ...row.others.map((o) => o.pack)];
+
+/** The Sources column: each pack the rows come from, by name, with how many rows it's in. */
+export function sourceCounts(rows: CatalogRow[]): { pack: string; name: string; count: number }[] {
+  const found = new Map<string, { pack: string; name: string; count: number }>();
+  for (const row of rows)
+    for (const { pack, source } of [row, ...row.others]) {
+      const s = found.get(pack) ?? { pack, name: source, count: 0 };
+      s.count += 1;
+      found.set(pack, s);
+    }
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Every search word in the name; options within a filter OR, filters AND; a ticked source; then sorted (ties by name). */
 export function selectRows(rows: CatalogRow[], category: Category, query: Query): CatalogRow[] {
   const words = query.search.toLowerCase().split(/\s+/).filter(Boolean);
   const active = category.filters.filter((f) => query.filters[f.id]?.length);
   const matches = (row: CatalogRow) =>
     words.every((w) => row.name.toLowerCase().includes(w)) &&
-    active.every((f) => f.values(row).some((v) => query.filters[f.id].includes(v)));
+    active.every((f) => f.values(row).some((v) => query.filters[f.id].includes(v))) &&
+    (!query.sources.length || packsOf(row).some((p) => query.sources.includes(p)));
   const column = category.columns.find((col) => col.id === query.sort);
   const byName = (a: CatalogRow, b: CatalogRow) => a.name.localeCompare(b.name);
   const compare = (a: CatalogRow, b: CatalogRow) => {

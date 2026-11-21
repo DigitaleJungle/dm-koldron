@@ -66,7 +66,7 @@ File names: plain ASCII, no spaces.
 | Permission | Allows |
 |---|---|
 | `packs:read` | `packs.list` |
-| `packs:write` | `packs.install`, `packs.remove`, `packs.putImages` |
+| `packs:write` | `packs.install`, `packs.remove`, `packs.putImages`, `packs.setProgress` |
 | `folders:read` | `folders.list`, `folders.add`, `folders.remove`, `folders.scan`, `folders.read`, `folders.hash`, `folders.reveal` |
 | `files:read` | `files.open`, `files.read` |
 | `folders:write` | `folders.download` (with `folders:read`, and `net:<host>` for the address) |
@@ -143,6 +143,7 @@ function koldron(call, ...args) {
 | `packs.install` | `{ manifest, files, images?, license? }` | The installed pack, as in `packs.list`. |
 | `packs.remove` | pack id | `null`. Its kept images (`images/<pack>/`) go too, unless a bundled pack with that id comes back. |
 | `packs.putImages` | pack id, a list of `{ path, bytes }` (`bytes` an `ArrayBuffer`) | `null`. Keeps the images for a pack this addon installed with `packs.install`, where the app keeps a pack's images. An entry whose `image` is one of those paths (with or without a leading `/`) shows it, without **Enable images**, as long as the pack has no `images.json`. `path`: relative, plain ASCII, no `..`, ending in `.png`, `.jpg`, `.jpeg` or `.webp` (lowercase). At most 100 images and 100 MB per call, 20 MB each; an image with the same path is replaced. Installing the pack again keeps them. |
+| `packs.setProgress` | pack id, `{ name, fraction, text }` or `null` | `null`. Shows the addon's work on a pack in its Settings → Rules row: a bar (`fraction` 0–1, or `null` for a moving one) and `text`, in place of its version, entries and license. For a pack not installed yet (its first import), a row with `name` shows until it's installed or cleared. Only for a pack this addon installed, or one that isn't installed. `null` clears it; it also clears when the page that set it closes. Name and text: at most 100 characters. |
 | `net.fetch` | `https://` URL, optional `{ method, headers }` | The body as an `ArrayBuffer` (at most 200 MB). `method` is `"GET"` (the default) or `"POST"` (sent without a body); `headers` is an object of names and values (at most 20; not `Host`, `Cookie` or the connection's own). An error status is an error that names it (e.g. `… http status: 401`); messages leave out the address's query. |
 | `files.pickFile` | optional list of extensions, e.g. `["zip"]` | The file the user picked, as an `ArrayBuffer`, or `null` if they cancelled (at most 200 MB). |
 | `files.open` | optional list of extensions, e.g. `["gz"]` | The files the user picked (several at once): `[{ id, name, size }]`, or `null` if they cancelled. The addon reads them with `files.read` until the app closes. |

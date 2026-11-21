@@ -17,3 +17,8 @@ export type PackSummary = {
 export function listPacks(): Promise<PackSummary[]> {
   return invoke("list_packs");
 }
+
+/** Removes an installed pack and its kept images; a bundled pack with that id comes back. Rejects with a StorageError. */
+export function removePack(id: string): Promise<void> {
+  return invoke("remove_pack", { pack: id });
+}

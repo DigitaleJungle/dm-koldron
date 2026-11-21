@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
-import { categoryById, crText, entryAddress, filterOptions, pickTab, rarities, refKind, sectionAddress, selectRows } from "./catalog";
+import { categoryById, crText, entryAddress, filterOptions, pickTab, rarities, refKind, sectionAddress, selectRows, sourceCounts } from "./catalog";
 
 describe("pickTab", () => {
   const ids = ["catalog", "rules", "local-pdfs"];
@@ -22,8 +22,29 @@ const rows = [
   row("Fire Bolt", { level: 0, school: { name: "Evocation" }, classes: [{ name: "Wizard" }] }),
   row("Bless", { level: 1, school: { name: "Enchantment" }, concentration: true, classes: [{ name: "Cleric" }] }, "Homebrew"),
 ];
-const query = { search: "", filters: {}, sort: "name", desc: false };
+const query = { search: "", filters: {}, sort: "name", desc: false, sources: [] as string[] };
 const names = (list: CatalogRow[]) => list.map((r) => r.name);
+
+describe("sources", () => {
+  // Fireball is in the SRD and, bundled into its row, in the PHB too.
+  const phb = { kind: "spells", pack: "phb", source: "Player's Handbook", index: "fireball", name: "Fireball", chapterIndex: null, chapterName: null };
+  // Bless is homebrew, from its own pack.
+  const withPhb = rows.map((r) => (r.name === "Fireball" ? { ...r, others: [phb] } : r.name === "Bless" ? { ...r, pack: "home" } : r));
+
+  it("counts each source's rows, a bundled one in each of its packs, by name", () => {
+    expect(sourceCounts(withPhb)).toEqual([
+      { pack: "home", name: "Homebrew", count: 1 },
+      { pack: "phb", name: "Player's Handbook", count: 1 },
+      { pack: "srd", name: "SRD 5.2.1", count: 2 },
+    ]);
+  });
+
+  it("shows only the ticked sources, a bundled row in any of its packs; none ticked shows all", () => {
+    expect(names(selectRows(withPhb, spells, { ...query, sources: ["phb"] }))).toEqual(["Fireball"]);
+    expect(names(selectRows(withPhb, spells, { ...query, sources: ["phb", "home"] }))).toEqual(["Bless", "Fireball"]);
+    expect(names(selectRows(withPhb, spells, query))).toHaveLength(3);
+  });
+});
 
 describe("selectRows", () => {
   it("needs every search word in the name", () => {

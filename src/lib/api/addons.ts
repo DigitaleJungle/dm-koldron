@@ -111,6 +111,11 @@ export function addonRemovePack(addon: string, pack: string): Promise<void> {
   return invoke("addon_remove_pack", { addon, pack });
 }
 
+/** Resolves when the addon may show progress on that pack (`packs.setProgress`). */
+export function addonCheckPackProgress(addon: string, pack: string): Promise<void> {
+  return invoke("addon_check_pack_progress", { addon, pack });
+}
+
 /** `method`: GET (the default) or POST, without a body; `headers` as name/value pairs. */
 export function addonFetch(addon: string, url: string, method?: string, headers?: [string, string][]): Promise<ArrayBuffer> {
   return invoke("addon_fetch", { addon, url, method, headers });

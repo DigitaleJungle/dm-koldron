@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.2] - 2026-11-21
+
+### Added
+
+- Catalog: a Sources column to show only the ticked sources, kept when switching category.
+- Rules tab: books can be expanded and collapsed, and a search box finds books and chapters by name.
+- Settings → Rules: a trash button removes an installed pack and its images.
+- Addons can show their progress on a pack in its Settings → Rules row (packs.setProgress), with a temporary row for a pack being imported for the first time.
+
+### Changed
+
+- Settings → Rules: each pack on one line, with its version, entries, license and images lined up; addon panels set apart below.
+- Catalog: switching category no longer adds a step to Back.
+
 ## [0.8.1] - 2026-11-21
 
 ### Changed

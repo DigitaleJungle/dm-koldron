@@ -8,7 +8,7 @@ use crate::commands::campaigns::{active_dir, dirs, now_ms};
 use crate::commands::characters::{self, Character, Editor};
 use crate::commands::images;
 use crate::commands::search;
-use crate::commands::packs::{capped, disabled, installed_dir, loaded, reload, summaries, PackSummary};
+use crate::commands::packs::{capped, disabled, installed_dir, loaded, lock_pack_change, reload, remove_installed, summaries, PackSummary};
 use crate::packs::{self, safe_path, Invalid, NewPack};
 use crate::storage::{blocking, check_id, data_dir, write_atomic, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
@@ -33,13 +33,6 @@ const MAX_FILES: usize = 10_000;
 const MAX_STORAGE: usize = 10 * 1024 * 1024;
 
 type Loaded = (Vec<Addon>, Vec<Invalid>);
-
-/// One pack install or removal at a time (they share the staging folder); its own lock, so campaign saves never wait on one.
-static PACK_CHANGE: Mutex<()> = Mutex::new(());
-
-fn lock_pack_change() -> std::sync::MutexGuard<'static, ()> {
-    PACK_CHANGE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
 
 // shortcut: addons are read once per run, so installing, enabling, disabling or uninstalling one needs a restart
 // (Settings → Addons offers one). Reload here if that gets in the way.
@@ -264,17 +257,7 @@ pub async fn addon_install_pack(app: AppHandle, addon: String, pack: NewPack) ->
 pub async fn addon_remove_pack(app: AppHandle, addon: String, pack: String) -> Result<(), StorageError> {
     blocking(move || {
         require(self::addon(&app, &addon)?, "packs:write")?;
-        let _guard = lock_pack_change();
-        packs::remove(&installed_dir(&app)?, &pack)?;
-        reload();
-        // Its kept images go too, unless a bundled pack with that id came back and still uses them.
-        if !loaded(&app)?.0.iter().any(|p| p.manifest.id == pack) {
-            match fs::remove_dir_all(data_dir(&app)?.join(images::DIR).join(&pack)) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-                _ => {}
-            }
-        }
-        Ok(())
+        remove_installed(&app, &pack)
     })
     .await
 }
@@ -291,6 +274,25 @@ const IMAGE_TYPES: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
 
 fn installed_by(installed: &Path, pack: &str, addon: &str) -> bool {
     check_id(pack, "pack").is_ok() && fs::read_to_string(installed.join(pack).join(PACK_OWNER)).is_ok_and(|owner| owner == addon)
+}
+
+/// `packs.setProgress` may show progress on `pack`: one this addon installed, or one not installed yet (its first import).
+fn may_show_progress(installed: &Path, pack: &str, addon: &str) -> bool {
+    check_id(pack, "pack").is_ok() && (!installed.join(pack).exists() || installed_by(installed, pack, addon))
+}
+
+/// Checks a `packs.setProgress` call; the window shows the progress only when this succeeds.
+#[tauri::command]
+pub async fn addon_check_pack_progress(app: AppHandle, addon: String, pack: String) -> Result<(), StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "packs:write")?;
+        if may_show_progress(&installed_dir(&app)?, &pack, &addon) {
+            Ok(())
+        } else {
+            Err(StorageError::Invalid(format!("\"{pack}\" isn't a pack this addon installed.")))
+        }
+    })
+    .await
 }
 
 /// A kept image's path: relative, inside its folder, plain printable ASCII, and one of `IMAGE_TYPES` (lowercase).
@@ -1737,6 +1739,11 @@ mod tests {
         assert!(!installed_by(&installed, "mine", "other"));
         assert!(!installed_by(&installed, "bundled-copy", "importer"), "no owner: by hand or bundled");
         assert!(!installed_by(&installed, "../mine", "importer"));
+        assert!(may_show_progress(&installed, "mine", "importer"));
+        assert!(may_show_progress(&installed, "not-yet", "importer"), "a first import");
+        assert!(!may_show_progress(&installed, "mine", "other"));
+        assert!(!may_show_progress(&installed, "bundled-copy", "importer"));
+        assert!(!may_show_progress(&installed, "../mine", "importer"));
     }
 
     #[test]

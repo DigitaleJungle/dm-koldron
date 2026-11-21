@@ -2,13 +2,14 @@
   import { strings } from "$lib/strings";
   import { cancelImageDownload, deleteImages, listPackImages, type PackImages } from "$lib/api/images";
   import { listAddons, panelIn, type AddonSummary } from "$lib/api/addons";
-  import { listPacks, type PackSummary } from "$lib/api/packs";
+  import { listPacks, removePack, type PackSummary } from "$lib/api/packs";
   import AddonFrame from "$lib/components/AddonFrame.svelte";
   import { getSettings, setSettings } from "$lib/api/settings";
   import { errorMessage } from "$lib/api/storage";
   import Switch from "$lib/components/Switch.svelte";
   import { applyPending } from "./rulesPending";
   import { imageDownloads, startImageDownload } from "$lib/stores/imageDownloads.svelte";
+  import { packProgress, type PackProgress } from "$lib/stores/packProgress.svelte";
   import { forgetPictures } from "$lib/stores/monsterPictures";
 
   // Pack switches and Enable images wait for the Settings dialog's Save (`save`) or Cancel (`discard`); `dirty` says
@@ -40,6 +41,9 @@
   let panels = $state<AddonSummary[]>([]);
   let addonsError = $state<string>();
 
+  /** Packs an addon reports work on that aren't installed yet (a first import): a row each until they are. */
+  const coming = $derived(Object.entries(packProgress).filter(([id]) => !packs?.some((p) => p.id === id)));
+
   const byPack = (images: PackImages[]) => Object.fromEntries(images.map((i) => [i.pack, i]));
 
   $effect(() => {
@@ -61,6 +65,28 @@
       .then((list) => (packs = list))
       .catch((e) => (loadError = errorMessage(e)));
     recount();
+  }
+
+  // ---- Removing an installed pack: its row asks first, then it goes at once (not on Save). ----------------------
+  /** The pack whose row asks "Remove … and its images?". */
+  let removing = $state<string | null>(null);
+
+  /** The question takes the trash button's place, so focus moves to its Cancel. */
+  const focus = (node: HTMLElement) => node.focus();
+
+  async function remove(pack: PackSummary) {
+    saveError = undefined;
+    try {
+      await removePack(pack.id);
+      delete pendingPacks[pack.id];
+      delete pendingImages[pack.id];
+      forgetPictures();
+      packsChanged();
+    } catch (e) {
+      saveError = t.removeError(errorMessage(e));
+    } finally {
+      removing = null;
+    }
   }
 
   /** Recounts the kept images: after a download ends or images are deleted. */
@@ -147,43 +173,59 @@
   <p class="muted">{t.empty}</p>
 {:else}
   {#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
-  <ul>
+  <!-- One row per pack, its columns lined up with the other packs' (CSS subgrid). -->
+  <ul class="packs">
     {#each packs as pack (pack.id)}
       <li>
-        {#if pack.errors.length === 0}
-          <div class="row">
-            <Switch id="pack-{pack.id}" label={pack.name} checked={packOn(pack)} disabled={saving} onchange={(on) => toggle(pack, on)} />
+        {#if removing === pack.id}
+          <span class="confirm">
+            {t.removeQuestion(pack.name)}
+            <button class="btn small" use:focus onclick={() => (removing = null)}>{t.cancel}</button>
+            <button class="btn small btn-danger" onclick={() => remove(pack)}>{t.remove}</button>
+          </span>
+        {:else if pack.errors.length === 0}
+          {@const progress = imageDownloads[pack.id]}
+          <Switch id="pack-{pack.id}" label={pack.name} checked={packOn(pack)} disabled={saving} onchange={(on) => toggle(pack, on)} />
+          {#if packProgress[pack.id]}
+            {@render working(packProgress[pack.id])}
+          {:else}
+            <span class="muted">{pack.version}</span>
+            <span class="muted number">{t.entries(pack.entries)}</span>
+            <span class="muted">{pack.license}</span>
+          {/if}
+          <span class="images">
             {#if packImages[pack.id]}
-              {@const progress = imageDownloads[pack.id]}
               <label class="check">
                 <!-- Stays as it was until the question is answered. Can't be ticked again while a cancelled download
                      is still finishing its last images, or the new download wouldn't start. -->
                 <input
                   type="checkbox"
                   checked={imagesOn(pack.id)}
-                  disabled={saving || (!imagesOn(pack.id) && !!imageDownloads[pack.id])}
+                  disabled={saving || (!imagesOn(pack.id) && !!progress)}
                   onchange={(e) => {
                     asking = { pack, turningOn: e.currentTarget.checked };
                     e.currentTarget.checked = !e.currentTarget.checked;
                   }}
                 />
-                {ti.enable}
+                {ti.label}
               </label>
-              {#if progress}
-                <div class="progress">
-                  <progress max={progress.total || 1} value={progress.done + progress.failed} aria-label={ti.enable}></progress>
-                  <span class="muted">{ti.progress(count.format(progress.done + progress.failed), count.format(progress.total))}</span>
-                  <button class="btn small" onclick={() => cancelImageDownload(pack.id)}>{ti.cancelDownload}</button>
-                </div>
-              {:else if imagesOn(pack.id) && packImages[pack.id].kept === packImages[pack.id].count}
-                <span class="muted all-kept">{ti.allKept(count.format(packImages[pack.id].count))}</span>
+              {#if !progress && imagesOn(pack.id) && packImages[pack.id].kept === packImages[pack.id].count}
+                <span class="muted">{ti.allKept}</span>
               {/if}
             {/if}
-          </div>
-          <p class="muted">{t.details(pack.version, pack.license, pack.entries)}</p>
+          </span>
+          {@render trash(pack)}
+          {#if progress}
+            <div class="progress">
+              <progress max={progress.total || 1} value={progress.done + progress.failed} aria-label={ti.enable}></progress>
+              <span class="muted">{ti.progress(count.format(progress.done + progress.failed), count.format(progress.total))}</span>
+              <button class="btn small" onclick={() => cancelImageDownload(pack.id)}>{ti.cancelDownload}</button>
+            </div>
+          {/if}
         {:else}
           <p class="name">{pack.name}</p>
           <p class="invalid">{t.invalid}</p>
+          {@render trash(pack)}
           <ul class="errors">
             {#each pack.errors as error, i (i)}
               <li>{error}</li>
@@ -192,15 +234,44 @@
         {/if}
       </li>
     {/each}
+    {#each coming as [id, progress] (id)}
+      <li>
+        <span class="name coming">{progress.name}</span>
+        {@render working(progress)}
+      </li>
+    {/each}
   </ul>
 {/if}
+
+<!-- An installed pack's remove button, in the last column; a bundled pack has none. -->
+{#snippet trash(pack: PackSummary)}
+  <span class="trash">
+    {#if pack.installed}
+      <button class="icon-btn" aria-label={t.removeName(pack.name)} disabled={saving || !!packProgress[pack.id] || !!imageDownloads[pack.id]} onclick={() => (removing = pack.id)}>
+        <i class="ti ti-trash" aria-hidden="true"></i>
+      </button>
+    {/if}
+  </span>
+{/snippet}
+
+<!-- An addon's work on a pack, in place of its version, entries and license. -->
+{#snippet working(progress: PackProgress)}
+  <span class="working">
+    <progress max="1" value={progress.fraction ?? undefined} aria-label={progress.name}></progress>
+    <span class="muted">{progress.text}</span>
+  </span>
+{/snippet}
 
 {#if addonsError}
   <p class="error" role="alert">{t.addonsError(addonsError)}</p>
 {/if}
-{#each panels as addon (addon.id)}
-  <AddonFrame {addon} entry={panelIn(addon, "rules")!} panel="rules" onpackschange={packsChanged} />
-{/each}
+{#if panels.length}
+  <div class="panels">
+    {#each panels as addon (addon.id)}
+      <AddonFrame {addon} entry={panelIn(addon, "rules")!} panel="rules" onpackschange={packsChanged} />
+    {/each}
+  </div>
+{/if}
 
 <dialog bind:this={dialog} class="dialog ask" aria-labelledby="images-title" aria-describedby="images-question" onclose={() => asking && answer("cancel")}>
   {#if asking?.turningOn}
@@ -227,20 +298,41 @@
 
 <style>
   ul {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
     list-style: none;
-  }
-
-  li {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
   }
 
   p {
     font-size: var(--text-sm);
+  }
+
+  .packs {
+    display: grid;
+    /* The name takes what's left and wraps when long; the other columns fit their widest value. */
+    grid-template-columns: minmax(0, 1fr) repeat(5, auto);
+    column-gap: var(--space-5);
+    font-size: var(--text-sm);
+  }
+
+  .packs > li {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+    row-gap: var(--space-2);
+    padding: var(--space-3) 0;
+  }
+
+  .packs > li:first-child {
+    padding-top: 0;
+  }
+
+  .packs > li + li {
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  .number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 
   .name {
@@ -252,27 +344,66 @@
     color: var(--color-text-muted);
   }
 
-  /* The pack's switch, then its image checkbox and download progress on the same line (wrapping when narrow). */
-  .row {
+  .images {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2) var(--space-6);
+    gap: var(--space-3);
   }
 
   .check {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--text-sm);
   }
 
-  .progress {
-    flex: 1 1 var(--select-width);
+  /* An addon's work on a pack: across the version, entries and license columns. */
+  .working {
+    grid-column: 2 / 5;
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .working progress {
+    flex: 1;
+    min-width: var(--space-10);
+    accent-color: var(--color-accent);
+  }
+
+  .working .muted {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A pack not installed yet: its name where the switch's label would be. */
+  .coming {
+    padding-left: calc(2 * var(--control-height-sm) - 2 * var(--space-1) + var(--space-3));
     font-size: var(--text-sm);
+  }
+
+  .trash {
+    grid-column: -2;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* Asking before a pack is removed: across the whole row. */
+  .confirm {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  /* While downloading: its own line under the pack's row, the full width. */
+  .progress {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   .progress progress {
@@ -281,26 +412,35 @@
     accent-color: var(--color-accent);
   }
 
-  .all-kept {
-    font-size: var(--text-sm);
-  }
-
   .small {
     min-height: var(--control-height-sm);
     padding: 0 var(--space-3);
   }
 
+  /* An invalid pack: its name, "Not loaded" in the next columns, its errors under them. */
   .invalid {
+    grid-column: 2 / -2;
     color: var(--color-danger);
     font-weight: var(--weight-medium);
   }
 
   .errors {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-1);
     padding-left: var(--space-4);
     list-style: disc;
-    font-size: var(--text-sm);
     color: var(--color-text-muted);
+  }
+
+  /* The addon panels under the packs, set apart from them. */
+  .panels {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   .error {

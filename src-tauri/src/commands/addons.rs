@@ -1313,6 +1313,54 @@ pub async fn addon_campaigns(app: AppHandle, addon: String) -> Result<Vec<Campai
     .await
 }
 
+/// What `homebrew.openDraft` opens: a chapter (`rules`) or an entry of a type the Homebrew tab edits.
+const DRAFT_KINDS: [&str; 11] = ["rules", "spells", "monsters", "classes", "subclasses", "species", "magic-items", "equipment", "feats", "backgrounds", "conditions"];
+/// The largest draft, as JSON.
+const MAX_DRAFT: usize = 1024 * 1024;
+
+fn check_draft(kind: &str, draft: &Value) -> Result<(), StorageError> {
+    if !DRAFT_KINDS.contains(&kind) {
+        return Err(StorageError::Invalid(format!("Homebrew can't open a draft of \"{kind}\".")));
+    }
+    if !draft.is_object() {
+        return Err(StorageError::Invalid("A homebrew draft must be an object.".into()));
+    }
+    if draft.to_string().len() > MAX_DRAFT {
+        return Err(StorageError::Invalid(format!("A homebrew draft can be at most {} MB.", MAX_DRAFT / 1024 / 1024)));
+    }
+    Ok(())
+}
+
+/// `homebrew.openDraft` (and `homebrew.fill`), the app's side: the addon may, and the draft can be opened. The window
+/// then opens it in the Homebrew tab's form, where the user picks the book; nothing is saved until they save it there.
+#[tauri::command]
+pub async fn addon_homebrew_draft(app: AppHandle, addon: String, kind: String, draft: Value) -> Result<(), StorageError> {
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "homebrew")?;
+        check_draft(&kind, &draft)
+    })
+    .await
+}
+
+/// `homebrew.setPicture`, the app's side: the addon may, and the picture (the raw body; its book in a header) is kept
+/// for that homebrew book as the form's own Picture keeps one. Returns the name to put in the entry's `image`.
+#[tauri::command]
+pub async fn addon_homebrew_picture(app: AppHandle, request: ipc::Request<'_>) -> Result<String, StorageError> {
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let (Some(addon), Some(book)) = (header("addon"), header("book")) else {
+        return Err(StorageError::Invalid("A homebrew picture needs its addon and book.".into()));
+    };
+    let ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(StorageError::Invalid("A homebrew picture needs its bytes as the raw body.".into()));
+    };
+    let bytes = bytes.clone();
+    blocking(move || {
+        require(self::addon(&app, &addon)?, "homebrew")?;
+        crate::commands::homebrew::keep_picture(&app, &book, &bytes)
+    })
+    .await
+}
+
 /// The longest address `ui.openExternal` opens.
 const MAX_LINK: usize = 2000;
 
@@ -1652,6 +1700,15 @@ pub fn restart_app(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_homebrew_draft_is_a_known_kind_and_an_object_of_limited_size() {
+        assert!(check_draft("monsters", &serde_json::json!({ "name": "Owlbear" })).is_ok());
+        assert!(check_draft("rules", &serde_json::json!({})).is_ok());
+        assert!(check_draft("rule-sections", &serde_json::json!({})).is_err());
+        assert!(check_draft("monsters", &serde_json::json!(["x"])).is_err());
+        assert!(check_draft("monsters", &serde_json::json!({ "desc": "x".repeat(MAX_DRAFT) })).is_err());
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("koldron-addon-runtime-{}-{name}", std::process::id()));

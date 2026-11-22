@@ -33,6 +33,15 @@ const listed = (chapter: PackEntry) =>
   (Array.isArray(chapter.subsections) ? chapter.subsections : []).map((r: { index?: unknown }) => text(r?.index));
 
 /** A new book's fields, before its first save. */
+/** A new chapter from an addon's draft: its name and text, and its sections' (`sections: [{ name, desc }]`). */
+export function chapterDraft(d: Record<string, unknown>): Chapter {
+  const sections = Array.isArray(d.sections) ? (d.sections as (Record<string, unknown> | null)[]) : [];
+  return { index: "", name: text(d.name), desc: text(d.desc), sections: sections.map((s) => ({ index: "", name: text(s?.name), desc: text(s?.desc) })) };
+}
+
+/** A new entry from an addon's draft. */
+export const entryDraft = (d: Record<string, unknown>): PackEntry => ({ ...d, index: "", name: text(d.name) });
+
 export function blankBook(ruleset: string, license: string): Book {
   return { id: "", name: "", version: "1.0.0", license, attribution: "", ruleset, entries: {} };
 }

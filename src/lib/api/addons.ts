@@ -267,6 +267,18 @@ export function addonCampaigns(addon: string): Promise<AddonCampaign[]> {
   return invoke("addon_campaigns", { addon });
 }
 
+
+/** `homebrew.setPicture`, checked in Rust (the addon may, the book exists, 20 MB at most): keeps the picture for the
+ *  book and returns its name. The bytes go as the raw body. */
+export function addonHomebrewPicture(addon: string, book: string, bytes: Uint8Array): Promise<string> {
+  return invoke("addon_homebrew_picture", bytes, { headers: { addon, book } });
+}
+
+/** `homebrew.openDraft`, checked in Rust: the addon may, and the draft can be opened. */
+export function addonHomebrewDraft(addon: string, kind: string, draft: Record<string, unknown>): Promise<void> {
+  return invoke("addon_homebrew_draft", { addon, kind, draft });
+}
+
 export function addonOpenExternal(addon: string, url: string): Promise<void> {
   return invoke("addon_open_external", { addon, url });
 }

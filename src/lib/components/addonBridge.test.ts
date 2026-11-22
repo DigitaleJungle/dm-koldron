@@ -24,12 +24,14 @@ vi.mock("$lib/api/addons", () => ({
     if (pack === "srd") throw { kind: "invalid", message: "\"srd\" isn't a pack this addon installed." };
   }),
   addonReadOpened: vi.fn(async () => new ArrayBuffer(2)),
+  addonHomebrewDraft: vi.fn(async () => undefined),
+  addonHomebrewPicture: vi.fn(async () => "homebrew-1.png"),
 }));
 
-import { addonFetch, addonPutImages, addonReadOpened, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
+import { addonFetch, addonHomebrewDraft, addonHomebrewPicture, addonPutImages, addonReadOpened, addonOpenExternal, addonSetCampaignVisible, addonPutFile, addonSecretSet, addonSetSearch, addonSetCharacterPicture, addonSetLibraryVisible, addonStorageSet } from "$lib/api/addons";
 import { answer, isCall } from "./addonBridge";
 
-const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), packProgress: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}) });
+const host = () => ({ hidden: false, campaignVisible: vi.fn(), setHeight: vi.fn(), packsChanged: vi.fn(), packProgress: vi.fn(), charactersChanged: vi.fn(), theme: () => "dark", close: vi.fn(), notify: vi.fn(), navigate: vi.fn(async () => {}), libraryVisible: vi.fn(), sidebarButton: vi.fn(), unsaved: vi.fn(), settingsDone: vi.fn(), openLibrary: vi.fn(async () => {}), openCampaignScreen: vi.fn(async () => {}), openHomebrewBeside: vi.fn(), homebrewBeside: vi.fn((): { book: string; kind: string } | null => null), fillHomebrew: vi.fn() });
 
 describe("addon bridge", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -148,6 +150,29 @@ describe("addon bridge", () => {
     await expect(answer("a", "ui.setSidebarButton", [1], h)).rejects.toThrow("true or false");
     await answer("a", "ui.openLibrary", ["page=3"], h);
     expect(h.openLibrary).toHaveBeenCalledWith("page=3");
+    // homebrew.openDraft: checked in Rust first, then opened beside the tab.
+    await answer("a", "homebrew.openDraft", ["spells", { name: "Zap" }], h);
+    expect(addonHomebrewDraft).toHaveBeenCalledWith("a", "spells", { name: "Zap" });
+    expect(h.openHomebrewBeside).toHaveBeenCalledWith("spells", { name: "Zap" });
+    await expect(answer("a", "homebrew.openDraft", ["monsters", ["x"]], h)).rejects.toThrow("draft as an object");
+    // homebrew.fill: only into a form this addon has open beside its tab, checked against that form's kind.
+    await expect(answer("a", "homebrew.fill", [{ name: "Zap" }], h)).rejects.toThrow("No homebrew form");
+    h.homebrewBeside.mockReturnValue({ book: "lore", kind: "spells" });
+    await answer("a", "homebrew.fill", [{ level: 1 }], h);
+    expect(addonHomebrewDraft).toHaveBeenLastCalledWith("a", "spells", { level: 1 });
+    expect(h.fillHomebrew).toHaveBeenCalledWith({ level: 1 });
+    await expect(answer("a", "homebrew.fill", ["x"], h)).rejects.toThrow("fields as an object");
+    // homebrew.setPicture: kept for the form's book, then put in its Picture in place of the one there.
+    await answer("a", "homebrew.setPicture", [new Uint8Array([1, 2]).buffer], h);
+    expect(addonHomebrewPicture).toHaveBeenCalledWith("a", "lore", new Uint8Array([1, 2]));
+    expect(h.fillHomebrew).toHaveBeenLastCalledWith({ image: "homebrew-1.png" }, true);
+    // Not when the form's book changed while it was kept.
+    h.homebrewBeside.mockReturnValueOnce({ book: "lore", kind: "spells" }).mockReturnValueOnce({ book: "other", kind: "spells" });
+    await expect(answer("a", "homebrew.setPicture", [new Uint8Array([1]).buffer], h)).rejects.toThrow("book changed");
+    // Not before a book is picked in the form.
+    h.homebrewBeside.mockReturnValue({ book: "", kind: "spells" });
+    await expect(answer("a", "homebrew.setPicture", [new Uint8Array([1]).buffer], h)).rejects.toThrow("no homebrew book yet");
+    await expect(answer("a", "homebrew.setPicture", ["png"], h)).rejects.toThrow("ArrayBuffer");
     await expect(answer("a", "ui.openLibrary", [5], h)).rejects.toThrow("string or null");
     await answer("a", "ui.openCampaignScreen", ["c1", "p=mill"], h);
     await answer("a", "ui.openCampaignScreen", ["c1"], h);

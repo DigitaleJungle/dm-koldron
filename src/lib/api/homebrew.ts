@@ -45,3 +45,8 @@ export function exportHomebrew(id: string, fileType: string): Promise<boolean> {
 export function putHomebrewPicture(book: string, bytes: Uint8Array): Promise<string> {
   return invoke("put_homebrew_picture", bytes, { headers: { book } });
 }
+
+/** Keeps book `from`'s picture `image` for book `to` too, and returns its name there. */
+export function copyHomebrewPicture(from: string, to: string, image: string): Promise<string> {
+  return invoke("copy_homebrew_picture", { from, to, image });
+}

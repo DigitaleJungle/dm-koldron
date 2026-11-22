@@ -2,20 +2,19 @@
   // The Library's Homebrew tab (docs/SPEC.md → Homebrew): the books on the left, each with its chapters, and the form of
   // the book, chapter or entry that's open on the right (`?tab=homebrew&book=<id|new>`, plus `&chapter=<index|new>` or
   // `&type=<type>&entry=<index|new>`). Leaving a form with changes not saved asks first.
-  import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Snippet } from "svelte";
   import { catalogEntry } from "$lib/api/catalog";
   import { listHomebrew, type Book, type PackEntry } from "$lib/api/homebrew";
   import { listPacks } from "$lib/api/packs";
-  import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { errorMessage } from "$lib/api/storage";
-  import { gotoReplacing, isReplacing, keepScroll } from "$lib/stores/history.svelte";
+  import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import SideColumn from "../library/SideColumn.svelte";
   import BookForm from "./BookForm.svelte";
   import ChapterForm from "./ChapterForm.svelte";
   import EntryForm from "./EntryForm.svelte";
+  import LeaveGuard from "./LeaveGuard.svelte";
   import { blankBook, chaptersOf } from "./book";
   import { copyDraft } from "./copy";
   import { ENTRY_TYPES, entryType } from "./entryTypes";
@@ -84,47 +83,7 @@
   /** After a delete: the book's own form, then the list. */
   const deleted = (next: Book) => void gotoReplacing(href(next.id)).then(() => saved(next));
 
-  // ---- Leaving a form with changes not saved -----------------------------------------------------
   let changed = $state(false);
-  let leaveDialog: HTMLDialogElement | undefined = $state();
-  let resolveLeave: ((leave: boolean) => void) | null = null;
-
-  function askLeave(): Promise<boolean> {
-    leaveDialog?.showModal();
-    return new Promise((resolve) => (resolveLeave = resolve));
-  }
-
-  // Escape closes the dialog too, which counts as Cancel.
-  function answerLeave(leave: boolean) {
-    const resolve = resolveLeave;
-    resolveLeave = null;
-    if (leaveDialog?.open) leaveDialog.close();
-    resolve?.(leave);
-  }
-
-  beforeNavigate((navigation) => {
-    if (!changed || !navigation.to || navigation.type === "leave") return;
-    const replace = isReplacing();
-    navigation.cancel();
-    void askLeave().then((leave) => {
-      if (!leave) return;
-      changed = false;
-      if (navigation.type === "popstate") history.go(navigation.delta ?? -1);
-      else void (replace ? gotoReplacing : goto)(navigation.to!.url.href);
-    });
-  });
-
-  // Closing the window is leaving too (SvelteKit's "leave" can't be held).
-  $effect(() => {
-    const unlisten = onCloseRequested(async (event) => {
-      if (!changed) return;
-      event.preventDefault();
-      if (!(await askLeave())) return;
-      changed = false;
-      await closeWindow();
-    });
-    return () => void unlisten.then((stop) => stop());
-  });
 </script>
 
 <div class="body">
@@ -190,15 +149,7 @@
   </div>
 </div>
 
-<dialog bind:this={leaveDialog} class="dialog" aria-labelledby="homebrew-leave-title" aria-describedby="homebrew-leave-question" onclose={() => answerLeave(false)}>
-  <h2 id="homebrew-leave-title">{t.leave.title}</h2>
-  <p id="homebrew-leave-question">{t.leave.question}</p>
-  <div class="actions">
-    <!-- svelte-ignore a11y_autofocus: the safe answer is the default -->
-    <button class="btn" autofocus onclick={() => answerLeave(false)}>{t.leave.cancel}</button>
-    <button class="btn btn-danger" onclick={() => answerLeave(true)}>{t.leave.discard}</button>
-  </div>
-</dialog>
+<LeaveGuard bind:changed />
 
 <style>
   .body {
@@ -268,12 +219,6 @@
     min-height: 0;
     overflow-y: auto;
     padding: var(--space-4) var(--space-6) var(--corner-clearance);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
   }
 
   .muted {

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.1] - 2026-11-22
+
+### Added
+
+- Addons: a homebrew permission lets an addon open the Homebrew form beside its Library tab (homebrew.openDraft), fill it (homebrew.fill) and set its picture (homebrew.setPicture).
+- The Homebrew form beside an addon's tab has a Book choice, with New book… to make one, until its first save; a picture set goes along to the book picked.
+
+### Changed
+
+- Leaving a Homebrew form with unsaved changes asks first in one shared dialog, also when it's open beside an addon's tab; Back closes that form and then goes back.
+
 ## [0.10.0] - 2026-11-22
 
 ### Added

@@ -2,7 +2,7 @@
   // A homebrew entry of one type: its name, then the type's fields (entryTypes.ts). Choices and suggestions come from
   // the switched-on packs. Fields the form doesn't show are kept. Save writes the whole book; Delete asks first.
   import { untrack } from "svelte";
-  import { homebrewChoices, saveHomebrew, type Book, type Choice, type PackEntry } from "$lib/api/homebrew";
+  import { copyHomebrewPicture, homebrewChoices, saveHomebrew, type Book, type Choice, type PackEntry } from "$lib/api/homebrew";
   import { errorMessage } from "$lib/api/storage";
   import OrderList from "$lib/components/OrderList.svelte";
   import RichText from "$lib/components/RichText.svelte";
@@ -12,6 +12,7 @@
   import { deleteEntry, openEntry, saveEntry, type Item, type Level } from "./linked";
   import { STAT_BLOCK_PROFICIENCIES } from "$lib/views/library/entries/format";
   import { allFields, getField, reference, setField, type EntryType, type Field, type Source } from "./entryTypes";
+  import { fill } from "./fill";
 
   let {
     book,
@@ -20,11 +21,14 @@
     changed = $bindable(false),
     onsaved,
     ondeleted,
+    incoming = null,
   }: {
     book: Book;
     type: EntryType;
     entry: PackEntry;
     changed?: boolean;
+    /** Fields an addon sends in (`homebrew.fill`), merged into the draft as they come; none sent before the form opened. */
+    incoming?: { id: number; fields: Record<string, unknown>; replace?: boolean } | null;
     onsaved: (book: Book, index: string) => void;
     ondeleted: (book: Book) => void;
   } = $props();
@@ -42,6 +46,32 @@
 
   $effect(() => {
     changed = JSON.stringify(draft) !== saved;
+  });
+
+  // Moved to another book before its first save (the form beside an addon's tab): its picture goes along.
+  let pictureBook = untrack(() => book.id);
+  $effect(() => {
+    const [from, to] = [pictureBook, book.id];
+    pictureBook = to;
+    const image = untrack(() => draft.image);
+    if (from === to || typeof image !== "string" || !image) return;
+    copyHomebrewPicture(from, to, image).then(
+      (moved) => setField(draft, "image", moved),
+      (e) => (error = errorMessage(e)),
+    );
+  });
+
+  let filled = untrack(() => incoming?.id ?? 0);
+  $effect(() => {
+    if (!incoming || incoming.id === filled) return;
+    const fields = $state.snapshot(incoming.fields); // kept as reactive state: a plain copy, which `fill` can clone
+    const replace = incoming.replace === true;
+    filled = incoming.id;
+    untrack(() => {
+      if (replace) Object.assign(draft, fields);
+      else fill(draft, fields);
+      resets++;
+    });
   });
 
   // ---- Choices, from the switched-on packs ---------------------------------------------------------

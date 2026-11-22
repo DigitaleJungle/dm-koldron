@@ -231,21 +231,34 @@ pub async fn put_homebrew_picture(app: AppHandle, request: ipc::Request<'_>) -> 
         return Err(StorageError::Invalid("A homebrew picture needs its bytes as the raw body.".into()));
     };
     let bytes = bytes.clone();
+    blocking(move || keep_picture(&app, &book, &bytes)).await
+}
+
+/// A book's picture kept for another book too (a new entry's form moved to that book before its first save). Returns
+/// its name there.
+#[tauri::command]
+pub async fn copy_homebrew_picture(app: AppHandle, from: String, to: String, image: String) -> Result<String, StorageError> {
     blocking(move || {
-        if bytes.len() > MAX_PICTURE {
-            return Err(StorageError::Invalid("The picture is larger than 20 MB.".into()));
-        }
-        if !loaded(&app)?.0.iter().any(|p| p.homebrew && p.manifest.id == book) {
-            return Err(StorageError::NotFound(format!("There's no homebrew book \"{book}\".")));
-        }
-        let png = images::picked_png(&bytes)?;
-        let name = picture_name(&png);
-        let dir = data_dir(&app)?.join(images::DIR).join(&book);
-        std::fs::create_dir_all(&dir)?;
-        write_atomic_bytes(&images::file_for(&dir, &name), &png)?;
-        Ok(name)
+        let bytes = std::fs::read(images::file_for(&data_dir(&app)?.join(images::DIR).join(&from), &image))?;
+        keep_picture(&app, &to, &bytes)
     })
     .await
+}
+
+/// Keeps a picture for a homebrew book (as PNG, shrunk to 1024 px) and returns its name. Blocking.
+pub(crate) fn keep_picture(app: &AppHandle, book: &str, bytes: &[u8]) -> Result<String, StorageError> {
+    if bytes.len() > MAX_PICTURE {
+        return Err(StorageError::Invalid("The picture is larger than 20 MB.".into()));
+    }
+    if !loaded(app)?.0.iter().any(|p| p.homebrew && p.manifest.id == book) {
+        return Err(StorageError::NotFound(format!("There's no homebrew book \"{book}\".")));
+    }
+    let png = images::picked_png(bytes)?;
+    let name = picture_name(&png);
+    let dir = data_dir(app)?.join(images::DIR).join(book);
+    std::fs::create_dir_all(&dir)?;
+    write_atomic_bytes(&images::file_for(&dir, &name), &png)?;
+    Ok(name)
 }
 
 /// The Homebrew tab: every valid homebrew book, switched on or off.

@@ -2,12 +2,13 @@
   // A homebrew chapter: its name and intro, then its sections in order (moved by their grip), each with a name and
   // text. Texts are Markdown, as a pack has them. Save writes the whole book; Delete asks first.
   import { untrack } from "svelte";
-  import { saveHomebrew, type Book } from "$lib/api/homebrew";
+  import { copyHomebrewPicture, saveHomebrew, type Book } from "$lib/api/homebrew";
   import { errorMessage } from "$lib/api/storage";
   import OrderList from "$lib/components/OrderList.svelte";
   import RichText from "$lib/components/RichText.svelte";
   import { moveTo } from "$lib/components/sidebarOrder";
   import PictureField from "./PictureField.svelte";
+  import { fill } from "./fill";
   import { strings } from "$lib/strings";
   import { withChapter, withoutChapter, type Chapter } from "./book";
 
@@ -17,7 +18,16 @@
     changed = $bindable(false),
     onsaved,
     ondeleted,
-  }: { book: Book; chapter: Chapter; changed?: boolean; onsaved: (book: Book, chapter: string) => void; ondeleted: (book: Book) => void } = $props();
+    incoming = null,
+  }: {
+    book: Book;
+    chapter: Chapter;
+    changed?: boolean;
+    onsaved: (book: Book, chapter: string) => void;
+    ondeleted: (book: Book) => void;
+    /** Fields an addon sends in (`homebrew.fill`: `name`, `desc`, `sections`), merged as they come. */
+    incoming?: { id: number; fields: Record<string, unknown>; replace?: boolean } | null;
+  } = $props();
 
   const t = strings.homebrew;
   const c = t.chapter;
@@ -41,6 +51,35 @@
 
   $effect(() => {
     changed = fingerprint(draft) !== saved;
+  });
+
+  // Moved to another book before its first save (the form beside an addon's tab): its pictures go along.
+  let pictureBook = untrack(() => book.id);
+  $effect(() => {
+    const [from, to] = [pictureBook, book.id];
+    pictureBook = to;
+    if (from === to) return;
+    const move = (image: string | undefined, put: (moved: string) => void) =>
+      image && copyHomebrewPicture(from, to, image).then(put, (e) => (error = errorMessage(e)));
+    untrack(() => {
+      move(draft.image, (moved) => (draft.image = moved));
+      for (const row of draft.sections) move(row.image, (moved) => (row.image = moved));
+    });
+  });
+
+  let filled = untrack(() => incoming?.id ?? 0);
+  $effect(() => {
+    if (!incoming || incoming.id === filled) return;
+    const fields = $state.snapshot(incoming.fields); // kept as reactive state: a plain copy, which `fill` can clone
+    const replace = incoming.replace === true;
+    filled = incoming.id;
+    untrack(() => {
+      if (replace) Object.assign(draft, fields);
+      else fill(draft, fields);
+      // A section sent in becomes a row of its own.
+      draft.sections = draft.sections.map((s) => (s.id ? s : { ...s, index: "", desc: s.desc ?? "", id: `s${next++}` }));
+      resets++;
+    });
   });
 
   function discard() {

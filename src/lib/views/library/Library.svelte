@@ -16,6 +16,8 @@
   import { pickTab } from "./catalog";
   import RulesReader from "./RulesReader.svelte";
   import Homebrew from "$lib/views/homebrew/Homebrew.svelte";
+  import HomebrewBeside from "$lib/views/homebrew/HomebrewBeside.svelte";
+  import { beside } from "$lib/stores/homebrewDraft.svelte";
 
   // `embedded`: inside a campaign's screens (/campaign/<id>/library), whose shell has the sidebar, the search bar and
   // Settings: then no search bar or gear of its own, and Back only on a Catalog entry (in the shell's header). Outside any campaign
@@ -90,7 +92,13 @@
   });
   // The addon's own place in its tab (`ui.navigate`), `&state=` in the address, so Back and Forward reach it too. A
   // tab with a side column also hears whether the header's button hides it.
-  const addonContext = $derived({ state: page.url.searchParams.get("state"), ...(sidebarTab ? { sidebarHidden: collapsed } : {}) });
+  // The Homebrew form the addon opened beside its tab (`homebrew.openDraft`), which its page hears of.
+  const besideOpen = $derived(addonTab && beside.open?.addon === addonTab.id ? beside.open : null);
+  const addonContext = $derived({
+    state: page.url.searchParams.get("state"),
+    ...(sidebarTab ? { sidebarHidden: collapsed } : {}),
+    ...(besideOpen ? { homebrew: { kind: besideOpen.kind } } : {}),
+  });
 
   // The Catalog's list (not an entry page) has the Sources column.
   const catalogList = $derived(tab === "catalog" && !page.url.searchParams.has("entry"));
@@ -142,7 +150,12 @@
     <!-- Keyed on the addon only, so switching between addons' tabs loads the other page, and its own states don't. Left out while Settings is open: the addon's
          panel there may save, and this page must not save its older copy over it; closing Settings loads it fresh. -->
     {#key addonTab.id}
-      <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} onsidebarbutton={sidebarTab ? (shown) => (sidebarButton = shown) : undefined} />{/if}</div>
+      <div class="addon-tab">
+        <div class="addon-page">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} onsidebarbutton={sidebarTab ? (shown) => (sidebarButton = shown) : undefined} besideHomebrew />{/if}</div>
+        {#if besideOpen}
+          {#key besideOpen.key}<HomebrewBeside open={besideOpen} />{/key}
+        {/if}
+      </div>
     {/key}
   {:else if tab === "homebrew" && !embedded}
     <Homebrew {reloadKey} bottom={gear} />
@@ -224,6 +237,12 @@
   .addon-tab {
     flex: 1;
     min-height: 0;
+    display: flex;
+  }
+
+  .addon-page {
+    flex: 1;
+    min-width: 0;
   }
 
   .addon-tab :global(iframe) {

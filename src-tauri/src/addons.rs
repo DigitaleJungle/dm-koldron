@@ -13,7 +13,7 @@ pub const API: u32 = 1;
 pub const MANIFEST: &str = "addon.json";
 /// The Settings sections an addon may add a panel to.
 const SETTINGS_SECTIONS: [&str; 3] = ["rules", "library", "integrations"];
-const PERMISSIONS: [&str; 9] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "search", "campaigns:read"];
+const PERMISSIONS: [&str; 10] = ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "search", "campaigns:read", "homebrew"];
 /// The longest label an addon's Add character item, Library tab, Home widget or campaign screen may have.
 const MAX_LABEL: usize = 40;
 /// The largest SVG file a campaign screen's `icon` may be.
@@ -312,7 +312,7 @@ mod tests {
     fn manifest(id: &str) -> serde_json::Value {
         serde_json::json!({
             "api": API, "id": id, "name": "Importer", "version": "1.0.0", "license": "MIT",
-            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "campaigns:read", "net:api.github.com", "links:github.com"],
+            "permissions": ["packs:read", "packs:write", "characters:write", "folders:read", "folders:write", "files:read", "secrets", "campaigns:read", "homebrew", "net:api.github.com", "links:github.com"],
             "settings": [{ "section": "rules", "entry": "ui/settings.html" }, { "section": "integrations", "entry": "ui/settings.html", "label": "Service" }],
             "characters": { "label": "Sync", "entry": "ui/settings.html", "owns": ["currentHp"] },
             "background": "ui/settings.html",

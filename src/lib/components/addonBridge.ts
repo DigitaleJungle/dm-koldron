@@ -5,6 +5,8 @@ import { forgetPictures } from "$lib/stores/monsterPictures";
 import {
   addonAddFolder,
   addonCampaigns,
+  addonHomebrewDraft,
+  addonHomebrewPicture,
   addonCharacters,
   addonDeleteFile,
   addonGetFile,
@@ -75,6 +77,13 @@ export type FrameHost = {
   /** `ui.openCampaignScreen`: opens the addon's campaign screen in a campaign at a state. Only its Start, preview and
    * Home pages can, and only where that screen is shown. */
   openCampaignScreen: (campaign: string, state: string | null) => Promise<void>;
+  /** `homebrew.openDraft`, checked: opens the Homebrew form for a new chapter (`rules`) or entry of `kind`, filled
+   *  with `draft`, beside the addon's Library tab. Only that page's host can; others throw. */
+  openHomebrewBeside: (kind: string, draft: Record<string, unknown>) => void;
+  /** The form this addon has open beside its tab, if any. */
+  homebrewBeside: () => { book: string; kind: string } | null;
+  /** `homebrew.fill`, checked: sends fields into that form; with `replace`, they take the place of what's there. */
+  fillHomebrew: (fields: Record<string, unknown>, replace?: boolean) => void;
   /** `ui.setUnsaved`: a Settings panel has (or no longer has) unsaved changes. Others throw. */
   unsaved: (has: boolean) => void;
   /** `ui.settingsDone`: a Settings panel saved or discarded, as asked by request `id`; `error` when it couldn't. */
@@ -199,6 +208,35 @@ export async function answer(addon: string, call: string, args: unknown[], host:
       return null;
     case "campaigns.list":
       return addonCampaigns(addon);
+    case "homebrew.openDraft": {
+      const [kind, draft] = args;
+      if (typeof kind !== "string" || typeof draft !== "object" || draft === null || Array.isArray(draft)) {
+        throw new Error("homebrew.openDraft needs a kind and the draft as an object.");
+      }
+      await addonHomebrewDraft(addon, kind, draft as Record<string, unknown>);
+      host.openHomebrewBeside(kind, draft as Record<string, unknown>);
+      return null;
+    }
+    case "homebrew.fill": {
+      const fields = args[0];
+      if (typeof fields !== "object" || fields === null || Array.isArray(fields)) throw new Error("homebrew.fill needs the fields as an object.");
+      const open = host.homebrewBeside();
+      if (!open) throw new Error("No homebrew form is open beside this page.");
+      await addonHomebrewDraft(addon, open.kind, fields as Record<string, unknown>);
+      host.fillHomebrew(fields as Record<string, unknown>);
+      return null;
+    }
+    case "homebrew.setPicture": {
+      if (!(args[0] instanceof ArrayBuffer)) throw new Error("homebrew.setPicture needs the picture as an ArrayBuffer.");
+      const open = host.homebrewBeside();
+      if (!open) throw new Error("No homebrew form is open beside this page.");
+      if (!open.book) throw new Error("The form has no homebrew book yet. Pick one in the form first.");
+      const image = await addonHomebrewPicture(addon, open.book, new Uint8Array(args[0]));
+      // Kept for the book the form had; another picked meanwhile doesn't have it.
+      if (host.homebrewBeside()?.book !== open.book) throw new Error("The form's book changed. Select the picture again.");
+      host.fillHomebrew({ image }, true);
+      return null;
+    }
     case "characters.list":
       return addonCharacters(addon, String(args[0]));
     case "characters.save": {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { addonUrl, type AddonSummary } from "$lib/api/addons";
+  import { beside, fillBeside, openBeside } from "$lib/stores/homebrewDraft.svelte";
   import { errorMessage } from "$lib/api/storage";
   import { campaignScreenShown, charactersChanged, setCampaignVisible, setLibraryVisible } from "$lib/stores/addons.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -25,6 +26,7 @@
     onopenlibrary,
     onopencampaignscreen,
     onheight,
+    besideHomebrew = false,
   }: {
     addon: AddonSummary;
     entry: string;
@@ -47,6 +49,8 @@
     onopencampaignscreen?: (campaign: string, state: string | null) => Promise<void>;
     /** Hears the height the page asks for (`ui.setHeight`). */
     onheight?: (px: number) => void;
+    /** Only the addon's Library tab page: `homebrew.openDraft` opens the form beside it. */
+    besideHomebrew?: boolean;
   } = $props();
   let frame: HTMLIFrameElement | undefined = $state();
   // This frame's `packs.setProgress` rows, cleared when it closes (its work stops with it).
@@ -133,6 +137,12 @@
         if (!campaignScreenShown(addon, campaign)) throw new Error(`${addon.name}'s campaign screen isn't shown in that campaign.`);
         await onopencampaignscreen(campaign, state);
       },
+      openHomebrewBeside: (kind: string, draft: Record<string, unknown>) => {
+        if (!besideHomebrew) throw new Error("A homebrew form opens beside the addon's Library tab only.");
+        openBeside(addon.id, kind, draft);
+      },
+      homebrewBeside: () => (beside.open?.addon === addon.id ? { book: beside.open.book, kind: beside.open.kind } : null),
+      fillHomebrew: (fields: Record<string, unknown>, replace = false) => fillBeside(addon.id, fields, replace),
       unsaved: (has: boolean) => {
         if (!panelKey) throw new Error("ui.setUnsaved works only from a Settings panel.");
         unsavedPanels[panelKey] = has;

@@ -306,6 +306,15 @@ export const strings = {
       discard: "Discard",
       cancel: "Cancel",
     },
+    /** The form an addon opens beside its Library tab. */
+    beside: {
+      chapter: "Chapter",
+      book: "Book",
+      newBook: "New book…",
+      bookName: "Name of the new book",
+      makeBook: "Create",
+      close: "Close the form",
+    },
   },
 
   catalog: {

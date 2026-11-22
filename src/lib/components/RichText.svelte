@@ -6,7 +6,8 @@
   // alignment, boxed text (a quote, read-aloud text, a note) and a table; inside a table, its button is a dropdown
   // of the table's actions (rows, columns, header row and column, merging or splitting cells). Typing @ tags a Catalog
   // entry or one of the campaign's characters: a list of matches follows the text after the @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when
-  // shown. A tag is one piece: Backspace removes it whole.
+  // shown. A tag is one piece: Backspace removes it whole. `markdown` (with `extended`): `value` is Markdown (a pack's
+  // text), without underline, alignment or tags, which Markdown can't hold.
   import { onDestroy, onMount } from "svelte";
   import "$lib/styles/prose.css"; // the note's look (.prose.notes) wherever the field is, not only where a screen loads it
   import Menu, { type MenuItem } from "./Menu.svelte";
@@ -28,7 +29,8 @@
     label,
     compact = false,
     extended = false,
-  }: { value: string; label: string; compact?: boolean; extended?: boolean } = $props();
+    markdown = false,
+  }: { value: string; label: string; compact?: boolean; extended?: boolean; markdown?: boolean } = $props();
 
   const t = strings.richText;
   const id = $props.id();
@@ -89,7 +91,7 @@
       : { label: t.mergeCells, icon: "ti-arrows-join", run: (c) => c.mergeCells() };
   }
   // svelte-ignore state_referenced_locally
-  const TOOLS = extended ? [...ALIGN, ...INLINE, ...EXTRA] : [...HEADINGS, ...INLINE];
+  const TOOLS = markdown ? [...INLINE.filter((tool) => tool.id !== "underline"), ...EXTRA] : extended ? [...ALIGN, ...INLINE, ...EXTRA] : [...HEADINGS, ...INLINE];
   /** The style the cursor is in, if any (a table cell has none: it holds plain text). */
   const currentStyle = $derived(STYLES.find((s) => s.active?.()) ?? null);
   const styleItems = $derived<MenuItem[]>(
@@ -183,7 +185,8 @@
   onMount(() => {
     editor = new Editor({
       element: host!,
-      content: cleanHtml(value),
+      content: markdown ? value : cleanHtml(value),
+      ...(markdown ? { contentType: "markdown" as const } : {}),
       extensions: editorExtensions(extended, {
         allowSpaces: true,
         items: () => [], // the matches come from search(), so older answers can be dropped
@@ -193,7 +196,7 @@
           onKeyDown: tagKey,
           onExit: () => (tagging = null),
         }),
-      }),
+      }, markdown),
       editorProps: {
         attributes: { class: "editor prose notes", role: "textbox", "aria-multiline": "true", "aria-label": label, "aria-controls": `${id}-tags` },
         handleDoubleClick: (view) => autoWidth(view),
@@ -207,7 +210,7 @@
         },
       },
       onUpdate: ({ editor: e }) => {
-        value = e.isEmpty ? "" : cleanHtml(e.getHTML());
+        value = e.isEmpty ? "" : markdown ? e.getMarkdown() : cleanHtml(e.getHTML());
         version++;
       },
       onSelectionUpdate: () => version++,

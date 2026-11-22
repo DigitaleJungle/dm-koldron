@@ -166,8 +166,13 @@ fn folders(dir: &Path) -> Result<Vec<(String, PathBuf)>, StorageError> {
 }
 
 /// Removes picture files nothing refers to: a removed location's or NPC's folder, a removed image. Run when the world
-/// is loaded, never while it's being edited (an image just added isn't in the saved world yet).
+/// is loaded, never while it's being edited (an image just added isn't in the saved world yet). A world without any
+/// location or NPC removes nothing: its file is more likely missing (a restore or a sync not finished; `read` and
+/// `migrate` then give an empty world) than every entry deleted, and leftover pictures only cost disk space.
 fn clean_pictures(campaign_dir: &Path, world: &World) -> Result<(), StorageError> {
+    if world.locations.is_empty() && world.npcs.is_empty() {
+        return Ok(());
+    }
     for (id, path) in folders(&campaign_dir.join(NPC_PICTURES))? {
         if !world.npcs.iter().any(|n| n.id == id) {
             fs::remove_dir_all(path)?;
@@ -667,6 +672,13 @@ mod tests {
         assert!(inn.join(&first.name).exists() && inn.join(MAP_FILE).exists() && !inn.join(&second.name).exists());
         assert!(!pictures_dir(&dir, "gone").exists());
         assert!(portrait_path(&dir, "wenna").exists() && !dir.join(NPC_PICTURES).join("gone").exists());
+
+        // Without its world file (an empty world), nothing is removed.
+        fs::remove_file(dir.join(FILE)).unwrap();
+        migrate(&dir, 2).unwrap();
+        clean_pictures(&dir, &read(&dir).unwrap()).unwrap();
+        assert!(inn.join(&first.name).exists() && portrait_path(&dir, "wenna").exists());
+        save(&dir, World { locations: vec![Location { images: vec![first.name.clone()], ..loc("inn", None) }], npcs: vec![npc("wenna", "Wenna", "")], ..World::default() }).unwrap();
 
         fs::remove_file(inn.join(&first.name)).unwrap(); // a file gone from under it
         assert!(with_pictures(&dir, read(&dir).unwrap()).locations[0].images.is_empty());

@@ -15,6 +15,7 @@
   import Catalog from "./Catalog.svelte";
   import { pickTab } from "./catalog";
   import RulesReader from "./RulesReader.svelte";
+  import Homebrew from "$lib/views/homebrew/Homebrew.svelte";
 
   // `embedded`: inside a campaign's screens (/campaign/<id>/library), whose shell has the sidebar, the search bar and
   // Settings: then no search bar or gear of its own, and Back only on a Catalog entry (in the shell's header). Outside any campaign
@@ -94,7 +95,7 @@
   // The Catalog's list (not an entry page) has the Sources column.
   const catalogList = $derived(tab === "catalog" && !page.url.searchParams.has("entry"));
   // Outside a campaign the gear sits at the foot of the shown left column, else in the corner.
-  const gearInContents = $derived(!embedded && ((tab === "rules" && rulesHasContents) || catalogList) && !collapsed);
+  const gearInContents = $derived(!embedded && (tab === "homebrew" || (((tab === "rules" && rulesHasContents) || catalogList) && !collapsed)));
 
   // A hint opens Settings at Rules; once closed, the gear opens it where it was.
   $effect(() => {
@@ -143,6 +144,8 @@
     {#key addonTab.id}
       <div class="addon-tab">{#if !settingsOpen}<AddonFrame addon={addonTab} entry={addonTab.library!.entry} context={addonContext} onnavigate={addonNavigate} onsidebarbutton={sidebarTab ? (shown) => (sidebarButton = shown) : undefined} />{/if}</div>
     {/key}
+  {:else if tab === "homebrew" && !embedded}
+    <Homebrew {reloadKey} bottom={gear} />
   {:else if tab === "catalog"}
     <Catalog {reloadKey} onopensettings={openRulesSettings} collapsed={collapsed && !embedded} bottom={gearInContents ? gear : undefined} />
   {:else}

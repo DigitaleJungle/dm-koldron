@@ -32,7 +32,8 @@ export type CatalogEntry = {
   /** Other texts as HTML: `higher_level`, and `<list>.<n>` for each monster trait or action (`actions.0`…). */
   parts: Record<string, string>;
   /** A class's levels and features, a species' traits (same pack), with their description as HTML. */
-  related: { kind: string; entry: Record<string, any>; html: string }[];
+  /** `source`: its pack's name. `parts`: a subclass's features' descriptions as HTML, in order. */
+  related: { kind: string; entry: Record<string, any>; html: string; source: string; parts: string[] }[];
   /** The same rule elsewhere: another Catalog entry or a rule section, any switched-on pack. */
   also: Also[];
 };

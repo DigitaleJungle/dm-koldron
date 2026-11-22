@@ -5,7 +5,6 @@ A real app icon and favicon (`static/favicon.png` is still the old app's; `src-t
 
 Plugins:
 - Character Builder + Print Layout
-- Homebrew items
 - Player facing screen management
 - AI Integration (tagging pdf's, enhanced search, Session planning etc...)
 - Addressable RGB control

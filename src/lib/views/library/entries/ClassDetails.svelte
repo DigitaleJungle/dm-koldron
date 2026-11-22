@@ -15,6 +15,8 @@
     return map;
   });
   const features = $derived(loaded.related.filter((r) => r.kind === "features"));
+  // From every switched-on pack; another pack's shows its name.
+  const subclasses = $derived(loaded.related.filter((r) => r.kind === "subclasses"));
   const prerequisites = $derived(
     (cls.multi_classing?.prerequisites ?? []).map((p: any) => `${p.ability_score?.name ?? ""} ${p.minimum_score ?? ""}`.trim()).join(", "),
   );
@@ -63,9 +65,27 @@
   <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
   {@html feature.html}
 {/each}
+{#if subclasses.length}
+  <h2>{t.subclasses}</h2>
+  {#each subclasses as sub (`${sub.source}/${sub.entry.index}`)}
+    <h3>{sub.entry.name}{#if sub.source !== loaded.source}{" "}<span class="muted">({sub.source})</span>{/if}</h3>
+    {#if sub.entry.summary}<p><em>{sub.entry.summary}</em></p>{/if}
+    <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
+    {@html sub.html}
+    {#each sub.entry.features ?? [] as feature, i (i)}
+      <h4>{typeof feature.level === "number" ? t.featureLevel([feature.level], feature.name) : feature.name}</h4>
+      {@html sub.parts[i] ?? ""}
+    {/each}
+  {/each}
+{/if}
 
 <style>
   .table-wrap {
     overflow-x: auto;
+  }
+
+  .muted {
+    color: var(--color-text-muted);
+    font-weight: var(--weight-regular);
   }
 </style>

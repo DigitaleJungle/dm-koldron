@@ -64,6 +64,10 @@ pub struct Related {
     pub entry: Map<String, Value>,
     /// Its description as HTML; empty for levels.
     pub html: String,
+    /// The name of the pack it's from.
+    pub source: String,
+    /// A subclass's features' descriptions as HTML, in its order; empty for the others.
+    pub parts: Vec<String>,
 }
 
 /// The lists of named texts in a monster entry.
@@ -100,7 +104,8 @@ fn keepers(packs: &[&Pack], kind: &str) -> Vec<usize> {
     // Bundled entries become one row: the first (in pack order) keeps the others.
     let mut keeper: Vec<usize> = (0..all.len()).collect();
     let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, (_, e)) in all.iter().enumerate() {
+    // A homebrew entry never bundles: it keeps its own row.
+    for (i, (_, e)) in all.iter().enumerate().filter(|(_, (p, _))| !p.homebrew) {
         by_name.entry(norm(text(e, "name"))).or_default().push(i);
     }
     for same_name in by_name.values().filter(|ids| ids.len() > 1) {
@@ -162,6 +167,11 @@ pub fn also(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Also {
 /// The other places with the same rule as this entry: same-named Catalog entries and rule sections, any pack.
 fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>) -> Vec<Also> {
     let name = norm(text(entry, "name"));
+    // A homebrew entry never bundles, either way.
+    if pack.homebrew {
+        return Vec::new();
+    }
+    let packs: Vec<&Pack> = packs.iter().copied().filter(|p| !p.homebrew).collect();
     let candidates: Vec<(&Pack, &str, &Map<String, Value>)> = KINDS
         .iter()
         .copied()
@@ -188,14 +198,17 @@ fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>
 pub fn entry(packs: &[&Pack], kind: &str, pack: &str, index: &str) -> Result<CatalogEntry, StorageError> {
     check_kind(kind)?;
     let not_found = || StorageError::NotFound(format!("No {kind} entry \"{index}\" in the switched-on packs."));
-    let found_pack = packs.iter().find(|p| p.manifest.id == pack).ok_or_else(not_found)?;
+    let has = |p: &Pack| list(p, kind).iter().any(|e| text(e, "index") == index);
+    // A reference may name another pack's entry (a homebrew spell's SRD classes): then the first switched-on pack with it.
+    let found_pack = packs.iter().copied().find(|p| p.manifest.id == pack && has(p)).or_else(|| packs.iter().copied().find(|p| has(p)));
+    let found_pack = found_pack.ok_or_else(not_found)?;
     let found = list(found_pack, kind).iter().find(|e| text(e, "index") == index).ok_or_else(not_found)?;
     Ok(CatalogEntry {
-        pack: pack.into(),
+        pack: found_pack.manifest.id.clone(),
         source: found_pack.manifest.name.clone(),
         html: description_html(found),
         parts: parts(found),
-        related: related(found_pack, kind, found),
+        related: related(found_pack, kind, found).into_iter().chain(subclasses(packs, kind, found)).collect(),
         also: also_for(packs, kind, found_pack, found),
         entry: found.clone(),
     })
@@ -252,7 +265,13 @@ fn ref_index(value: Option<&Value>) -> &str {
 fn related(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Vec<Related> {
     let index = text(entry, "index");
     let find = |kind: &str, wanted: &str| list(pack, kind).iter().find(|e| text(e, "index") == wanted);
-    let item = |kind: &str, e: &Map<String, Value>, html: String| Related { kind: kind.into(), entry: e.clone(), html };
+    let item = |kind: &str, e: &Map<String, Value>, html: String| Related {
+        kind: kind.into(),
+        entry: e.clone(),
+        html,
+        source: pack.manifest.name.clone(),
+        parts: Vec::new(),
+    };
     match kind {
         "classes" => {
             let mut levels: Vec<_> =
@@ -280,6 +299,32 @@ fn related(pack: &Pack, kind: &str, entry: &Map<String, Value>) -> Vec<Related> 
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// A class's subclasses, from every switched-on pack (a homebrew subclass of an SRD class too), with their features.
+fn subclasses(packs: &[&Pack], kind: &str, entry: &Map<String, Value>) -> Vec<Related> {
+    if kind != "classes" {
+        return Vec::new();
+    }
+    let index = text(entry, "index");
+    packs
+        .iter()
+        .flat_map(|p| list(p, "subclasses").iter().map(move |s| (*p, s)))
+        .filter(|(_, s)| ref_index(s.get("class")) == index)
+        .map(|(p, s)| Related {
+            kind: "subclasses".into(),
+            entry: s.clone(),
+            html: description_html(s),
+            source: p.manifest.name.clone(),
+            parts: s
+                .get("features")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|f| render(&paragraphs(f.get("description").and_then(Value::as_str).unwrap_or("")), ""))
+                .collect(),
+        })
+        .collect()
 }
 
 /// 5e-database text breaks paragraphs with a single newline; Markdown needs a blank line. Consecutive table rows and
@@ -387,6 +432,10 @@ mod tests {
         let features: Vec<_> = barbarian.related.iter().filter(|r| r.kind == "features").map(|r| r.entry["index"].as_str().unwrap()).collect();
         let unique: std::collections::HashSet<_> = features.iter().collect();
         assert_eq!(unique.len(), features.len(), "Ability Score Improvement is listed at 4, 8, 12 and 16 but shown once");
+        let subclass = barbarian.related.iter().find(|r| r.kind == "subclasses").expect("its subclass");
+        assert_eq!(subclass.entry["name"], "Path of the Berserker");
+        assert_eq!((subclass.source.as_str(), subclass.parts.len()), ("SRD 5.2.1", subclass.entry["features"].as_array().unwrap().len()));
+        assert!(!subclass.parts[0].is_empty());
         let dragonborn = entry(&on, "species", "srd", "dragonborn").unwrap();
         assert!(!dragonborn.related.is_empty() && dragonborn.related.iter().all(|r| r.kind == "traits" && !r.html.is_empty()));
         assert!(entry(&on, "feats", "srd", "alert").unwrap().related.is_empty());
@@ -430,6 +479,19 @@ mod tests {
         let list = rows(&packs.iter().collect::<Vec<_>>(), "conditions", &[]).unwrap();
         assert_eq!(list.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Blinded", "a", "b"]);
         assert_eq!(list[0].others.iter().map(|o| o.source.as_str()).collect::<Vec<_>>(), ["B"]);
+
+        // A reference to an entry its pack doesn't have opens it from the pack that does.
+        let on: Vec<_> = packs.iter().collect();
+        assert_eq!(entry(&on, "conditions", "a", "b").unwrap().pack, "b");
+        assert!(entry(&on, "conditions", "a", "nope").is_err());
+
+        // A homebrew book's entry never bundles: its own row, and no Also in either way.
+        let mut packs = packs;
+        packs[1].homebrew = true;
+        let on: Vec<_> = packs.iter().collect();
+        let list = rows(&on, "conditions", &[]).unwrap();
+        assert_eq!(list.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Blinded", "a", "Blinded", "b"]); // in pack order
+        assert!(list.iter().all(|r| r.others.is_empty()));
     }
 
     #[test]

@@ -2,6 +2,7 @@
   import { tick, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { rulesChapter, rulesContents, type Chapter, type ContentsChapter } from "$lib/api/rules";
+  import PackPicture from "$lib/components/PackPicture.svelte";
   import { errorMessage } from "$lib/api/storage";
   import { gotoReplacing, keepScroll, reachedByBack } from "$lib/stores/history.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
@@ -133,11 +134,13 @@
       {:else}
         <article class="prose">
           <h1>{chapter.name}</h1>
+          {#if chapter.image && currentPack}<PackPicture pack={currentPack} image={chapter.image} />{/if}
           <!-- Rendered in Rust from the pack's Markdown, with raw HTML, links and images removed. -->
           {@html chapter.html}
           {#each chapter.sections as s (s.index)}
             <section id="section-{s.index}">
               <h2>{s.name}</h2>
+              {#if s.image && currentPack}<PackPicture pack={currentPack} image={s.image} />{/if}
               {@html s.html}
             </section>
           {/each}
@@ -148,6 +151,11 @@
 {/if}
 
 <style>
+  /* A section starts below the picture of the one before. */
+  section {
+    clear: both;
+  }
+
   .body {
     flex: 1;
     min-height: 0;

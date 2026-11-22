@@ -217,9 +217,9 @@
       <li>
         {#if removing === pack.id}
           <span class="confirm">
-            {t.removeQuestion(pack.name)}
+            {pack.homebrew ? t.deleteQuestion(pack.name) : t.removeQuestion(pack.name)}
             <button class="btn small" use:focus onclick={() => (removing = null)}>{t.cancel}</button>
-            <button class="btn small btn-danger" onclick={() => remove(pack)}>{t.remove}</button>
+            <button class="btn small btn-danger" onclick={() => remove(pack)}>{pack.homebrew ? t.delete : t.remove}</button>
           </span>
         {:else if pack.errors.length === 0}
           {@const progress = imageDownloads[pack.id]}

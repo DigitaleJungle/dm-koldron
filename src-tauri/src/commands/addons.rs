@@ -238,6 +238,10 @@ pub async fn addon_install_pack(app: AppHandle, addon: String, pack: NewPack) ->
         require(self::addon(&app, &addon)?, "packs:write")?;
         let id = {
             let _guard = lock_pack_change();
+            let id = pack.manifest.get("id").and_then(Value::as_str).unwrap_or_default();
+            if loaded(&app)?.0.iter().any(|p| p.homebrew && p.manifest.id == id) {
+                return Err(StorageError::Invalid(format!("A homebrew book already has the id \"{id}\".")));
+            }
             let staging = data_dir(&app)?.join("packs-staging").join(&addon);
             let installed = installed_dir(&app)?;
             let id = packs::install(&installed, &staging, &pack)?.manifest.id;
@@ -581,7 +585,7 @@ pub async fn addon_secret_delete(app: AppHandle, addon: String, name: String) ->
     .await
 }
 
-fn dialog(app: &AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+pub(crate) fn dialog(app: &AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
     let builder = app.dialog().file();
     match app.get_webview_window("main") {
         Some(main) => builder.set_parent(&main),
@@ -589,7 +593,7 @@ fn dialog(app: &AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry>
     }
 }
 
-fn picked_path(path: Option<tauri_plugin_dialog::FilePath>) -> Result<Option<PathBuf>, StorageError> {
+pub(crate) fn picked_path(path: Option<tauri_plugin_dialog::FilePath>) -> Result<Option<PathBuf>, StorageError> {
     path.map(|p| p.into_path().map_err(|e| StorageError::Io(e.to_string()))).transpose()
 }
 

@@ -64,3 +64,29 @@ describe("the editor", () => {
     expect(roundTrip("Line one\nLine two")).toBe("<p>Line one<br>Line two</p>");
   });
 });
+
+describe("markdown fields", () => {
+  /** A pack text opened in the editor and saved again, as RichText.svelte does with `markdown`. */
+  function markdownTrip(stored: string): string {
+    const editor = new Editor({ element: document.createElement("div"), extensions: editorExtensions(true, { items: () => [] }, true), content: stored, contentType: "markdown" });
+    const saved = editor.getMarkdown();
+    editor.destroy();
+    return saved;
+  }
+
+  it("keeps headings, bold, italic, lists, boxed text and tables", () => {
+    const text = "## The city\n\nA **big** and *old* place.\n\n- Gate\n- Keep\n\n> Read aloud.\n\n| Loot | Value |\n| --- | --- |\n| Ring | 5 gp |";
+    const saved = markdownTrip(text);
+    for (const part of ["## The city", "A **big** and *old* place.", "- Keep", "> Read aloud.", "| Ring | 5 gp  |"]) expect(saved).toContain(part);
+    expect(markdownTrip(saved)).toBe(saved); // saving again changes nothing
+  });
+
+  it("keeps a table cell to one line", () => {
+    const editor = new Editor({ element: document.createElement("div"), extensions: editorExtensions(true, { items: () => [] }, true), content: cleanHtml(table) });
+    const saved = editor.getMarkdown();
+    editor.destroy();
+    expect(markdownTrip(saved)).toBe(saved);
+    expect(saved).toContain("Bell");
+    expect(saved).not.toContain("<br>");
+  });
+});

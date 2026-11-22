@@ -6,6 +6,7 @@ pub mod characters;
 pub mod dice;
 pub mod encounters;
 pub mod home;
+pub mod homebrew;
 pub mod images;
 pub mod packs;
 pub mod rules;

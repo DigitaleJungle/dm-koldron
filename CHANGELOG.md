@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0] - 2026-11-22
+
+### Added
+
+- Library → Homebrew: write your own books next to the SRD, with chapters and sections (Markdown) and entries of every Catalog type: spells, monsters, classes with their levels and features, subclasses, species with their traits, magic items, equipment, feats, backgrounds and conditions.
+- Homebrew books show in the Catalog, the Rules tab and search, and can be switched off or deleted (with everything in them) in Settings → Rules.
+- Homebrew pictures: every entry, chapter and section can have one.
+- Catalog: Copy as homebrew opens a new entry in a homebrew book filled from the entry.
+- Homebrew: Export… writes a book as a pack .zip that Add pack .zip… installs.
+- Catalog: a class page lists its subclasses with their features, from every switched-on book.
+
+### Changed
+
+- A reference to an entry its own book doesn't have opens it from the switched-on book that does.
+
+### Fixed
+
+- A pack install that was interrupted while swapping in the new version no longer loses the previous one.
+- Opening a campaign whose world file is missing no longer deletes its location and NPC pictures.
+- A Catalog entry page whose book is switched off says so instead of showing another book's entry.
+
 ## [0.9.0] - 2026-11-21
 
 ### Added

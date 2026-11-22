@@ -10,7 +10,8 @@ export type ContentsChapter = {
 };
 
 /** Mirrors `Chapter`: names as text, `html` rendered from the pack's Markdown with raw HTML, links and images removed. */
-export type Chapter = { name: string; html: string; sections: { index: string; name: string; html: string }[] };
+/** `image`: a picture kept for the chapter's pack (a homebrew chapter's or section's), if it has one. */
+export type Chapter = { name: string; html: string; image: string | null; sections: { index: string; name: string; html: string; image: string | null }[] };
 
 /** The chapters of the switched-on packs, in pack order. Rejects with a StorageError. */
 export function rulesContents(): Promise<ContentsChapter[]> {

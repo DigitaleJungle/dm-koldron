@@ -70,6 +70,19 @@ fn keep(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
     write_atomic_bytes(path, &out)
 }
 
+/// A picture the user picked, as PNG, shrunk to `MAX_SIDE` when it's larger (a homebrew entry's).
+pub(crate) fn picked_png(bytes: &[u8]) -> Result<Vec<u8>, StorageError> {
+    let decoded = image::load_from_memory(bytes).map_err(|e| StorageError::Invalid(format!("Not an image: {e}")))?;
+    let fitted = if decoded.width().max(decoded.height()) > MAX_SIDE {
+        decoded.resize(MAX_SIDE, MAX_SIDE, image::imageops::FilterType::Lanczos3)
+    } else {
+        decoded
+    };
+    let mut out = vec![];
+    fitted.write_to(&mut Cursor::new(&mut out), image::ImageFormat::Png).map_err(|e| StorageError::Io(e.to_string()))?;
+    Ok(out)
+}
+
 /// The kept image for an entry's `image`, downloading it first when needed. None: the pack doesn't list it, or it
 /// can't be downloaded now (offline); the entry then shows without one.
 pub fn image(dir: &Path, images: &Images, image: &str, fetch: impl FnOnce(&str) -> Option<Vec<u8>>) -> Result<Option<PathBuf>, StorageError> {

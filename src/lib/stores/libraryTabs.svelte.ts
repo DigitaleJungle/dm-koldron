@@ -20,10 +20,12 @@ export function loadLibraryTabs(): Promise<void> {
   return loading;
 }
 
-/** The tabs in the saved order: Rules, Catalog, then each shown addon tab (`withAddons`: the app-wide Library only). */
-export function libraryTabList(withAddons = true): { id: string; label: string }[] {
-  const addonTabs = withAddons ? addons.list.filter((a) => a.library && a.libraryVisible).map((a) => ({ id: a.id, label: a.library!.label })) : [];
-  return ordered([{ id: "rules", label: strings.library.rulesTab }, { id: "catalog", label: strings.catalog.title }, ...addonTabs], libraryTabs.order);
+/** The tabs in the saved order: Rules, Catalog, then Homebrew and each shown addon tab (`appWide`: the Library outside
+ *  any campaign only). */
+export function libraryTabList(appWide = true): { id: string; label: string }[] {
+  const addonTabs = appWide ? addons.list.filter((a) => a.library && a.libraryVisible).map((a) => ({ id: a.id, label: a.library!.label })) : [];
+  const homebrew = appWide ? [{ id: "homebrew", label: strings.homebrew.title }] : [];
+  return ordered([{ id: "rules", label: strings.library.rulesTab }, { id: "catalog", label: strings.catalog.title }, ...homebrew, ...addonTabs], libraryTabs.order);
 }
 
 /** Saves a new order of the shown tabs; hidden addons' tabs keep their saved places after them. */

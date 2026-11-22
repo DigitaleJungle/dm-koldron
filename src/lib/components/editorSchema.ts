@@ -7,6 +7,7 @@ import Mention, { type MentionOptions } from "@tiptap/extension-mention";
 import { TableCell, TableHeader, TableKit } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "@tiptap/markdown";
 
 /** A tag attribute stored as `data-<name>` on the tag's <a>. */
 const data = (name: string) => ({
@@ -38,11 +39,23 @@ const inlineCell = <T extends typeof TableCell | typeof TableHeader>(cell: T) =>
     },
   });
 
-/** The extensions; `extended` adds alignment, `suggestion` is how typing @ offers what to tag (the field's matches). */
-export function editorExtensions(extended: boolean, suggestion: MentionOptions["suggestion"]): AnyExtension[] {
+/** The extensions; `extended` adds alignment, `suggestion` is how typing @ offers what to tag (the field's matches).
+ *  `markdown`: read and written as Markdown (a pack's text), which has no underline, alignment or tags. */
+export function editorExtensions(extended: boolean, suggestion: MentionOptions["suggestion"], markdown = false): AnyExtension[] {
+  const kit = { heading: { levels: [2, 3, 4] as (2 | 3 | 4)[] }, code: false, codeBlock: false, strike: false, horizontalRule: false, link: false } as const;
+  if (markdown) {
+    return [
+      StarterKit.configure({ ...kit, underline: false }),
+      TableKit.configure({ table: { resizable: true }, tableCell: false, tableHeader: false }),
+      // A Markdown table cell is one line: text only, no line breaks (they'd be saved as raw <br>, shown as text).
+      TableCell.extend({ content: "text*" }),
+      TableHeader.extend({ content: "text*" }),
+      Markdown,
+    ];
+  }
   return [
     ...(extended ? [TextAlign.configure({ types: ["heading", "paragraph"], alignments: ["left", "center", "right"] })] : []),
-    StarterKit.configure({ heading: { levels: [2, 3, 4] }, code: false, codeBlock: false, strike: false, horizontalRule: false, link: false }),
+    StarterKit.configure(kit),
     TableKit.configure({ table: { resizable: true }, tableCell: false, tableHeader: false }),
     inlineCell(TableCell),
     inlineCell(TableHeader),

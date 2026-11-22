@@ -63,7 +63,7 @@
       {/if}
     </div>
     <footer>
-      <a href={entryAddress(kind, pack, ref.index, libraryHome())}>{t.open}</a>
+      <a href={entryAddress(kind, loaded?.pack ?? pack, ref.index, libraryHome())}>{t.open}</a>
     </footer>
   </div>
 {:else}

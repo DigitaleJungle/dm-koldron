@@ -6,10 +6,13 @@ export type PackSummary = {
   name: string;
   version: string;
   license: string;
+  ruleset: string;
   entries: number;
   enabled: boolean;
   /** Installed in the data folder (by an addon or Update rules); false for a bundled pack. */
   installed: boolean;
+  /** A homebrew book (also `installed`). */
+  homebrew: boolean;
   errors: string[];
 };
 

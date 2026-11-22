@@ -29,6 +29,8 @@ pub struct Chapter {
     pub name: String,
     /// The chapter's intro, as HTML.
     pub html: String,
+    /// Its picture (`image`, kept for its pack), if it has one: a homebrew chapter's.
+    pub image: Option<String>,
     pub sections: Vec<Section>,
 }
 
@@ -37,6 +39,12 @@ pub struct Section {
     pub index: String,
     pub name: String,
     pub html: String,
+    /// Its picture, as for a chapter.
+    pub image: Option<String>,
+}
+
+fn image(entry: &Map<String, Value>) -> Option<String> {
+    entry.get("image").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
 fn field<'a>(entry: &'a Map<String, Value>, name: &str) -> &'a str {
@@ -83,9 +91,15 @@ pub fn chapter(packs: &[&Pack], pack: &str, index: &str) -> Result<Chapter, Stor
     Ok(Chapter {
         name: name.into(),
         html: render(field(found, "desc"), name),
+        image: image(found),
         sections: sections_of(pack, found)
             .into_iter()
-            .map(|s| Section { index: field(s, "index").into(), name: field(s, "name").into(), html: render(field(s, "desc"), field(s, "name")) })
+            .map(|s| Section {
+                index: field(s, "index").into(),
+                name: field(s, "name").into(),
+                html: render(field(s, "desc"), field(s, "name")),
+                image: image(s),
+            })
             .collect(),
     })
 }
@@ -96,7 +110,7 @@ pub fn section(packs: &[&Pack], pack: &str, index: &str) -> Result<Section, Stor
     let pack = packs.iter().find(|p| p.manifest.id == pack).ok_or_else(not_found)?;
     let all = pack.entries.get("rule-sections").map_or(&[][..], Vec::as_slice);
     let s = all.iter().find(|s| field(s, "index") == index).ok_or_else(not_found)?;
-    Ok(Section { index: index.into(), name: field(s, "name").into(), html: render(field(s, "desc"), field(s, "name")) })
+    Ok(Section { index: index.into(), name: field(s, "name").into(), html: render(field(s, "desc"), field(s, "name")), image: image(s) })
 }
 
 /// Markdown to HTML. Raw HTML in a pack's text is shown as text, and links and images are left out (keeping their

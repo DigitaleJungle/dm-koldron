@@ -30,8 +30,7 @@ pub struct Manifest {
     pub name: String,
     pub version: String,
     pub license: String,
-    // Required by the schema; nothing reads it yet (Settings → About shows the SRD's from strings.ts).
-    #[allow(dead_code)]
+    // Required by the schema; the Homebrew tab edits a book's (Settings → About shows the SRD's from strings.ts).
     pub attribution: String,
     pub ruleset: String,
     pub files: Vec<DataFile>,
@@ -61,6 +60,8 @@ pub struct Pack {
     pub images: Option<Images>,
     /// Installed in the data folder (by an addon), not bundled with the app.
     pub installed: bool,
+    /// A homebrew book: written by the app in the data folder's `homebrew/`, and edited in the Homebrew tab.
+    pub homebrew: bool,
 }
 
 impl Pack {
@@ -97,16 +98,31 @@ pub fn load_dir(dir: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
     Ok((packs, invalid))
 }
 
-/// The bundled packs and the ones installed in the data folder, sorted by id. An installed pack is used instead of a
-/// bundled one with the same id (an updated SRD); an invalid installed one doesn't hide the bundled one.
-pub fn load_all(bundled: &Path, installed: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
+/// The bundled packs, the ones installed in the data folder and the homebrew books, sorted by id. An installed pack is
+/// used instead of a bundled one with the same id (an updated SRD); an invalid installed one doesn't hide the bundled
+/// one. A homebrew book keeps its id: another pack with it isn't loaded.
+pub fn load_all(bundled: &Path, installed: &Path, homebrew: &Path) -> io::Result<(Vec<Pack>, Vec<Invalid>)> {
     let (mut packs, mut invalid) = load_dir(installed)?;
     packs.iter_mut().for_each(|p| p.installed = true);
     let (shipped, shipped_invalid) = load_dir(bundled)?;
     let replaced: HashSet<String> = packs.iter().map(|p| p.manifest.id.clone()).collect();
     packs.extend(shipped.into_iter().filter(|p| !replaced.contains(&p.manifest.id)));
-    packs.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
     invalid.extend(shipped_invalid);
+    let (books, books_invalid) = load_dir(homebrew)?;
+    for mut book in books {
+        if let Some(i) = packs.iter().position(|p| p.manifest.id == book.manifest.id) {
+            let taken = packs.remove(i);
+            invalid.push(Invalid {
+                errors: vec![format!("A homebrew book already has the id \"{}\".", book.manifest.id)],
+                folder: taken.manifest.id,
+                name: Some(taken.manifest.name),
+            });
+        }
+        (book.installed, book.homebrew) = (true, true);
+        packs.push(book);
+    }
+    invalid.extend(books_invalid);
+    packs.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
     Ok((packs, invalid))
 }
 
@@ -156,9 +172,10 @@ pub fn read(dir: &Path, id: &str) -> Result<NewPack, StorageError> {
 /// installed with that id). On any failure `installed` is left as it was. `staging` must be on the same disk.
 pub fn install(installed: &Path, staging: &Path, new: &NewPack) -> Result<Pack, StorageError> {
     let _ = fs::remove_dir_all(staging); // what a crash left behind
+    let old = old_dir(staging);
+    recover(installed, &old)?;
     let result = write_and_load(staging, new).and_then(|pack| {
         let target = installed.join(&pack.manifest.id);
-        let old = staging.with_extension("old");
         let _ = fs::remove_dir_all(&old);
         fs::create_dir_all(installed)?;
         let had_one = target.exists();
@@ -179,6 +196,24 @@ pub fn install(installed: &Path, staging: &Path, new: &NewPack) -> Result<Pack, 
         pack.installed = true;
         pack
     })
+}
+
+/// Where `install` moves the pack it replaces while it swaps the new one in.
+pub fn old_dir(staging: &Path) -> std::path::PathBuf {
+    staging.with_extension("old")
+}
+
+/// Puts back a pack an install moved aside to `old` and couldn't put back (a crash, or a failed move), when nothing
+/// has taken its place since. Otherwise the next install would delete it.
+pub fn recover(installed: &Path, old: &Path) -> Result<(), StorageError> {
+    if let Ok(Some(pack)) = load_pack(old) {
+        let target = installed.join(&pack.manifest.id);
+        if !target.exists() {
+            fs::create_dir_all(installed)?;
+            fs::rename(old, target)?;
+        }
+    }
+    Ok(())
 }
 
 fn write_and_load(staging: &Path, new: &NewPack) -> Result<Pack, StorageError> {
@@ -252,7 +287,7 @@ pub fn load_pack(folder: &Path) -> Result<Option<Pack>, LoadError> {
         }
     };
     if errors.is_empty() {
-        Ok(Some(Pack { manifest, entries, images, installed: false }))
+        Ok(Some(Pack { manifest, entries, images, installed: false, homebrew: false }))
     } else {
         Err((Some(manifest.name), errors))
     }
@@ -547,8 +582,14 @@ mod tests {
         assert!(errors.contains("\"name\" is missing"), "{errors}");
         assert_eq!(load_pack(&installed.join("home")).unwrap().unwrap().manifest.version, "1.0.0");
 
-        install(&installed, &staging, &new_pack("home", "2.0.0", good)).unwrap();
+        install(&installed, &staging, &new_pack("home", "2.0.0", good.clone())).unwrap();
         assert_eq!(load_pack(&installed.join("home")).unwrap().unwrap().manifest.version, "2.0.0");
+
+        // A pack left moved aside (a crash mid-swap) is put back by the next install, of any pack, not deleted.
+        fs::rename(installed.join("home"), old_dir(&staging)).unwrap();
+        install(&installed, &staging, &new_pack("other", "1.0.0", good)).unwrap();
+        assert_eq!(load_pack(&installed.join("home")).unwrap().unwrap().manifest.version, "2.0.0");
+        assert!(installed.join("other").is_dir() && !old_dir(&staging).exists());
         assert!(!staging.exists() && !staging.with_extension("old").exists());
 
         let mut escaping = new_pack("x", "1", serde_json::json!([]));
@@ -579,14 +620,14 @@ mod tests {
             m["version"] = version.into();
             write_pack(root, id, m, &[("c.json", data.clone())]);
         }
-        let (packs, _) = load_all(&bundled, &installed).unwrap();
+        let (packs, _) = load_all(&bundled, &installed, &dir.join("homebrew")).unwrap();
         let got: Vec<_> = packs.iter().map(|p| (p.manifest.id.as_str(), p.manifest.version.as_str(), p.installed)).collect();
         assert_eq!(got, [("extra", "1", false), ("srd", "2", true)]);
 
         // An installed pack that no longer validates (say, after a schema change) leaves the bundled one in use.
         fs::create_dir_all(installed.join("extra")).unwrap();
         fs::write(installed.join("extra").join(MANIFEST), "{ nope").unwrap();
-        let (packs, invalid) = load_all(&bundled, &installed).unwrap();
+        let (packs, invalid) = load_all(&bundled, &installed, &dir.join("homebrew")).unwrap();
         assert_eq!(packs.iter().find(|p| p.manifest.id == "extra").map(|p| p.installed), Some(false));
         assert_eq!(invalid.iter().map(|i| i.folder.as_str()).collect::<Vec<_>>(), ["extra"]);
         fs::remove_dir_all(installed.join("extra")).unwrap();
@@ -594,7 +635,23 @@ mod tests {
         assert!(matches!(remove(&installed, "extra"), Err(StorageError::NotFound(_))));
         assert!(matches!(remove(&installed, "../bundled"), Err(StorageError::Invalid(_))));
         remove(&installed, "srd").unwrap();
-        let (packs, _) = load_all(&bundled, &installed).unwrap();
+        let (packs, _) = load_all(&bundled, &installed, &dir.join("homebrew")).unwrap();
         assert_eq!(packs.iter().find(|p| p.manifest.id == "srd").unwrap().manifest.version, "1");
+    }
+
+    #[test]
+    fn homebrew_books_load_marked_and_keep_their_id() {
+        let dir = temp_dir("homebrew");
+        let (bundled, installed, homebrew) = (dir.join("bundled"), dir.join("installed"), dir.join("homebrew"));
+        let files = serde_json::json!([{ "type": "conditions", "path": "c.json" }]);
+        let data = serde_json::json!([{ "index": "a", "name": "A", "description": "x" }]);
+        for (root, id) in [(&bundled, "srd"), (&installed, "mine"), (&homebrew, "mine"), (&homebrew, "lore")] {
+            write_pack(root, id, manifest(id, files.clone()), &[("c.json", data.clone())]);
+        }
+        let (packs, invalid) = load_all(&bundled, &installed, &homebrew).unwrap();
+        let got: Vec<_> = packs.iter().map(|p| (p.manifest.id.as_str(), p.installed, p.homebrew)).collect();
+        assert_eq!(got, [("lore", true, true), ("mine", true, true), ("srd", false, false)]);
+        assert_eq!(invalid.len(), 1);
+        assert!(invalid[0].errors[0].contains("homebrew book"));
     }
 }

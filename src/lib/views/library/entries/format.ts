@@ -48,8 +48,11 @@ export function speed(speeds: Record<string, string | boolean> | undefined): str
 
 export const hitPoints = (m: Record<string, any>) => (m.hit_dice ? `${m.hit_points} (${m.hit_dice})` : String(m.hit_points ?? ""));
 
+/** The proficiencies a stat block shows, by the start of their name. */
+export const STAT_BLOCK_PROFICIENCIES = ["Saving Throw", "Skill"] as const;
+
 /** "DEX +6, WIS +7" from `Saving Throw: DEX`, or "Perception +13" from `Skill: Perception`. */
-export function proficiencies(m: Record<string, any>, kind: "Saving Throw" | "Skill"): string {
+export function proficiencies(m: Record<string, any>, kind: (typeof STAT_BLOCK_PROFICIENCIES)[number]): string {
   return (m.proficiencies ?? [])
     .filter((p: any) => p.proficiency?.name?.startsWith(`${kind}:`))
     .map((p: any) => `${p.proficiency.name.slice(kind.length + 1).trim()} ${signed(p.value)}`)

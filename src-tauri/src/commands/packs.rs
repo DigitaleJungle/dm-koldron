@@ -23,6 +23,16 @@ pub fn installed_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
     Ok(data_dir(app)?.join("packs"))
 }
 
+/// Where the app writes the homebrew books, in the data folder.
+pub fn homebrew_dir(app: &AppHandle) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("homebrew"))
+}
+
+/// Where a homebrew save writes the book before swapping it in.
+pub fn homebrew_staging(app: &AppHandle) -> Result<PathBuf, StorageError> {
+    Ok(data_dir(app)?.join("homebrew-staging"))
+}
+
 /// The bundled and installed packs, read and validated on first use. Blocking: call it inside `blocking`.
 pub fn loaded(app: &AppHandle) -> Result<Arc<Loaded>, StorageError> {
     // Held while loading, so a `reload` can't be undone by a load that read the folders before the change.
@@ -31,7 +41,9 @@ pub fn loaded(app: &AppHandle) -> Result<Arc<Loaded>, StorageError> {
         return Ok(loaded.clone());
     }
     let bundled = app.path().resource_dir().map_err(|e| StorageError::Io(e.to_string()))?.join("packs");
-    let loaded = Arc::new(load_all(&bundled, &installed_dir(app)?)?);
+    // A homebrew book a crash left moved aside comes back before anything reads the folder.
+    crate::packs::recover(&homebrew_dir(app)?, &crate::packs::old_dir(&homebrew_staging(app)?))?;
+    let loaded = Arc::new(load_all(&bundled, &installed_dir(app)?, &homebrew_dir(app)?)?);
     *cache = Some(loaded.clone());
     Ok(loaded)
 }
@@ -60,10 +72,13 @@ pub struct PackSummary {
     pub name: String,
     pub version: String,
     pub license: String,
+    pub ruleset: String,
     pub entries: usize,
     pub enabled: bool,
     /// Installed by an addon in the data folder; false for a bundled pack.
     pub installed: bool,
+    /// A homebrew book (also `installed`).
+    pub homebrew: bool,
     /// Empty for a loaded pack. A pack with errors isn't loaded.
     pub errors: Vec<String>,
 }
@@ -81,6 +96,8 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
     let valid = packs.iter().map(|p| PackSummary {
         enabled: !disabled.contains(&p.manifest.id),
         installed: p.installed,
+        homebrew: p.homebrew,
+        ruleset: p.manifest.ruleset.clone(),
         entries: p.entry_count(),
         id: p.manifest.id.clone(),
         name: p.manifest.name.clone(),
@@ -95,9 +112,11 @@ pub fn summaries((packs, invalid): &Loaded, disabled: &[String]) -> Vec<PackSumm
             id: i.folder.clone(),
             version: String::new(),
             license: String::new(),
+            ruleset: String::new(),
             entries: 0,
             enabled: false,
             installed: false,
+            homebrew: false,
             errors,
         }
     });
@@ -123,18 +142,32 @@ pub fn remove_installed(app: &AppHandle, pack: &str) -> Result<(), StorageError>
     crate::packs::remove(&installed_dir(app)?, pack)?;
     reload();
     if !loaded(app)?.0.iter().any(|p| p.manifest.id == pack) {
-        match std::fs::remove_dir_all(data_dir(app)?.join(images::DIR).join(pack)) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-            _ => {}
-        }
+        remove_images(app, pack)?;
     }
     Ok(())
 }
 
-/// Settings → Rules: removes an installed pack.
+/// Deletes a pack's kept images (`images/<pack>/`), if it has any.
+fn remove_images(app: &AppHandle, pack: &str) -> Result<(), StorageError> {
+    match std::fs::remove_dir_all(data_dir(app)?.join(images::DIR).join(pack)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+        _ => Ok(()),
+    }
+}
+
+/// Settings → Rules: removes an installed pack, or deletes a homebrew book and everything in it.
 #[tauri::command]
 pub async fn remove_pack(app: AppHandle, pack: String) -> Result<(), StorageError> {
-    blocking(move || remove_installed(&app, &pack)).await
+    blocking(move || {
+        if loaded(&app)?.0.iter().any(|p| p.homebrew && p.manifest.id == pack) {
+            let _guard = lock_pack_change();
+            crate::packs::remove(&homebrew_dir(&app)?, &pack)?;
+            reload();
+            return remove_images(&app, &pack);
+        }
+        remove_installed(&app, &pack)
+    })
+    .await
 }
 
 #[cfg(test)]

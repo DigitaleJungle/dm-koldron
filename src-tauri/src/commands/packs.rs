@@ -1,5 +1,6 @@
 //! The packs, loaded on first use and again after an addon changes them, and Settings → Rules: each pack, valid or not, with whether it's switched on.
 
+use crate::commands::campaigns;
 use crate::commands::settings;
 use crate::commands::images;
 use crate::commands::search;
@@ -57,6 +58,15 @@ pub fn reload() {
 /// Pack ids switched off in Settings → Rules. A damaged settings file was already copied aside by `load`; then all are on.
 pub fn disabled(app: &AppHandle) -> Result<Vec<String>, StorageError> {
     Ok(settings::load(&data_dir(app)?.join(settings::FILE_NAME)).map(|s| s.disabled_packs).unwrap_or_default())
+}
+
+/// Pack ids switched off app-wide, plus those `campaign` leaves out: what a campaign's screens may show.
+pub fn disabled_in(app: &AppHandle, campaign: Option<&str>) -> Result<Vec<String>, StorageError> {
+    let mut off = disabled(app)?;
+    if let Some(id) = campaign {
+        off.extend(campaigns::packs_off(&campaigns::dirs(app)?, id)?);
+    }
+    Ok(off)
 }
 
 /// The valid packs that are switched on.

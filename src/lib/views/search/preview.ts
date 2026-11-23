@@ -4,6 +4,7 @@ import type { SearchHit } from "$lib/api/search";
 import { catalogEntry } from "$lib/api/catalog";
 import { listCharacters } from "$lib/api/characters";
 import { rulesSection } from "$lib/api/rules";
+import { campaigns } from "$lib/stores/campaigns.svelte";
 import { strings } from "$lib/strings";
 import { entryCategory, entryFacts } from "$lib/views/library/catalog";
 import { signed } from "$lib/views/library/entries/format";
@@ -11,7 +12,8 @@ import { classLine, totalLevel } from "$lib/views/characters/characters";
 
 export type Preview = { facts: { label: string; value: string }[]; html: string; source: string };
 
-export async function loadPreview(hit: Pick<SearchHit, "kind" | "pack" | "index" | "campaign">): Promise<Preview> {
+/** `scope`: the campaign whose packs it's read from (by default the one worked in); null for any switched-on pack. */
+export async function loadPreview(hit: Pick<SearchHit, "kind" | "pack" | "index" | "campaign">, scope: string | null = campaigns.scope): Promise<Preview> {
   if (hit.kind === "characters") {
     const found = (await listCharacters(hit.campaign ?? "")).characters.find((c) => c.id === hit.index);
     if (!found) throw new Error(strings.characters.gone);
@@ -26,8 +28,8 @@ export async function loadPreview(hit: Pick<SearchHit, "kind" | "pack" | "index"
     return { facts, html: "", source: "" };
   }
   if (hit.kind === "rule-sections") {
-    return { facts: [], html: (await rulesSection(hit.pack, hit.index)).html, source: "" };
+    return { facts: [], html: (await rulesSection(hit.pack, hit.index, scope)).html, source: "" };
   }
-  const entry = await catalogEntry(hit.kind, hit.pack, hit.index);
+  const entry = await catalogEntry(hit.kind, hit.pack, hit.index, scope);
   return { facts: entryFacts(entryCategory(hit.kind), entry).filter((f) => f.value !== "—"), html: entry.html, source: entry.source };
 }

@@ -2,7 +2,7 @@
 //! changed (an archived one is read-only). Its map picture sits beside it as `encounters/<id>.map.jpg`. The XP budgets for the difficulty come from the switched-on packs.
 
 use crate::commands::campaigns::{active_dir, dirs, now_ms, picture_at, store_picture, Picture};
-use crate::commands::packs::{disabled, enabled, loaded};
+use crate::commands::packs::{disabled_in, enabled, loaded};
 use crate::commands::sessions;
 use crate::packs::Pack;
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
@@ -459,8 +459,8 @@ pub async fn set_encounter_map(app: AppHandle, campaign: String, id: String, pat
 }
 
 #[tauri::command]
-pub async fn encounter_budgets(app: AppHandle) -> Result<Vec<Budget>, StorageError> {
-    blocking(move || Ok(budgets(&enabled(&loaded(&app)?.0, &disabled(&app)?)))).await
+pub async fn encounter_budgets(app: AppHandle, campaign: Option<String>) -> Result<Vec<Budget>, StorageError> {
+    blocking(move || Ok(budgets(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?)))).await
 }
 
 #[tauri::command]

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TagPreview from "$lib/components/TagPreview.svelte";
   // Encounters → Prepare: the monster browser (left), the party and roster (middle), the difficulty meter (right).
   // Leaving with unsaved changes asks Save / Don't save / Cancel.
   import { beforeNavigate, goto } from "$app/navigation";
@@ -24,7 +25,7 @@
   import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
   import { monsterPicture } from "$lib/stores/monsterPictures";
-  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowKeys, rowsByKey, splitRow } from "./roster";
+  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versions } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -262,6 +263,8 @@
     void [search, type, crMin, crMax, sort, descending];
     pageNumber = 1;
   });
+  /** The bundled row whose versions (the same monster in each pack) show under it, to add one of them. */
+  let opened = $state<string | null>(null);
   let monstersScroll: HTMLElement | undefined = $state();
   function toPage(n: number) {
     pageNumber = Math.min(pages, Math.max(1, n));
@@ -288,19 +291,21 @@
     const panel = browserPanel!.getBoundingClientRect();
     preview = { row, top: at.top, left: panel.right + 8 };
     const key = entryKey(row);
+    // By key, not identity: `preview` holds a proxy of the row, and a version row is made anew on each render.
+    const showing = () => !!preview && entryKey(preview.row) === key;
     if (!loadedEntries.has(key)) loadedEntries.set(key, catalogEntry("monsters", row.pack, row.index));
     [previewEntry, previewError, previewImage] = [null, null, null];
     loadedEntries.get(key)!.then(
       (e) => {
-        if (preview?.row !== row) return;
+        if (!showing()) return;
         previewEntry = e;
         if (typeof e.entry.image !== "string") return;
         // A picture that can't be kept is reported, but the stat block still shows.
-        monsterPicture(row.pack, e.entry.image).then((src) => preview?.row === row && (previewImage = src));
+        monsterPicture(row.pack, e.entry.image).then((src) => showing() && (previewImage = src));
       },
       (e) => {
         loadedEntries.delete(key); // try again next time
-        if (preview?.row === row) previewError = errorMessage(e);
+        if (showing()) previewError = errorMessage(e);
       },
     );
   }
@@ -541,25 +546,55 @@
                   </tr>
                 </thead>
                 <tbody>
+                  {#snippet addButton(row: CatalogRow)}
+                    <button
+                      class="icon-btn add"
+                      disabled={locked}
+                      aria-label={t.browser.addLabel(row.name, row.source)}
+                      onfocus={(e) => showPreview(row, e.currentTarget)}
+                      onblur={hidePreview}
+                      onkeydown={(e) => e.key === "Escape" && hidePreview()}
+                      onclick={() => (roster = addToRoster(roster, row))}
+                    >
+                      <i class="ti ti-plus" aria-hidden="true"></i>
+                    </button>
+                  {/snippet}
                   {#each onPage as m (entryKey(m))}
+                    {@const key = entryKey(m)}
                     <tr onmouseenter={(e) => showPreview(m, e.currentTarget)}>
                       <td>{m.name}</td>
                       <td class="muted small">{crText(crOf(m))}</td>
                       <td class="muted small">{typeOf(m)}</td>
                       <td>
-                        <button
-                          class="icon-btn add"
-                          disabled={locked}
-                          aria-label={t.browser.addLabel(m.name, m.source)}
-                          onfocus={(e) => showPreview(m, e.currentTarget)}
-                          onblur={hidePreview}
-                          onkeydown={(e) => e.key === "Escape" && hidePreview()}
-                          onclick={() => (roster = addToRoster(roster, m))}
-                        >
-                          <i class="ti ti-plus" aria-hidden="true"></i>
-                        </button>
+                        {#if m.others.length}
+                          <!-- In more than one pack: pick the version to add, in the rows under it. -->
+                          <button
+                            class="icon-btn add"
+                            disabled={locked}
+                            aria-label={t.browser.versions(m.name)}
+                            aria-expanded={opened === key}
+                            onfocus={(e) => showPreview(m, e.currentTarget)}
+                            onblur={hidePreview}
+                            onkeydown={(e) => e.key === "Escape" && hidePreview()}
+                            onclick={() => (opened = opened === key ? null : key)}
+                          >
+                            <i class="ti {opened === key ? 'ti-chevron-up' : 'ti-plus'}" aria-hidden="true"></i>
+                          </button>
+                        {:else}
+                          {@render addButton(m)}
+                        {/if}
                       </td>
                     </tr>
+                    {#if opened === key && !locked}
+                      {#each versions(m) as v (entryKey(v))}
+                        <tr class="version" onmouseenter={(e) => showPreview(v, e.currentTarget)}>
+                          <td>{v.source}</td>
+                          <td class="muted small">{crText(crOf(v))}</td>
+                          <td class="muted small">{typeOf(v)}</td>
+                          <td>{@render addButton(v)}</td>
+                        </tr>
+                      {/each}
+                    {/if}
                   {/each}
                 </tbody>
               </table>
@@ -672,7 +707,7 @@
                 {:else if !detailsEntry}
                   <p class="muted">{t.browser.previewLoading}</p>
                 {:else}
-                  <MonsterBlock loaded={detailsEntry} />
+                  <TagPreview><MonsterBlock loaded={detailsEntry} /></TagPreview>
                 {/if}
               {:else if topic === "party"}
                 <!-- Like a note, no ✕: the Party button (again), another one, or a monster closes it. A Ready
@@ -1415,6 +1450,16 @@
 
   .monsters td:last-child {
     text-align: right;
+  }
+
+  /* A bundled monster's versions, indented under its row. */
+  .monsters .version td {
+    border-top: none;
+  }
+
+  .monsters .version td:first-child {
+    padding-left: var(--space-5);
+    color: var(--color-text-muted);
   }
 
   .sort {

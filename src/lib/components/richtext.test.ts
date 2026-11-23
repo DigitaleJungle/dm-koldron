@@ -89,4 +89,11 @@ describe("markdown fields", () => {
     expect(saved).toContain("Bell");
     expect(saved).not.toContain("<br>");
   });
+
+  it("keeps a tag as a link to its entry, and any other link as its text", () => {
+    const text = "Cast [Fireball](koldron:spells/srd/fireball) at the [Tomb \\[old\\]](koldron:monsters/my-book/tomb.2), see [the site](https://e).";
+    const saved = markdownTrip(text);
+    expect(saved).toBe("Cast [Fireball](koldron:spells/srd/fireball) at the [Tomb \\[old\\]](koldron:monsters/my-book/tomb.2), see the site.");
+    expect(markdownTrip(saved)).toBe(saved);
+  });
 });

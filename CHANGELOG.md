@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.2] - 2026-11-23
+
+### Added
+
+- Campaign settings dialog (name, picture, rules, archive, delete), opened from a cog in the campaign switcher, on each Start tile and in Settings → Campaigns.
+- Rules per campaign: switch packs and homebrew books off for one campaign; its Library, search, encounters and sessions use only its packs, and Search everything still finds the rest.
+- Encounter builder: a monster in more than one pack shows its versions to add, each with its own CR and XP; + Combatant lists each version.
+- Homebrew texts can tag Catalog entries with @; a tag opens its entry and shows its summary on hover, in the Rules tab, the Catalog, stat blocks and the search preview.
+- Homebrew monsters have a Description, shown under the stat block.
+
+### Changed
+
+- Settings → Campaigns: active campaigns open their settings dialog; archived ones keep Restore and Delete.
+- The collapsed sidebar no longer offers switching campaigns.
+
 ## [0.10.1] - 2026-11-22
 
 ### Added

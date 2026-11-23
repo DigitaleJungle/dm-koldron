@@ -6,6 +6,7 @@
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
   import AddonBackground from "$lib/components/AddonBackground.svelte";
+  import CampaignDialog from "$lib/components/CampaignDialog.svelte";
   import Notification from "$lib/components/Notification.svelte";
   import SettingsDialog, { settingsOpen } from "$lib/components/SettingsDialog.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -42,4 +43,5 @@
 {@render children()}
 <Notification />
 <SettingsDialog bind:open={aboutOpen} section="about" />
+<CampaignDialog />
 <AddonBackground />

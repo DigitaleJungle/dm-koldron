@@ -69,6 +69,12 @@
   {/if}
 {/each}
 
+<!-- A monster's own text (a homebrew monster's Description; an SRD monster has none), under its stat block. -->
+{#if !brief && loaded.html}
+  <h2>{t.description}</h2>
+  {@html loaded.html}
+{/if}
+
 <style>
   .abilities {
     width: auto;

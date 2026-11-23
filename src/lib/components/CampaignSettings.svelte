@@ -3,16 +3,7 @@
   import { strings } from "$lib/strings";
   import { errorMessage } from "$lib/api/storage";
   import { pictureSrc, type Campaign } from "$lib/api/campaigns";
-  import {
-    campaigns,
-    archiveCampaign,
-    createCampaign,
-    deleteCampaign,
-    refreshCampaigns,
-    renameCampaign,
-    restoreCampaign,
-    setCampaignPicture,
-  } from "$lib/stores/campaigns.svelte";
+  import { campaignDialog, campaigns, createCampaign, deleteCampaign, refreshCampaigns, restoreCampaign } from "$lib/stores/campaigns.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import Menu, { type MenuItem } from "$lib/components/Menu.svelte";
 
@@ -22,8 +13,6 @@
   let addName = $state("");
   let adding = $state(false);
   let addError = $state<string | null>(null);
-  let renamingId = $state<string | null>(null);
-  let newName = $state("");
   let deletingId = $state<string | null>(null);
   let busy = $state(false);
   let error = $state<{ id: string; text: string } | null>(null);
@@ -62,30 +51,6 @@
     document.getElementById(`campaign-menu-${id}`)?.focus();
   }
 
-  async function startRename(campaign: Campaign) {
-    error = null;
-    newName = campaign.name;
-    renamingId = campaign.id;
-    await tick();
-    document.getElementById(`rename-${campaign.id}`)?.focus();
-  }
-
-  async function saveRename(event: SubmitEvent, campaign: Campaign) {
-    event.preventDefault();
-    await run(campaign, c.renameError, async () => {
-      await renameCampaign(campaign.id, newName);
-      renamingId = null;
-      await focusMenu(campaign.id);
-    });
-  }
-
-  function onRenameKeydown(event: KeyboardEvent, campaign: Campaign) {
-    if (event.key !== "Escape") return;
-    event.preventDefault(); // cancel the rename, not the dialog
-    renamingId = null;
-    focusMenu(campaign.id);
-  }
-
   async function askDelete(campaign: Campaign) {
     error = null;
     deletingId = campaign.id;
@@ -104,11 +69,11 @@
     cancelDelete(campaign);
   }
 
-  /** Archive or restore, then say so; the name is read first, as the campaign moves lists. */
-  const changeStatus = (campaign: Campaign, action: (id: string) => Promise<void>, failed: typeof c.archiveError, message: (name: string) => string) =>
-    run(campaign, failed, async () => {
-      await action(campaign.id);
-      notify(message(campaign.name));
+  /** Restore, then say so; the name is read first, as the campaign moves lists. */
+  const restore = (campaign: Campaign) =>
+    run(campaign, c.restoreError, async () => {
+      await restoreCampaign(campaign.id);
+      notify(c.restored(campaign.name));
     });
 
   const confirmDelete = (campaign: Campaign) =>
@@ -117,18 +82,11 @@
       notify(c.deleted(campaign.name));
     });
 
-  function itemsFor(campaign: Campaign, archived: boolean): MenuItem[] {
-    const remove = { label: c.delete, onselect: () => askDelete(campaign) };
-    if (archived) return [{ label: c.restore, onselect: () => changeStatus(campaign, restoreCampaign, c.restoreError, c.restored) }, remove];
-    const picture = (choose: boolean) => run(campaign, (_, reason) => c.pictureError(reason), () => setCampaignPicture(campaign.id, choose));
-    return [
-      { label: c.rename, onselect: () => startRename(campaign) },
-      { label: campaign.picture ? c.changePicture : c.choosePicture, onselect: () => picture(true) },
-      ...(campaign.picture ? [{ label: c.removePicture, onselect: () => picture(false) }] : []),
-      { label: c.archive, onselect: () => changeStatus(campaign, archiveCampaign, c.archiveError, c.archived) },
-      remove,
-    ];
-  }
+  // An active campaign's settings are its own dialog; an archived one can only be restored or deleted.
+  const archivedItems = (campaign: Campaign): MenuItem[] => [
+    { label: c.restore, onselect: () => restore(campaign) },
+    { label: c.delete, onselect: () => askDelete(campaign) },
+  ];
 </script>
 
 {#snippet rows(list: Campaign[], archived: boolean)}
@@ -150,24 +108,16 @@
             {:else}
               <span class="thumb" aria-hidden="true"></span>
             {/if}
-            {#if renamingId === campaign.id}
-              <form class="rename" onsubmit={(e) => saveRename(e, campaign)}>
-                <label for="rename-{campaign.id}" class="sr-only">{c.renameLabel}</label>
-                <input
-                  id="rename-{campaign.id}"
-                  class="name-input"
-                  bind:value={newName}
-                  maxlength="100"
-                  autocomplete="off"
-                  onkeydown={(e) => onRenameKeydown(e, campaign)}
-                />
-              </form>
+            <span class="name" class:archived>{campaign.name}</span>
+            {#if archived}
+              <Menu id="campaign-menu-{campaign.id}" label={c.actionsFor(campaign.name)} items={archivedItems(campaign)} triggerClass="icon-btn">
+                {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
+              </Menu>
             {:else}
-              <span class="name" class:archived>{campaign.name}</span>
+              <button class="icon-btn" aria-label={c.open(campaign.name)} onclick={() => (campaignDialog.id = campaign.id)}>
+                <i class="ti ti-settings" aria-hidden="true"></i>
+              </button>
             {/if}
-            <Menu id="campaign-menu-{campaign.id}" label={c.actionsFor(campaign.name)} items={itemsFor(campaign, archived)} triggerClass="icon-btn">
-              {#snippet trigger()}<i class="ti ti-dots" aria-hidden="true"></i>{/snippet}
-            </Menu>
           </div>
         {/if}
         {#if error?.id === campaign.id}<p class="error" role="alert">{error.text}</p>{/if}
@@ -273,12 +223,6 @@
 
   .name.archived {
     color: var(--color-text-muted);
-  }
-
-  .rename {
-    flex: 1;
-    min-width: 0;
-    display: flex;
   }
 
   .confirm {

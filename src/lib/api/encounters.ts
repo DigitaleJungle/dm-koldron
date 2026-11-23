@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { campaigns } from "$lib/stores/campaigns.svelte";
 import type { Picture } from "$lib/api/campaigns";
 
 /** One roster row: a pack's monster and how many; name and source keep it readable when its pack is off. */
@@ -110,7 +111,7 @@ export function endRun(campaign: string, encounter: string): Promise<void> {
   return invoke("end_run", { campaign, encounter });
 }
 
-/** The budget table of the first switched-on pack that has one; empty when none has. */
+/** The budget table of the first of the campaign's packs that has one; empty when none has. */
 export function encounterBudgets(): Promise<Budget[]> {
-  return invoke("encounter_budgets");
+  return invoke("encounter_budgets", { campaign: campaigns.scope });
 }

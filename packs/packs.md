@@ -44,7 +44,7 @@ Extra checks:
 - **`rule-sections`**: `index`, `name` and `desc` (Markdown).
 - **`encounter-budgets`**: XP per character by level, no `index` or `name`: `{ "level": 1, "low": 50, "moderate": 75, "high": 100 }`, with whole numbers and each level once.
 
-Markdown is CommonMark with tables. The reader shows the chapter and section names itself, so a `desc` that starts with a heading repeating the name has that heading left out. Raw HTML is shown as text, and links and images are left out (their text stays).
+Markdown is CommonMark with tables. The reader shows the chapter and section names itself, so a `desc` that starts with a heading repeating the name has that heading left out. Raw HTML is shown as text, and links and images are left out (their text stays), except a **tag**: a link to `koldron:<type>/<pack>/<index>` (each part letters, digits, `_`, `.` or `-`), e.g. `[Fireball](koldron:spells/srd/fireball)`, which opens that entry and shows its summary on hover. A tag to an entry that isn't loaded opens the entry from the first switched-on pack that has its index, or shows that it isn't found.
 
 ## images.json (optional)
 

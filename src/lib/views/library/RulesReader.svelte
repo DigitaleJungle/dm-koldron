@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TagPreview from "$lib/components/TagPreview.svelte";
   import { tick, type Snippet } from "svelte";
   import { page } from "$app/state";
   import { rulesChapter, rulesContents, type Chapter, type ContentsChapter } from "$lib/api/rules";
@@ -132,6 +133,7 @@
       {:else if !chapter}
         <p class="message" role="status">{t.loading}</p>
       {:else}
+        <TagPreview>
         <article class="prose">
           <h1>{chapter.name}</h1>
           {#if chapter.image && currentPack}<PackPicture pack={currentPack} image={chapter.image} />{/if}
@@ -145,6 +147,7 @@
             </section>
           {/each}
         </article>
+        </TagPreview>
       {/if}
     </main>
   </div>

@@ -27,7 +27,7 @@ const names = (list: CatalogRow[]) => list.map((r) => r.name);
 
 describe("sources", () => {
   // Fireball is in the SRD and, bundled into its row, in the PHB too.
-  const phb = { kind: "spells", pack: "phb", source: "Player's Handbook", index: "fireball", name: "Fireball", chapterIndex: null, chapterName: null };
+  const phb = { kind: "spells", pack: "phb", source: "Player's Handbook", index: "fireball", name: "Fireball", chapterIndex: null, chapterName: null, fields: {} };
   // Bless is homebrew, from its own pack.
   const withPhb = rows.map((r) => (r.name === "Fireball" ? { ...r, others: [phb] } : r.name === "Bless" ? { ...r, pack: "home" } : r));
 

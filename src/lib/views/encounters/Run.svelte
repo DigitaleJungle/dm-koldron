@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TagPreview from "$lib/components/TagPreview.svelte";
   // Encounters → Run (docs/Run encounter-html): roll initiative (round 0), then the turn bar, the initiative order,
   // the selected combatant (tracker and stat block), and the DM notes with the encounter log.
   // Every change is saved to the encounter's run file, so a crash loses nothing and reopening resumes the run.
@@ -770,7 +771,7 @@
               <p class="error">{statBlock.error}</p>
             {:else if statBlock.entry}
               <!-- The same stat block as Prepare's details card. -->
-              <div class="prose stat-block"><MonsterBlock loaded={statBlock.entry} /></div>
+              <div class="prose stat-block"><TagPreview><MonsterBlock loaded={statBlock.entry} /></TagPreview></div>
             {:else}
               <p class="muted">{strings.encounters.browser.previewLoading}</p>
             {/if}

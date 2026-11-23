@@ -4,6 +4,7 @@
 
 use crate::commands::campaigns::{self, active_dir};
 use crate::commands::catalog::{also, description_text, KINDS};
+use crate::commands::rules::without_tag_urls;
 use crate::commands::addons::{search_entries, SearchEntry};
 use crate::commands::characters::{self, class_line};
 use crate::commands::packs::{disabled, enabled, loaded};
@@ -68,7 +69,7 @@ pub fn pack_docs(packs: &[&Pack]) -> Vec<Doc> {
         .map(|(pack, kind, entry)| {
             let a = also(pack, kind, entry);
             let hit = Hit { kind: a.kind, pack: a.pack, source: a.source, index: a.index, name: a.name, chapter_index: a.chapter_index, chapter_name: a.chapter_name, campaign: None, detail: None, state: None };
-            Doc { hit, tags: String::new(), body: description_text(entry) }
+            Doc { hit, tags: String::new(), body: without_tag_urls(&description_text(entry)) }
         })
         .filter(|d| d.hit.kind != "rule-sections" || d.hit.chapter_index.is_some())
         .collect()
@@ -166,8 +167,8 @@ fn fts_query(words: &[String]) -> String {
 }
 
 /// The best matches first: names that start with the search, then by relevance with the name counting most.
-/// With a `campaign`, only that campaign's own content and what every campaign shares.
-pub fn search(db: &Connection, query: &str, limit: Option<u32>, campaign: Option<&str>) -> Result<Vec<Hit>, StorageError> {
+/// With a `campaign`, only that campaign's own content and what every campaign shares. Never from the packs in `off`.
+pub fn search(db: &Connection, query: &str, limit: Option<u32>, campaign: Option<&str>, off: &[String]) -> Result<Vec<Hit>, StorageError> {
     let words = words(query);
     if words.is_empty() {
         return Ok(Vec::new());
@@ -176,12 +177,13 @@ pub fn search(db: &Connection, query: &str, limit: Option<u32>, campaign: Option
         .prepare_cached(
             "SELECT kind, pack, source, idx, name, chapter_index, chapter_name, campaign, tags, state FROM docs
              WHERE docs MATCH ?1 AND (?4 IS NULL OR campaign IS NULL OR campaign = ?4)
+               AND pack NOT IN (SELECT value FROM json_each(?5))
              ORDER BY lower(name) LIKE ?2 ESCAPE '\\' DESC, bm25(docs, 10.0, 3.0, 1.0), name LIMIT ?3",
         )
         .map_err(sql_error)?;
     let starts = escape_like(query.trim().to_lowercase()) + "%";
     let rows = select
-        .query_map(params![fts_query(&words), starts, limit.map_or(-1, i64::from), campaign], |r| {
+        .query_map(params![fts_query(&words), starts, limit.map_or(-1, i64::from), campaign, serde_json::to_string(off).map_err(|e| StorageError::Io(e.to_string()))?], |r| {
             Ok(Hit {
                 kind: r.get(0)?,
                 pack: r.get(1)?,
@@ -233,10 +235,17 @@ pub fn warm(app: AppHandle) {
 }
 
 /// `limit`: at most that many results (the dropdown); none for all of them (the search screen).
-/// `campaign`: search only that campaign's content and the packs.
+/// `campaign`: search only that campaign's content and its packs.
 #[tauri::command]
 pub async fn search_all(app: AppHandle, query: String, limit: Option<u32>, campaign: Option<String>) -> Result<Vec<Hit>, StorageError> {
-    blocking(move || with_index(&app, |db| search(db, &query, limit, campaign.as_deref()))).await
+    blocking(move || {
+        let off = match &campaign {
+            Some(id) => campaigns::packs_off(&campaigns::dirs(&app)?, id)?,
+            None => Vec::new(),
+        };
+        with_index(&app, |db| search(db, &query, limit, campaign.as_deref(), &off))
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -263,11 +272,11 @@ mod tests {
         };
         let entries = vec![entry("1", "Tomb of Doom", &["swamp", "undead"], "A crypt."), entry("2", "Coastal Maps", &[], "Swamp encounters.")];
         let db = build(&addon_docs(vec![("shelf".into(), "Shelf".into(), entries)], &HashSet::new())).unwrap();
-        let hit = search(&db, "tomb", None, Some("any-campaign")).unwrap().remove(0);
+        let hit = search(&db, "tomb", None, Some("any-campaign"), &[]).unwrap().remove(0);
         assert_eq!((hit.kind.as_str(), hit.pack.as_str(), hit.source.as_str(), hit.index.as_str()), ("addon:shelf", "shelf", "Shelf", "1"));
         assert_eq!((hit.detail.as_deref(), hit.state.as_deref()), (Some("swamp · undead"), Some("state-1")));
         // A tag counts more than a summary.
-        let swamp: Vec<_> = search(&db, "swamp", None, None).unwrap().into_iter().map(|h| h.index).collect();
+        let swamp: Vec<_> = search(&db, "swamp", None, None, &[]).unwrap().into_iter().map(|h| h.index).collect();
         assert_eq!(swamp, ["1", "2"]);
     }
 
@@ -284,13 +293,13 @@ mod tests {
         };
         let active = HashSet::from(["a".to_string(), "b".to_string()]);
         let db = build(&addon_docs(vec![("lore".into(), "Lore".into(), vec![entry("1", "a"), entry("2", "b"), entry("3", "deleted")])], &active)).unwrap();
-        let ids = |campaign| search(&db, "harbour", None, campaign).unwrap().into_iter().map(|h| (h.index, h.campaign.unwrap_or_default())).collect::<Vec<_>>();
+        let ids = |campaign| search(&db, "harbour", None, campaign, &[]).unwrap().into_iter().map(|h| (h.index, h.campaign.unwrap_or_default())).collect::<Vec<_>>();
         assert_eq!(ids(Some("a")), [("1".to_string(), "a".to_string())]);
         assert_eq!(ids(None).len(), 2, "everything: both active campaigns, not the deleted one");
     }
 
     fn names(db: &Connection, query: &str, limit: Option<u32>) -> Vec<String> {
-        search(db, query, limit, None).unwrap().into_iter().map(|h| h.name).collect()
+        search(db, query, limit, None, &[]).unwrap().into_iter().map(|h| h.name).collect()
     }
 
     #[test]
@@ -311,12 +320,20 @@ mod tests {
     #[test]
     fn rule_sections_carry_their_chapter_and_odd_input_is_harmless() {
         let db = srd_index();
-        let hit = search(&db, "blinded", None, None).unwrap().into_iter().find(|h| h.kind == "rule-sections").unwrap();
+        let hit = search(&db, "blinded", None, None, &[]).unwrap().into_iter().find(|h| h.kind == "rule-sections").unwrap();
         assert!(hit.chapter_index.is_some());
         for query in ["", "  ", "\"", "*", "a AND", "NEAR(", "50%_\\", "-"] {
-            assert!(search(&db, query, Some(8), None).is_ok(), "{query:?}");
+            assert!(search(&db, query, Some(8), None, &[]).is_ok(), "{query:?}");
         }
-        assert!(search(&db, "", None, None).unwrap().is_empty());
+        assert!(search(&db, "", None, None, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_pack_the_campaign_leaves_out_is_not_found() {
+        let db = srd_index();
+        assert!(!search(&db, "fireball", None, Some("c"), &[]).unwrap().is_empty());
+        assert!(search(&db, "fireball", None, Some("c"), &["srd".into()]).unwrap().is_empty());
+        assert!(!search(&db, "fireball", None, Some("c"), &["other".into()]).unwrap().is_empty());
     }
 
     #[test]
@@ -338,12 +355,12 @@ mod tests {
         docs.extend(character_docs(&dirs));
         let db = build(&docs).unwrap();
         for query in ["mir", "lotte", "rogue"] {
-            let hit = search(&db, query, None, Some(&a.id)).unwrap().into_iter().find(|h| h.kind == "characters");
+            let hit = search(&db, query, None, Some(&a.id), &[]).unwrap().into_iter().find(|h| h.kind == "characters");
             let hit = hit.unwrap_or_else(|| panic!("{query}"));
             assert_eq!((hit.name.as_str(), hit.source.as_str(), hit.campaign.as_deref()), ("Mira", "Strahd", Some(a.id.as_str())));
         }
-        let in_b = search(&db, "rogue", None, Some(&b.id)).unwrap();
+        let in_b = search(&db, "rogue", None, Some(&b.id), &[]).unwrap();
         assert!(!in_b.is_empty() && in_b.iter().all(|h| h.kind != "characters"), "packs stay, the other campaign's characters don't");
-        assert!(search(&db, "mira", None, None).unwrap().iter().any(|h| h.kind == "characters"));
+        assert!(search(&db, "mira", None, None, &[]).unwrap().iter().any(|h| h.kind == "characters"));
     }
 }

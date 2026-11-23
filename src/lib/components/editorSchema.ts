@@ -16,8 +16,25 @@ const data = (name: string) => ({
   renderHTML: (attrs: Record<string, string | null>) => (attrs[name] ? { [`data-${name}`]: attrs[name] } : {}),
 });
 
+/** A tag in Markdown (a pack's text): a link to `koldron:<kind>/<pack>/<index>`, as Rust's `render` reads it. */
+const TAG_URL = /^koldron:([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})\/([A-Za-z0-9_.-]{1,100})$/;
+/** Brackets and backslashes in a tag's text, escaped so they can't end its link. */
+const escapeLabel = (label: string) => label.replace(/[\\[\]]/g, (c) => `\\${c}`);
+
 /** A tag: an <a> naming a Catalog entry or a character by data attributes only (richtext.ts gives it its address when shown). */
 const Tag = Mention.extend({
+  // In Markdown a tag is a link to its entry; any other link is kept as its text (a pack's text has no links).
+  markdownTokenName: "link",
+  parseMarkdown: (token, h) => {
+    const m = TAG_URL.exec(typeof token.href === "string" ? token.href : "");
+    // The label from its inline tokens, so escaped brackets come back as they were typed.
+    const label = (token.tokens ?? []).map((t) => t.text ?? "").join("");
+    return m ? { type: "mention", attrs: { kind: m[1], pack: m[2], index: m[3], label } } : h.parseInline(token.tokens ?? []);
+  },
+  renderMarkdown: (node) => {
+    const { kind, pack, index, label } = node.attrs ?? {};
+    return `[${escapeLabel(String(label ?? ""))}](koldron:${kind}/${pack}/${index})`;
+  },
   addAttributes: () => ({
     kind: data("kind"),
     pack: data("pack"),
@@ -40,7 +57,7 @@ const inlineCell = <T extends typeof TableCell | typeof TableHeader>(cell: T) =>
   });
 
 /** The extensions; `extended` adds alignment, `suggestion` is how typing @ offers what to tag (the field's matches).
- *  `markdown`: read and written as Markdown (a pack's text), which has no underline, alignment or tags. */
+ *  `markdown`: read and written as Markdown (a pack's text), which has no underline or alignment; a tag is a link. */
 export function editorExtensions(extended: boolean, suggestion: MentionOptions["suggestion"], markdown = false): AnyExtension[] {
   const kit = { heading: { levels: [2, 3, 4] as (2 | 3 | 4)[] }, code: false, codeBlock: false, strike: false, horizontalRule: false, link: false } as const;
   if (markdown) {
@@ -50,6 +67,7 @@ export function editorExtensions(extended: boolean, suggestion: MentionOptions["
       // A Markdown table cell is one line: text only, no line breaks (they'd be saved as raw <br>, shown as text).
       TableCell.extend({ content: "text*" }),
       TableHeader.extend({ content: "text*" }),
+      Tag.configure({ deleteTriggerWithBackspace: true, renderText: ({ node }) => node.attrs.label, suggestion }),
       Markdown,
     ];
   }

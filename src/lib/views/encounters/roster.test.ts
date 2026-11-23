@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
 import type { Character } from "$lib/api/characters";
 import { blankCharacter } from "$lib/views/characters/characters";
-import { addToRoster, characterLevel, encounterParty, MAX_QUANTITY, rowKeys, rowsByKey, splitRow } from "./roster";
+import { addToRoster, characterLevel, encounterParty, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versions } from "./roster";
 
 const goblin = (pack: string, others: CatalogRow["others"] = []): CatalogRow => ({
   kind: "monsters",
@@ -36,12 +36,20 @@ describe("roster", () => {
     expect(addToRoster(full, goblin("srd"))[0].quantity).toBe(MAX_QUANTITY);
   });
 
-  it("finds a saved row through a bundled duplicate, and nothing for a pack that's off", () => {
-    const also = { kind: "monsters", pack: "extra", source: "Extra", index: "goblin", name: "Goblin", chapterIndex: null, chapterName: null };
+  it("finds every version of a bundled monster with its own XP, and nothing for a pack that's off", () => {
+    const also = { kind: "monsters", pack: "extra", source: "Extra", index: "goblin", name: "Goblin", chapterIndex: null, chapterName: null, fields: { xp: 100 } };
     const rows = rowsByKey([goblin("srd", [also])]);
-    expect(rows.get("srd/goblin")?.pack).toBe("srd");
-    expect(rows.get("extra/goblin")?.pack).toBe("srd");
+    expect(rows.get("srd/goblin")?.fields.xp).toBe(50);
+    expect([rows.get("extra/goblin")?.pack, rows.get("extra/goblin")?.source, rows.get("extra/goblin")?.fields.xp]).toEqual(["extra", "Extra", 100]);
     expect(rows.get("gone/goblin")).toBeUndefined();
+  });
+
+  it("lists a row's own entry first, then each bundled version, which adds as its own roster row", () => {
+    const also = { kind: "monsters", pack: "extra", source: "Extra", index: "goblin", name: "Goblin", chapterIndex: null, chapterName: null, fields: { xp: 100 } };
+    const [own, other] = versions(goblin("srd", [also]));
+    expect([own.pack, other.pack, other.others]).toEqual(["srd", "extra", []]);
+    expect(versions(goblin("srd"))).toHaveLength(1);
+    expect(addToRoster(addToRoster([], own), other).map((r) => r.pack)).toEqual(["srd", "extra"]);
   });
 
   it("sums class levels and flags missing ones", () => {

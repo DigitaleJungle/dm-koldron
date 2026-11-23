@@ -3,6 +3,9 @@
   // tag shows the entry's facts and text under it; leaving it (and the card) or Escape hides it. The pointer can move
   // into the card to scroll it. Previews are loaded once per tag.
   import type { Snippet } from "svelte";
+  import { goto } from "$app/navigation";
+  import { tagAddress } from "$lib/components/richtext";
+  import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
   import { loadPreview, type Preview } from "$lib/views/search/preview";
@@ -20,6 +23,17 @@
   const cache = new Map<string, Promise<Preview>>();
 
   const tagOf = (target: EventTarget | null) => (target instanceof Element ? target.closest<HTMLAnchorElement>("a[data-kind]") : null);
+
+  // A tag in a pack's text links to `/tag/<kind>/<pack>/<index>` (Rust's `render` can't know which Library is open):
+  // open the entry in the Library worked in. A note's tag already has its own address.
+  function openTag(event: MouseEvent) {
+    const a = tagOf(event.target);
+    if (!a?.getAttribute("href")?.startsWith("/tag/")) return;
+    event.preventDefault();
+    const { kind = "", pack = "", index = "" } = a.dataset;
+    hide(true);
+    goto(tagAddress({ kind, pack, index, campaign: null }, libraryHome()));
+  }
 
   function show(a: HTMLAnchorElement) {
     clearTimeout(timer);
@@ -69,7 +83,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && shown && hide(true)} onscrollcapture={(e) => shown && !card?.contains(e.target as Node) && hide(true)} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions: the tags inside are links; this only watches them -->
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events: the tags inside are links (Enter clicks them too); this only watches them -->
 <div
   class="tagged"
   onmouseover={(e) => {
@@ -82,13 +96,14 @@
     if (a) show(a);
   }}
   onfocusout={() => hide(true)}
+  onclick={openTag}
 >
   {@render children()}
 </div>
 
 {#if shown}
-  <!-- svelte-ignore a11y_no_static_element_interactions: hovering keeps it open, nothing to press -->
-  <div bind:this={card} id="{id}-card" popover="manual" class="preview-card" role="tooltip" onmouseenter={() => clearTimeout(timer)} onmouseleave={() => hide()}>
+  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions: hovering keeps it open; a click only opens a tag link inside (Enter clicks it too) -->
+  <div bind:this={card} id="{id}-card" popover="manual" class="preview-card" role="tooltip" onmouseenter={() => clearTimeout(timer)} onmouseleave={() => hide()} onclick={openTag}>
     <header>
       <h3>{shown.name}</h3>
       <p class="muted">{[kindLabel(shown.kind), shown.preview?.source].filter(Boolean).join(" · ")}</p>
@@ -112,6 +127,11 @@
 {/if}
 
 <style>
+  /* Only watches the tags inside: it never changes the layout of what it wraps. */
+  .tagged {
+    display: contents;
+  }
+
   header {
     padding: var(--space-2) var(--space-4);
     border-bottom: var(--border-width) solid var(--color-border);

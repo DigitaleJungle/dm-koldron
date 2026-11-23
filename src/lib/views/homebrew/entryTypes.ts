@@ -93,6 +93,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "bonus_actions", label: e.bonusActions, input: "actions" },
       { key: "reactions", label: e.reactions, input: "actions" },
       { key: "legendary_actions", label: e.legendaryActions, input: "actions" },
+      { key: "description", label: h.description, input: "markdown" },
     ],
   },
   {

@@ -36,6 +36,9 @@ pub struct Campaign {
     /// The party band's name on the Characters screen; none shows "<campaign name>'s party".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub party_name: Option<String>,
+    /// Pack ids this campaign leaves out of the packs switched on in Settings → Rules; a pack added later is in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packs_off: Vec<String>,
     /// The picture on its tile on the Start screen; filled in when read, never saved.
     #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub picture: Option<Picture>,
@@ -164,7 +167,7 @@ pub fn create(dirs: &Dirs, name: &str, now: u64) -> Result<Campaign, StorageErro
         n += 1;
         id = format!("{base}-{n}");
     }
-    let campaign = Campaign { id: id.clone(), name, created_at: now, last_opened_at: now, party_name: None, picture: None };
+    let campaign = Campaign { id: id.clone(), name, created_at: now, last_opened_at: now, party_name: None, packs_off: Vec::new(), picture: None };
     write_atomic(&dirs.active.join(&id).join(FILE_NAME), &to_json(&campaign)?)?;
     Ok(campaign)
 }
@@ -205,6 +208,27 @@ pub fn rename_party(dirs: &Dirs, id: &str, name: &str) -> Result<Campaign, Stora
         c.party_name = (!name.is_empty()).then(|| name.to_string());
         Ok(())
     })
+}
+
+/// Sets the packs an active campaign leaves out. Ids of packs that aren't loaded are kept: the pack may come back.
+pub fn set_packs_off(dirs: &Dirs, id: &str, packs_off: Vec<String>) -> Result<Campaign, StorageError> {
+    if packs_off.iter().any(|p| p.is_empty() || p.len() > 200) {
+        return Err(StorageError::Invalid("That isn't a pack.".into()));
+    }
+    edit(dirs, id, |c| {
+        c.packs_off = packs_off;
+        Ok(())
+    })
+}
+
+/// The packs a campaign (active or archived) leaves out.
+pub fn packs_off(dirs: &Dirs, id: &str) -> Result<Vec<String>, StorageError> {
+    check_id(id, "campaign")?;
+    match read(&dirs.active.join(id)) {
+        Err(StorageError::NotFound(_)) => read(&dirs.archived.join(id)),
+        found => found,
+    }
+    .map(|c| c.packs_off)
 }
 
 /// Moves a campaign folder between the active and archived folders. A rename is atomic on one disk.
@@ -309,6 +333,12 @@ pub async fn set_party_name(app: AppHandle, id: String, name: String) -> Result<
 }
 
 #[tauri::command]
+pub async fn set_campaign_packs(app: AppHandle, id: String, packs_off: Vec<String>) -> Result<Campaign, StorageError> {
+    let dirs = dirs(&app)?;
+    blocking(move || set_packs_off(&dirs, &id, packs_off)).await
+}
+
+#[tauri::command]
 pub async fn archive_campaign(app: AppHandle, id: String) -> Result<(), StorageError> {
     let dirs = dirs(&app)?;
     blocking(move || archive(&dirs, &id).inspect(|_| search::changed())).await
@@ -365,6 +395,18 @@ mod tests {
 
         assert_eq!(open(&dirs, &a.id, 3_000).unwrap().last_opened_at, 3_000);
         assert_eq!(list(&dirs).unwrap().campaigns[0].id, a.id);
+    }
+
+    #[test]
+    fn a_campaign_keeps_the_packs_it_leaves_out_also_once_archived() {
+        let dirs = temp_dirs("packs-off");
+        let c = create(&dirs, "Thornwood", 1).unwrap();
+        assert!(packs_off(&dirs, &c.id).unwrap().is_empty(), "a new campaign uses every pack");
+        assert_eq!(set_packs_off(&dirs, &c.id, vec!["srd".into()]).unwrap().packs_off, vec!["srd"]);
+        archive(&dirs, &c.id).unwrap();
+        assert_eq!(packs_off(&dirs, &c.id).unwrap(), vec!["srd"]);
+        assert!(matches!(set_packs_off(&dirs, &c.id, vec![]), Err(StorageError::NotFound(_))), "an archived campaign is read-only");
+        assert!(matches!(packs_off(&dirs, "nope"), Err(StorageError::NotFound(_))));
     }
 
     #[test]

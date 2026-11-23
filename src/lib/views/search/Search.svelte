@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TagPreview from "$lib/components/TagPreview.svelte";
   // The search screen: every result for ?q=, grouped by type, with type chips (?type=) and a preview pane.
   import { untrack } from "svelte";
   import { afterNavigate, goto } from "$app/navigation";
@@ -71,7 +72,9 @@
     if (hit && !hit.kind.startsWith("addon:")) load(hit).then((p) => current() && (preview = p), (e) => current() && (previewError = errorMessage(e)));
   });
 
-  const load = async (hit: SearchHit): Promise<Preview> => ({ ...(await loadPreview(hit)), label: hitMeta(hit) });
+  // A result from a pack the campaign leaves out (found with Search everything) is read, and opens, outside it.
+  const outside = (hit: SearchHit) => !!campaigns.list?.campaigns.find((c) => c.id === campaigns.scope)?.packsOff?.includes(hit.pack);
+  const load = async (hit: SearchHit): Promise<Preview> => ({ ...(await loadPreview(hit, outside(hit) ? null : campaigns.scope)), label: hitMeta(hit) });
 
   // An addon's result whose addon has a preview page shows that page, told which entry (`{ id, state }`).
   loadAddons();
@@ -164,7 +167,7 @@
         <aside class="preview" aria-label={selected.name}>
           <header>
             <h2>{selected.name}</h2>
-            <a class="btn" href={hitAddress(selected, libraryHome())}>{strings.preview.open}</a>
+            <a class="btn" href={hitAddress(selected, outside(selected) ? "/library" : libraryHome())}>{strings.preview.open}</a>
           </header>
           <div class="body prose">
             {#if previewAddon}
@@ -191,7 +194,7 @@
                 </dl>
               {/if}
               <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
-              {@html preview.html}
+              <TagPreview>{@html preview.html}</TagPreview>
             {/if}
           </div>
         </aside>

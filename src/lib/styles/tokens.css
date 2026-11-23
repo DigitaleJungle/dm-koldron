@@ -136,6 +136,7 @@
   --icon-size-lg: 24px;
   --drawer-width: min(280px, 85vw);
   --settings-width: 960px;
+  --campaign-dialog-width: 480px;
   --settings-height: 720px;
   --settings-side-width: 200px;
   --settings-list-height: 320px;

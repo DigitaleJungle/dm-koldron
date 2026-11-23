@@ -7,7 +7,8 @@
   // of the table's actions (rows, columns, header row and column, merging or splitting cells). Typing @ tags a Catalog
   // entry or one of the campaign's characters: a list of matches follows the text after the @ (arrow keys and Enter or Tab pick one, Escape closes it), and the pick becomes a tag that opens it when
   // shown. A tag is one piece: Backspace removes it whole. `markdown` (with `extended`): `value` is Markdown (a pack's
-  // text), without underline, alignment or tags, which Markdown can't hold.
+  // text), without underline or alignment, which Markdown can't hold; its tags are Catalog entries only (a pack can't
+  // name a campaign's character), stored as links to them.
   import { onDestroy, onMount } from "svelte";
   import "$lib/styles/prose.css"; // the note's look (.prose.notes) wherever the field is, not only where a screen loads it
   import Menu, { type MenuItem } from "./Menu.svelte";
@@ -123,7 +124,7 @@
     if (!query.trim()) return void ([hits, hitsFor, searchError] = [[], query, null]);
     try {
       // The campaign's characters and every switched-on pack; rule sections aren't things to tag.
-      const found = (await searchAll(query, 12, campaigns.scope ?? undefined)).filter((h) => h.kind !== "rule-sections").slice(0, 8);
+      const found = (await searchAll(query, 12, campaigns.scope ?? undefined)).filter((h) => h.kind !== "rule-sections" && (!markdown || (h.kind !== "characters" && !h.kind.startsWith("addon:")))).slice(0, 8);
       if (mine === asked) [hits, hitsFor, searchError, current] = [found, query, null, 0];
     } catch (e) {
       if (mine === asked) [hits, hitsFor, searchError] = [[], query, errorMessage(e)];

@@ -1,6 +1,6 @@
 //! Library → Rules: the contents (chapters and their sections from the switched-on packs) and one chapter as HTML.
 
-use crate::commands::packs::{disabled, enabled, loaded};
+use crate::commands::packs::{disabled_in, enabled, loaded};
 use crate::packs::Pack;
 use crate::storage::{blocking, StorageError};
 use pulldown_cmark::{html, Event, Options, Parser, Tag, TagEnd};
@@ -113,13 +113,49 @@ pub fn section(packs: &[&Pack], pack: &str, index: &str) -> Result<Section, Stor
     Ok(Section { index: index.into(), name: field(s, "name").into(), html: render(field(s, "desc"), field(s, "name")), image: image(s) })
 }
 
+/// A tag in a pack's text: a link to `koldron:<kind>/<pack>/<index>` (each part letters, digits, `_`, `.` or `-`).
+pub const TAG_SCHEME: &str = "koldron:";
+
+/// A tag link's kind, pack and index, or none when `url` isn't a valid tag.
+pub fn tag_parts(url: &str) -> Option<[&str; 3]> {
+    let safe = |p: &str| (1..=100).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
+    let mut parts = url.strip_prefix(TAG_SCHEME)?.split('/');
+    let found = [parts.next()?, parts.next()?, parts.next()?];
+    (parts.next().is_none() && found.iter().all(|p| safe(p))).then_some(found)
+}
+
+/// The text with each tag's address left out (`[Fireball](koldron:…)` → `[Fireball]`), for the search index.
+pub fn without_tag_urls(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("](koldron:") {
+        let Some(end) = rest[at..].find(')') else { break };
+        out.push_str(&rest[..=at]);
+        rest = &rest[at + end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Markdown to HTML. Raw HTML in a pack's text is shown as text, and links and images are left out (keeping their
-/// text), so nothing from a pack can run or load in the window. A leading heading that repeats `name` is dropped:
-/// the reader shows the name itself.
+/// text), so nothing from a pack can run or load in the window; only a tag (`TAG_SCHEME`) stays a link, to
+/// `/tag/…`, which `TagPreview.svelte` opens in the Library worked in. A leading heading that repeats `name` is dropped: the reader shows the
+/// name itself.
 pub fn render(markdown: &str, name: &str) -> String {
-    let parser = Parser::new_ext(without_title(markdown, name), Options::ENABLE_TABLES).filter_map(|event| match event {
+    let mut in_tag = false; // links don't nest, so one flag says whether a link's end closes a tag
+    let parser = Parser::new_ext(without_title(markdown, name), Options::ENABLE_TABLES).filter_map(move |event| match event {
         Event::Html(text) | Event::InlineHtml(text) => Some(Event::Text(text)),
-        Event::Start(Tag::Link { .. } | Tag::Image { .. } | Tag::HtmlBlock) => None,
+        Event::Start(Tag::Link { dest_url, .. }) => {
+            let [kind, pack, index] = tag_parts(&dest_url)?;
+            in_tag = true;
+            // The parts are checked to be safe characters only, so they need no escaping.
+            Some(Event::InlineHtml(format!(r#"<a href="/tag/{kind}/{pack}/{index}" data-kind="{kind}" data-pack="{pack}" data-index="{index}">"#).into()))
+        }
+        Event::End(TagEnd::Link) if in_tag => {
+            in_tag = false;
+            Some(Event::InlineHtml("</a>".into()))
+        }
+        Event::Start(Tag::Image { .. } | Tag::HtmlBlock) => None,
         Event::End(TagEnd::Link | TagEnd::Image | TagEnd::HtmlBlock) => None,
         other => Some(other),
     });
@@ -137,18 +173,18 @@ fn without_title<'a>(markdown: &'a str, name: &str) -> &'a str {
 }
 
 #[tauri::command]
-pub async fn rules_contents(app: AppHandle) -> Result<Vec<ContentsChapter>, StorageError> {
-    blocking(move || Ok(contents(&enabled(&loaded(&app)?.0, &disabled(&app)?)))).await
+pub async fn rules_contents(app: AppHandle, campaign: Option<String>) -> Result<Vec<ContentsChapter>, StorageError> {
+    blocking(move || Ok(contents(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?)))).await
 }
 
 #[tauri::command]
-pub async fn rules_chapter(app: AppHandle, pack: String, index: String) -> Result<Chapter, StorageError> {
-    blocking(move || chapter(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index)).await
+pub async fn rules_chapter(app: AppHandle, pack: String, index: String, campaign: Option<String>) -> Result<Chapter, StorageError> {
+    blocking(move || chapter(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?), &pack, &index)).await
 }
 
 #[tauri::command]
-pub async fn rules_section(app: AppHandle, pack: String, index: String) -> Result<Section, StorageError> {
-    blocking(move || section(&enabled(&loaded(&app)?.0, &disabled(&app)?), &pack, &index)).await
+pub async fn rules_section(app: AppHandle, pack: String, index: String, campaign: Option<String>) -> Result<Section, StorageError> {
+    blocking(move || section(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?), &pack, &index)).await
 }
 
 #[cfg(test)]
@@ -170,6 +206,19 @@ mod tests {
     #[test]
     fn drops_only_a_leading_heading_that_repeats_the_name() {
         assert_eq!(render("## D20 Tests\n\nText.", "D20 Tests"), "<p>Text.</p>\n");
+    }
+
+    #[test]
+    fn a_tag_stays_a_link_to_the_entry_and_nothing_else_does() {
+        let html = render("Cast [Fireball](koldron:spells/srd/fireball) or [run](https://e) [bad](koldron:spells/srd/a%22b) [x](koldron:a/b)", "");
+        assert_eq!(
+            html,
+            "<p>Cast <a href=\"/tag/spells/srd/fireball\" data-kind=\"spells\" data-pack=\"srd\" data-index=\"fireball\">Fireball</a> or run bad x</p>\n"
+        );
+        assert_eq!(tag_parts("koldron:monsters/my-book/goblin.2"), Some(["monsters", "my-book", "goblin.2"]));
+        assert_eq!(tag_parts("koldron:a/b/c/d"), None);
+        assert_eq!(tag_parts("koldron:a//c"), None);
+        assert_eq!(without_tag_urls("See [Fireball](koldron:spells/srd/fireball), [x](https://e)."), "See [Fireball], [x](https://e).");
         assert_eq!(render("# Playing the Game", "Playing the Game"), "");
         assert!(render("## Other\n\nText.", "D20 Tests").contains("<h2>Other</h2>"));
         assert!(render("D20 Tests\n\nText.", "D20 Tests").contains("<p>D20 Tests</p>"));

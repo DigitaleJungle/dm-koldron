@@ -14,7 +14,7 @@
   import SearchBar from "$lib/components/SearchBar.svelte";
   import SettingsButton from "$lib/components/SettingsButton.svelte";
   import { addons, campaignScreenShown, loadAddons } from "$lib/stores/addons.svelte";
-  import { campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
+  import { campaignDialog, campaigns, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { header } from "$lib/stores/header.svelte";
   import { strings } from "$lib/strings";
   import { moveTo, ordered } from "./sidebarOrder";
@@ -77,12 +77,16 @@
 
   function onkeydown(event: KeyboardEvent) {
     // While Settings is open, Escape belongs to it.
-    if (drawerOpen && !settingsOpen && event.key === "Escape") closeDrawer();
+    if (drawerOpen && !settingsOpen && !campaignDialog.id && event.key === "Escape") closeDrawer();
   }
 
   // Until the list loads, the switcher offers the open campaign only.
   const switchItems = $derived(
-    (campaigns.list?.campaigns ?? [campaign]).map((c) => ({ label: c.name, current: c.id === campaign.id, onselect: () => goto(`/campaign/${c.id}`) })),
+    (campaigns.list?.campaigns ?? [campaign]).map((c) => ({
+      label: c.name,
+      current: c.id === campaign.id,
+      onselect: () => goto(`/campaign/${c.id}`),
+    })),
   );
 
   const base = $derived(`/campaign/${campaign.id}`);
@@ -147,12 +151,14 @@
     <div class="switcher">
       <Menu id="campaign-switcher" label={t.switchCampaign(campaign.name)} items={switchItems} align="start" triggerClass="switch">
         {#snippet trigger()}
-          <!-- In the icon strip only the first letter shows; the menu's label names the campaign. -->
-          <span class="letter" aria-hidden="true">{campaign.name.charAt(0).toUpperCase()}</span>
           <span class="text">{campaign.name}</span>
           <i class="ti ti-selector chevron" aria-hidden="true"></i>
         {/snippet}
       </Menu>
+      <!-- Over the switcher's box, left of its arrows: a button can't sit inside the switcher's own button. -->
+      <button class="icon-btn campaign-settings" aria-label={strings.campaignSettings.open(campaign.name)} onclick={() => (campaignDialog.id = campaign.id)}>
+        <i class="ti ti-settings" aria-hidden="true"></i>
+      </button>
     </div>
 
     <!-- The sidebar's items, between the switcher and the buttons at the bottom: a layout container only. -->
@@ -253,9 +259,18 @@
   }
 
   .switcher {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-1);
+  }
+
+  /* The campaign's settings, inside the switcher's box just left of its arrows (the name keeps room for it). */
+  .campaign-settings {
+    position: absolute;
+    top: 50%;
+    right: calc(var(--space-2) + 1em + var(--space-1)); /* the arrows are 1em wide */
+    transform: translateY(-50%);
   }
 
   .switcher :global(.menu-root) {
@@ -280,11 +295,9 @@
     cursor: pointer;
   }
 
-  .switcher .letter {
-    display: none;
-  }
-
   .switcher .text {
+    flex: 1;
+    margin-right: var(--control-height-sm); /* room for the settings cog, between the name and the arrows */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -370,47 +383,18 @@
     justify-content: space-between;
   }
 
-  /* The icon strip: icons only, the switcher as the campaign's first letter and its arrows. The strip doesn't
-     scroll, so the switcher's list can reach out over the screen instead of being cut at its edge. */
+  /* The icon strip: icons only, without the campaign switcher. */
   .collapsed aside {
-    position: relative;
-    z-index: var(--z-menu); /* above the screen, for the switcher's list */
     align-items: center;
-    overflow: visible;
   }
 
   .collapsed .text {
     display: none;
   }
 
-  /* The letter as an accent avatar, the arrows small and muted beside it; no box around them. */
-  .collapsed .switcher .letter {
-    display: grid;
-    place-items: center;
-    width: var(--control-height-sm);
-    height: var(--control-height-sm);
-    border-radius: var(--radius-md);
-    background: var(--color-accent);
-    color: var(--color-accent-text);
-    font-weight: var(--weight-bold);
-  }
-
-  .collapsed .switcher :global(.switch) {
-    justify-content: center;
-    gap: 2px;
-    width: auto;
-    padding: 0 var(--space-1);
-    border-color: transparent;
-    background: none;
-  }
-
-  .collapsed .switcher :global(.switch:hover) {
-    background: var(--color-surface-sunken);
-  }
-
-  .collapsed .switcher .chevron {
-    color: var(--color-text-muted);
-    font-size: var(--text-sm);
+  /* No campaign switching from the icon strip: the switcher shows with the sidebar (or the drawer) open. */
+  .collapsed .switcher {
+    display: none;
   }
 
   .collapsed nav a {
@@ -501,22 +485,8 @@
       display: revert;
     }
 
-    .collapsed .switcher .letter {
-      display: none;
-    }
-
-    .collapsed .switcher :global(.switch) {
-      justify-content: space-between;
-      gap: var(--space-2);
-      width: 100%;
-      padding: 0 var(--space-2) 0 var(--space-3);
-      border-color: var(--color-border-strong);
-      background: var(--color-surface);
-    }
-
-    .collapsed .switcher .chevron {
-      color: inherit;
-      font-size: inherit;
+    .collapsed .switcher {
+      display: flex;
     }
 
     /* A drawer here, collapsed or not: it keeps its place, layer and scrolling. */

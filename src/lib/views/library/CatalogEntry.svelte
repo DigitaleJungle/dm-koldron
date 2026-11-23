@@ -1,4 +1,5 @@
 <script lang="ts">
+  import TagPreview from "$lib/components/TagPreview.svelte";
   import { goto } from "$app/navigation";
   import { catalogEntry, type CatalogEntry } from "$lib/api/catalog";
   import Menu from "$lib/components/Menu.svelte";
@@ -76,6 +77,7 @@
   {:else if !loaded}
     <p class="message" role="status">{t.loading}</p>
   {:else}
+    <TagPreview>
     <article class="prose">
       <!-- Its picture, when its pack's images are on (Settings → Rules); none offline before it was downloaded. -->
       {#if typeof loaded.entry.image === "string"}
@@ -121,10 +123,11 @@
             {/each}
           </dl>
         {/if}
-        <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed. -->
+        <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed (a tag stays a link). -->
         {@html loaded.html}
       {/if}
     </article>
+    </TagPreview>
   {/if}
 </div>
 

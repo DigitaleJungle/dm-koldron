@@ -41,17 +41,17 @@ export function addToRoster(roster: RosterEntry[], monster: CatalogRow): RosterE
     : [...roster, { pack: monster.pack, index: monster.index, name: monster.name, source: monster.source, quantity: 1 }];
 }
 
+/** A browser row's versions: its own entry, then the same monster in each other pack it bundles, with its own fields. */
+export function versions(row: CatalogRow): CatalogRow[] {
+  return [row, ...row.others.map((o) => ({ ...row, pack: o.pack, source: o.source, index: o.index, name: o.name, fields: o.fields, others: [] }))];
+}
+
 /**
- * The browser's rows by entry key, also under the keys of the packs a row bundles (the same monster in another pack),
- * so a saved row finds its CR and XP. A row whose pack is off finds nothing: its XP shows as unknown.
+ * Every version of the browser's rows by entry key (the same monster in another pack is its own version), so a saved
+ * row finds its CR and XP. A row whose pack is off finds nothing: its XP shows as unknown.
  */
 export function rowsByKey(rows: CatalogRow[]): Map<string, CatalogRow> {
-  const map = new Map<string, CatalogRow>();
-  for (const row of rows) {
-    map.set(entryKey(row), row);
-    for (const other of row.others) map.set(entryKey(other), row);
-  }
-  return map;
+  return new Map(rows.flatMap(versions).map((v) => [entryKey(v), v]));
 }
 
 /**

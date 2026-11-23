@@ -1,7 +1,7 @@
 //! Library → Catalog: the entries of one category from the switched-on packs, and one entry with its text as HTML.
 //! Which columns a category shows is up to the frontend; this only hands out the fields it asks for.
 
-use crate::commands::packs::{disabled, enabled, loaded, Loaded};
+use crate::commands::packs::{disabled_in, enabled, loaded, Loaded};
 use crate::commands::rules::render;
 use crate::bundles::{groups, norm};
 use crate::packs::Pack;
@@ -27,7 +27,15 @@ pub struct CatalogRow {
     /// Only the requested fields the entry has.
     pub fields: Map<String, Value>,
     /// The same entry in other packs (same name, at least 80% the same text), shown as this one row.
-    pub others: Vec<Also>,
+    pub others: Vec<Other>,
+}
+
+/// A bundled entry of another pack, with its own requested fields (a book's monster may have another CR or XP).
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Other {
+    #[serde(flatten)]
+    pub also: Also,
+    pub fields: Map<String, Value>,
 }
 
 /// Another place with the same rule: a Catalog entry, or a rule section (then with its chapter, to open it in Rules).
@@ -123,9 +131,10 @@ fn rows_with(packs: &[&Pack], kind: &str, fields: &[String], keeper: &[usize]) -
     if keeper.len() != all.len() {
         return Err(StorageError::Invalid("The bundled entries don't match the packs.".into()));
     }
-    let mut others: HashMap<usize, Vec<Also>> = HashMap::new();
+    let pick = |entry: &Map<String, Value>| fields.iter().filter_map(|f| entry.get(f).map(|v| (f.clone(), v.clone()))).collect();
+    let mut others: HashMap<usize, Vec<Other>> = HashMap::new();
     for (i, &k) in keeper.iter().enumerate().filter(|(i, k)| *i != **k) {
-        others.entry(k).or_default().push(also(all[i].0, kind, all[i].1));
+        others.entry(k).or_default().push(Other { also: also(all[i].0, kind, all[i].1), fields: pick(all[i].1) });
     }
     Ok(all
         .iter()
@@ -137,7 +146,7 @@ fn rows_with(packs: &[&Pack], kind: &str, fields: &[String], keeper: &[usize]) -
             source: pack.manifest.name.clone(),
             index: text(entry, "index").into(),
             name: text(entry, "name").into(),
-            fields: fields.iter().filter_map(|f| entry.get(f).map(|v| (f.clone(), v.clone()))).collect(),
+            fields: pick(entry),
             others: others.remove(&i).unwrap_or_default(),
         })
         .collect())
@@ -348,11 +357,11 @@ fn paragraphs(text: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn catalog_rows(app: AppHandle, kind: String, fields: Vec<String>) -> Result<Vec<CatalogRow>, StorageError> {
+pub async fn catalog_rows(app: AppHandle, kind: String, fields: Vec<String>, campaign: Option<String>) -> Result<Vec<CatalogRow>, StorageError> {
     blocking(move || {
         check_kind(&kind)?;
         let loaded = loaded(&app)?;
-        let packs = enabled(&loaded.0, &disabled(&app)?);
+        let packs = enabled(&loaded.0, &disabled_in(&app, campaign.as_deref())?);
         let ids: Vec<String> = packs.iter().map(|p| p.manifest.id.clone()).collect();
         let keeper = cached_keepers(&KEEPERS, &loaded, &kind, ids, || keepers(&packs, &kind));
         rows_with(&packs, &kind, &fields, &keeper)
@@ -379,8 +388,8 @@ fn cached_keepers(cache: &KeeperCache, loaded: &Arc<Loaded>, kind: &str, ids: Ve
 }
 
 #[tauri::command]
-pub async fn catalog_entry(app: AppHandle, kind: String, pack: String, index: String) -> Result<CatalogEntry, StorageError> {
-    blocking(move || entry(&enabled(&loaded(&app)?.0, &disabled(&app)?), &kind, &pack, &index)).await
+pub async fn catalog_entry(app: AppHandle, kind: String, pack: String, index: String, campaign: Option<String>) -> Result<CatalogEntry, StorageError> {
+    blocking(move || entry(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?), &kind, &pack, &index)).await
 }
 
 #[cfg(test)]
@@ -478,7 +487,10 @@ mod tests {
         let packs = load_dir(&dir).unwrap().0;
         let list = rows(&packs.iter().collect::<Vec<_>>(), "conditions", &[]).unwrap();
         assert_eq!(list.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Blinded", "a", "b"]);
-        assert_eq!(list[0].others.iter().map(|o| o.source.as_str()).collect::<Vec<_>>(), ["B"]);
+        assert_eq!(list[0].others.iter().map(|o| o.also.source.as_str()).collect::<Vec<_>>(), ["B"]);
+        // Each bundled entry brings its own fields.
+        let with = rows(&packs.iter().collect::<Vec<_>>(), "conditions", &["description".into()]).unwrap();
+        assert_eq!(with[0].others[0].fields["description"], "You see nothing at all in the dark, really.");
 
         // A reference to an entry its pack doesn't have opens it from the pack that does.
         let on: Vec<_> = packs.iter().collect();

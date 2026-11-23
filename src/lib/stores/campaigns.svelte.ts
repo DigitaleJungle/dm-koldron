@@ -14,6 +14,9 @@ export const campaigns = $state({
   scope: null as string | null,
 });
 
+/** The campaign whose settings dialog is open (from the switcher, its Start tile or Settings → Campaigns), if any. */
+export const campaignDialog = $state({ id: null as string | null });
+
 /** The Library to open pack content in: the campaign's own while working in one (inside its screens), else the one
  * outside any campaign. */
 export const libraryHome = () => (campaigns.scope ? `/campaign/${campaigns.scope}/library` : "/library");
@@ -43,6 +46,12 @@ export async function renameCampaign(id: string, name: string) {
 
 export async function setPartyName(id: string, name: string) {
   const updated = await api.setPartyName(id, name);
+  if (campaigns.current?.id === id) campaigns.current = updated;
+  await refreshCampaigns();
+}
+
+export async function setCampaignPacks(id: string, packsOff: string[]) {
+  const updated = await api.setCampaignPacks(id, packsOff);
   if (campaigns.current?.id === id) campaigns.current = updated;
   await refreshCampaigns();
 }

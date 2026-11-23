@@ -59,7 +59,7 @@
     if (!from || !kind || copied?.from === `${kind.id}:${from}`) return;
     const key = `${kind.id}:${from}`;
     const [pack, ...index] = from.split("/");
-    catalogEntry(kind.id, pack, index.join("/"))
+    catalogEntry(kind.id, pack, index.join("/"), null)
       .then((loaded) => (copied = { from: key, entry: copyDraft(kind, loaded) }))
       .catch((e) => (error = t.loadError(errorMessage(e))));
   });

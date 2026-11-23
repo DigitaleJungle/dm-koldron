@@ -154,8 +154,6 @@ export const strings = {
 
   campaignSettings: {
     actionsFor: (name: string) => `Actions for ${name}`,
-    rename: "Rename",
-    renameLabel: "Campaign name",
     cancel: "Cancel",
     pictureFilter: "Pictures",
     choosePicture: "Choose picture",
@@ -174,6 +172,14 @@ export const strings = {
     archiveError: (name: string, reason: string) => `Couldn't archive ${name}. ${reason}`,
     restoreError: (name: string, reason: string) => `Couldn't restore ${name}. ${reason}`,
     deleteError: (name: string, reason: string) => `Couldn't delete ${name}. ${reason}`,
+    open: (name: string) => `Settings for ${name}`,
+    close: "Close campaign settings",
+    name: "Name",
+    picture: "Picture",
+    rules: "Rules",
+    noRules: "No rules switched on in Settings.",
+    rulesError: (reason: string) => `Couldn't load the rules. ${reason}`,
+    packsError: (reason: string) => `Couldn't save the rules. ${reason}`,
   },
 
   library: {
@@ -490,6 +496,7 @@ export const strings = {
       sortBy: (column: string) => `Sort by ${column}`,
       add: "Add",
       addLabel: (name: string, source: string) => `Add ${name} (${source})`,
+      versions: (name: string) => `Versions of ${name}`,
       preview: (name: string) => `${name} stat block`,
       previewLoading: "Loading…",
     },
@@ -928,6 +935,7 @@ export const strings = {
   },
 
   entry: {
+    description: "Description",
     alsoIn: "Also in",
     feat: "Feat",
     cantrip: (school: string) => `${school} Cantrip`,

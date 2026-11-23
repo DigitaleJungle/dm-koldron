@@ -8,7 +8,7 @@
   import { addons, loadAddons } from "$lib/stores/addons.svelte";
   import { pictureSrc } from "$lib/api/campaigns";
   import { errorMessage } from "$lib/api/storage";
-  import { campaigns, createCampaign, refreshCampaigns } from "$lib/stores/campaigns.svelte";
+  import { campaignDialog, campaigns, createCampaign, refreshCampaigns } from "$lib/stores/campaigns.svelte";
   import { reduceMotion } from "$lib/stores/theme.svelte";
   import { strings } from "$lib/strings";
   import { campaignScreenAddress, libraryTabAddress } from "$lib/views/search/search";
@@ -151,6 +151,9 @@
                     <span class="when">{t.lastOpened(formatDate.format(campaign.lastOpenedAt))}</span>
                   </span>
                 </a>
+                <button class="icon-btn tile-settings" aria-label={strings.campaignSettings.open(campaign.name)} onclick={() => (campaignDialog.id = campaign.id)}>
+                  <i class="ti ti-settings" aria-hidden="true"></i>
+                </button>
               </li>
             {/each}
           </ul>
@@ -328,6 +331,29 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(var(--tile-min-width), 1fr));
     gap: var(--space-4);
+  }
+
+  .campaigns li {
+    position: relative;
+  }
+
+  /* The campaign's settings, in the tile's corner on hover or focus. */
+  .tile-settings {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    background: var(--color-surface);
+    opacity: 0;
+    transition: opacity var(--duration-hover) var(--ease-hover);
+  }
+
+  .campaigns li:hover .tile-settings,
+  .campaigns li:focus-within .tile-settings {
+    opacity: 1;
+  }
+
+  :global([data-motion="reduce"]) .tile-settings {
+    transition: none;
   }
 
   /* A 16:9 tile; with a picture, its name and date show over it on hover or focus. Without one they always show. */

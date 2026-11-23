@@ -14,6 +14,7 @@
   import { strings } from "$lib/strings";
   import { crText } from "$lib/views/library/catalog";
   import { MAX_NUMBER } from "./run";
+  import { versions } from "./roster";
 
   let { monsters, characters, onpick }: { monsters: CatalogRow[]; characters: Character[]; onpick: (pick: Pick) => void } = $props();
   const t = strings.encounters.run.add;
@@ -31,7 +32,11 @@
 
   const found = $derived.by(() => {
     const q = search.trim().toLowerCase();
-    return monsters.filter((m) => !q || m.name.toLowerCase().includes(q)).slice(0, MAX_SHOWN);
+    // A monster in more than one pack lists each version, with its source.
+    return monsters
+      .filter((m) => !q || m.name.toLowerCase().includes(q))
+      .flatMap((m) => versions(m).map((v) => ({ row: v, source: m.others.length ? v.source : null })))
+      .slice(0, MAX_SHOWN);
   });
 
   const whole = (n: number | null) => (typeof n === "number" && Number.isInteger(n) && Math.abs(n) <= MAX_NUMBER ? n : null);
@@ -82,10 +87,10 @@
       </label>
     </div>
     <ul class="found">
-      {#each found as row (`${row.pack}/${row.index}`)}
+      {#each found as { row, source } (`${row.pack}/${row.index}`)}
         <li>
           <button class="pick" onclick={() => pick({ kind: "monster", row, initiative: whole(initiative) })}>
-            <span>{row.name}</span>
+            <span>{row.name}{#if source}<span class="muted"> · {source}</span>{/if}</span>
             <span class="muted dice">CR {crText(row.fields.challenge_rating)}</span>
           </button>
         </li>
@@ -132,6 +137,10 @@
 </dialog>
 
 <style>
+  .muted {
+    color: var(--color-text-muted);
+  }
+
   form {
     display: flex;
     flex-direction: column;

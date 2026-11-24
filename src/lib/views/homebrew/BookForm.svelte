@@ -8,7 +8,7 @@
   import Menu from "$lib/components/Menu.svelte";
   import EditorCard from "./EditorCard.svelte";
   import EditorShell from "./EditorShell.svelte";
-  import { ENTRY_TYPES } from "./entryTypes";
+  import { ADDABLE_TYPES } from "./entryTypes";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
 
@@ -81,7 +81,7 @@
     {#if place}
       <a class="btn add" href={place({ chapter: "new" })}><i class="ti ti-plus" aria-hidden="true"></i>{t.book.addChapter}</a>
       <button class="btn" type="button" onclick={exportBook}><i class="ti ti-file-export" aria-hidden="true"></i>{t.export}</button>
-      <Menu id="add-entry" label={t.addEntry} items={ENTRY_TYPES.map((type) => ({ label: type.label, onselect: () => goto(place({ type: type.id, entry: "new" })) }))} align="end" triggerClass="btn">
+      <Menu id="add-entry" label={t.addEntry} items={ADDABLE_TYPES.map((type) => ({ label: type.label, onselect: () => goto(place({ type: type.id, entry: "new" })) }))} align="end" triggerClass="btn">
         {#snippet trigger()}
           <i class="ti ti-plus" aria-hidden="true"></i>{t.addEntry}<i class="ti ti-chevron-down" aria-hidden="true"></i>
         {/snippet}

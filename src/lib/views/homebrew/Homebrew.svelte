@@ -2,8 +2,10 @@
   // The Library's Homebrew tab (docs/SPEC.md → Homebrew): the books on the left, each with its chapters, and the form of
   // the book, chapter or entry that's open on the right (`?tab=homebrew&book=<id|new>`, plus `&chapter=<index|new>` or
   // `&type=<type>&entry=<index|new>`). Leaving a form with changes not saved asks first.
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import type { Snippet } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { catalogEntry } from "$lib/api/catalog";
   import { listHomebrew, type Book, type PackEntry } from "$lib/api/homebrew";
   import { listPacks } from "$lib/api/packs";
@@ -11,13 +13,14 @@
   import { gotoReplacing, keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
   import SideColumn from "../library/SideColumn.svelte";
+  import Menu from "$lib/components/Menu.svelte";
   import BookForm from "./BookForm.svelte";
   import ChapterForm from "./ChapterForm.svelte";
   import EntryForm from "./EntryForm.svelte";
   import LeaveGuard from "./LeaveGuard.svelte";
   import { blankBook, chaptersOf } from "./book";
   import { copyDraft } from "./copy";
-  import { ENTRY_TYPES, entryType } from "./entryTypes";
+  import { ADDABLE_TYPES, ENTRY_TYPES, entryType } from "./entryTypes";
 
   let { reloadKey, bottom }: { reloadKey: number; bottom?: Snippet } = $props();
   const t = strings.homebrew;
@@ -84,6 +87,18 @@
   const deleted = (next: Book) => void gotoReplacing(href(next.id)).then(() => saved(next));
 
   let changed = $state(false);
+
+  /** The books whose chapters and entries show (their arrow); the open book's always does. */
+  const openBooks = new SvelteSet<string>();
+  $effect(() => {
+    if (bookId) openBooks.add(bookId);
+  });
+  /** The entry groups of a book (`<book>/<type>`) whose entries show; the open entry's always does. */
+  const openGroups = new SvelteSet<string>();
+  $effect(() => {
+    if (bookId && typeId) openGroups.add(`${bookId}/${typeId}`);
+  });
+  const hasContents = (b: Book) => chaptersOf(b).length > 0 || ENTRY_TYPES.some((type) => b.entries[type.id]?.length);
 </script>
 
 <div class="body">
@@ -93,24 +108,55 @@
       <nav aria-label={t.books}>
         <ul class="books">
           {#each books as item (item.id)}
+            {@const here = item.id === bookId}
+            {@const open = openBooks.has(item.id)}
             <li>
-              <a href={href(item.id)} aria-current={item.id === bookId && !chapterId && !typeId ? "page" : undefined}>
-                <span class="name">{item.name}</span>
-                {#if off.has(item.id)}<span class="muted off">{t.off}</span>{/if}
-              </a>
-              {#if item.id === bookId}
+              <div class="row">
+                {#if hasContents(item)}
+                  <button class="toggle" type="button" aria-expanded={open} aria-label={t.bookContents(item.name)} onclick={() => (open ? openBooks.delete(item.id) : openBooks.add(item.id))}>
+                    <i class="ti {open ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i>
+                  </button>
+                {:else}
+                  <span class="toggle" aria-hidden="true"></span>
+                {/if}
+                <a href={href(item.id)} aria-current={here && !chapterId && !typeId ? "page" : undefined}>
+                  <span class="name">{item.name}</span>
+                  {#if off.has(item.id)}<span class="muted off">{t.off}</span>{/if}
+                </a>
+                <Menu
+                  id="add-to-{item.id}"
+                  label={t.addTo(item.name)}
+                  items={[
+                    { label: t.editor.chapter, onselect: () => goto(href(item.id, { chapter: "new" })) },
+                    ...ADDABLE_TYPES.map((type) => ({ label: type.label, onselect: () => goto(href(item.id, { type: type.id, entry: "new" })) })),
+                  ]}
+                  triggerClass="icon-btn"
+                >
+                  {#snippet trigger()}<i class="ti ti-plus" aria-hidden="true"></i>{/snippet}
+                </Menu>
+              </div>
+              {#if open && hasContents(item)}
                 <ul class="chapters">
                   {#each chaptersOf(item) as c (c.index)}
-                    <li><a href={href(item.id, { chapter: c.index })} aria-current={c.index === chapterId ? "page" : undefined}>{c.name}</a></li>
+                    <li><a href={href(item.id, { chapter: c.index })} aria-current={here && c.index === chapterId ? "page" : undefined}>{c.name}</a></li>
                   {/each}
                   {#each ENTRY_TYPES.filter((type) => item.entries[type.id]?.length) as type (type.id)}
+                    {@const group = `${item.id}/${type.id}`}
+                    {@const groupOpen = openGroups.has(group)}
                     <li class="group">
-                      <span class="label">{type.label}</span>
-                      <ul class="chapters">
-                        {#each byName(item.entries[type.id]) as e (e.index)}
-                          <li><a href={href(item.id, { type: type.id, entry: e.index })} aria-current={type.id === typeId && e.index === entryId ? "page" : undefined}>{e.name}</a></li>
-                        {/each}
-                      </ul>
+                      <div class="row">
+                        <button class="toggle" type="button" aria-expanded={groupOpen} aria-label={t.groupContents(type.label, item.name)} onclick={() => (groupOpen ? openGroups.delete(group) : openGroups.add(group))}>
+                          <i class="ti {groupOpen ? 'ti-chevron-down' : 'ti-chevron-right'}" aria-hidden="true"></i>
+                        </button>
+                        <span class="label">{type.label}</span>
+                      </div>
+                      {#if groupOpen}
+                        <ul class="chapters">
+                          {#each byName(item.entries[type.id]) as e (e.index)}
+                            <li><a href={href(item.id, { type: type.id, entry: e.index })} aria-current={here && type.id === typeId && e.index === entryId ? "page" : undefined}>{e.name}</a></li>
+                          {/each}
+                        </ul>
+                      {/if}
                     </li>
                   {/each}
                 </ul>
@@ -174,13 +220,46 @@
     padding: 0;
   }
 
+  /* Under its book's or type's name: past the arrow column. */
   .chapters {
-    padding-left: var(--space-4);
+    padding-left: var(--control-height-sm);
+  }
+
+  /* A book: its arrow (or the room for one), then its name. */
+  .row {
+    display: flex;
+    align-items: center;
+  }
+
+  .row > a {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+
+  button.toggle:hover {
+    background: var(--color-surface-sunken);
+  }
+
+  .group {
+    margin-top: var(--space-2);
   }
 
   .group .label {
-    display: block;
-    margin-top: var(--space-2);
     padding: 0 var(--space-2);
   }
 

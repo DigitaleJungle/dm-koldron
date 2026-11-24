@@ -8,19 +8,20 @@
   import { strings } from "$lib/strings";
   import { title } from "$lib/views/library/catalog";
   import { ABILITIES, modifier, signed } from "$lib/views/library/entries/format";
-  import { getField, reference, setField } from "./entryTypes";
+  import { getField, reference, setField, type Field } from "./entryTypes";
   import { averageHp, bonusFor, hpFormula, joinList, parseHitDice, splitList, usualFor, type Level } from "./monster";
 
   let {
-    key,
+    field,
     draft = $bindable(),
     rules,
     choices,
     levels = $bindable(),
     pb,
   }: {
-    /** The field: `challenge`, `defense`, `abilities`, `proficiencies`, `damage` or `languages`. */
-    key: string;
+    /** The field: `identity`, `challenge`, `defense`, `speed`, `abilities`, `proficiencies`, `damage`, `senses` or
+     *  `languages`. */
+    field: Field;
     draft: PackEntry;
     rules: MonsterRules | null;
     choices: (kind: string, field?: string) => Choice[];
@@ -34,6 +35,10 @@
   const m = t.monster;
   const e = strings.entry;
   const id = $props.id();
+  const key = $derived(field.key);
+  /** A row's fields (size, type and alignment; the speeds; the senses), all side by side; Hover sits by Fly's label. */
+  const ROWS = new Set(["identity", "speed", "senses"]);
+  const rowFields = $derived(field.input === "group" ? field.fields.filter((f) => f.input !== "bool") : []);
   const number = new Intl.NumberFormat();
 
   const numberOf = (k: string) => {
@@ -119,7 +124,44 @@
   const usual = $derived(usualFor(rules, draft.challenge_rating));
 </script>
 
-{#if key === "challenge"}
+{#if ROWS.has(key)}
+  <fieldset class="field">
+    <legend class:sr-only={key === "identity"}>{field.label}</legend>
+    <div class="row" style:--columns={rowFields.length}>
+      {#each rowFields as sub (sub.key)}
+        <div class="field">
+          <div class="label-row">
+            <label for="{id}-{sub.key}">{sub.label}</label>
+            {#if sub.key === "speed.fly"}
+              <label class="check">
+                <input type="checkbox" checked={!!getField(draft, "speed.hover")} onchange={(ev) => setField(draft, "speed.hover", ev.currentTarget.checked || undefined)} />
+                {m.hover}
+              </label>
+            {/if}
+          </div>
+          {#if sub.input === "number"}
+            <input id="{id}-{sub.key}" type="number" class="dice" min={sub.min} value={numberOf(sub.key) ?? ""} oninput={(ev) => setNumber(sub.key, ev.currentTarget)} />
+          {:else if sub.input === "text"}
+            {@const value = getField(draft, sub.key)}
+            <input
+              id="{id}-{sub.key}"
+              value={typeof value === "string" ? value : ""}
+              maxlength="200"
+              autocomplete="off"
+              list={sub.suggest ? `${id}-${sub.key}-list` : undefined}
+              oninput={(ev) => setField(draft, sub.key, ev.currentTarget.value)}
+            />
+            {#if sub.suggest}
+              <datalist id="{id}-{sub.key}-list">
+                {#each choices(sub.suggest.kind, sub.suggest.field) as choice (choice.index)}<option value={choice.name}></option>{/each}
+              </datalist>
+            {/if}
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </fieldset>
+{:else if key === "challenge"}
   <div class="grid">
     <label class="field">
       <span>{e.cr}</span>
@@ -191,6 +233,7 @@
     <p class="hint">{m.average} <span class="dice">{hpFormula(hitDice.count, hitDice.die, conMod)}</span></p>
   {/if}
 {:else if key === "abilities"}
+  <div class="tiles-room">
   <div class="tiles">
     {#each ABILITIES as ability (ability)}
       {@const save = saveFor(ability)}
@@ -208,6 +251,7 @@
         {/if}
       </div>
     {/each}
+  </div>
   </div>
 {:else if key === "proficiencies"}
   {@const skills = rows.filter((r) => r.proficiency.name.startsWith("Skill:"))}
@@ -388,10 +432,65 @@
     color: var(--color-text);
   }
 
+  /* The six abilities: one row of six, or (narrow) two rows of three, never 4 + 2. */
+  .tiles-room {
+    container-type: inline-size;
+  }
+
   .tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(calc(var(--homebrew-bonus-width) + var(--space-4)), 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-2);
+  }
+
+  @container (min-width: 560px) {
+    .tiles {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* A row of fields side by side (size, type and alignment; the speeds; the senses). */
+  fieldset.field {
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+
+  legend {
+    padding: 0;
+    margin-bottom: var(--space-1);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+    gap: var(--space-3);
+    align-items: end;
+  }
+
+  .row input {
+    width: 100%;
+  }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-regular);
+  }
+
+  .check input {
+    min-height: 0;
+    width: auto;
   }
 
   .tile {

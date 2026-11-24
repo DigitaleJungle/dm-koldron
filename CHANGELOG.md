@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.4] - 2026-11-24
+
+### Added
+
+- The Homebrew list has an arrow before each book and each type (Monsters, Spells…) to show or hide its contents, and a + by each book to add a chapter or an entry.
+- The app's logo opens the Start screen from the Library's top bar; the campaign sidebar shows the same logo.
+
+### Changed
+
+- Homebrew monster form: size, type and alignment, the speeds (Hover by Fly) and the senses each on one row; the six abilities in one row or two rows of three.
+- Homebrew entry forms put short fields side by side, with a checkbox by the field it belongs to (Ritual by Casting time, Concentration by Duration, Attunement by Rarity).
+- Classes and Subclasses are left out of a book's Add entry for now; ones already in a book stay editable.
+
+### Fixed
+
+- Homebrew forms offer damage types, skills and other rules lists, and monster saves and skill levels work, when the SRD is switched off; Catalog lists such as classes match the Catalog.
+
 ## [0.10.3] - 2026-11-24
 
 ### Changed

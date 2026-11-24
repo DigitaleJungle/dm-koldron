@@ -73,9 +73,16 @@ export const ENTRY_TYPES: EntryType[] = [
     id: "monsters",
     label: kinds.monsters,
     fields: [
-      { key: "size", label: c.size, input: "text", suggest: { kind: "monsters", field: "size" } },
-      { key: "type", label: c.type, input: "text", suggest: { kind: "monsters", field: "type" } },
-      { key: "alignment", label: m.alignment, input: "text", suggest: { kind: "monsters", field: "alignment" } },
+      {
+        key: "identity",
+        label: m.identity,
+        input: "group",
+        fields: [
+          { key: "size", label: c.size, input: "text", suggest: { kind: "monsters", field: "size" } },
+          { key: "type", label: c.type, input: "text", suggest: { kind: "monsters", field: "type" } },
+          { key: "alignment", label: m.alignment, input: "text", suggest: { kind: "monsters", field: "alignment" } },
+        ],
+      },
       { key: "defense", label: m.defense, input: "group", fields: [num("armor_class.0.value", e.ac, { min: 0 }), num("hit_points", e.hp, { min: 1, required: true }), text("hit_dice", m.hitDice)] },
       {
         key: "speed",
@@ -112,7 +119,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "description", label: h.description, input: "markdown" },
     ],
     sections: [
-      card("basics", ["size", "type", "alignment", "challenge"]),
+      card("basics", ["identity", "challenge"]),
       card("combat", ["defense", "speed"]),
       card("abilities", ["abilities", "proficiencies"]),
       card("defenses", ["damage", "condition_immunities"]),
@@ -213,8 +220,29 @@ export const ENTRY_TYPES: EntryType[] = [
 
 export const entryType = (id: string | null) => ENTRY_TYPES.find((t) => t.id === id);
 
+/** The types a book's Add entry offers (the book form's menu, the + by its name in the list).
+ *  shortcut: Classes and Subclasses left out for now (a book's existing ones stay editable); add them back when wanted. */
+export const ADDABLE_TYPES = ENTRY_TYPES.filter((t) => t.id !== "classes" && t.id !== "subclasses");
+
 /** The cards with their fields. */
 export const sectionsOf = (type: EntryType) => type.sections.map((s) => ({ ...s, fields: s.keys.map((k) => type.fields.find((f) => f.key === k)!) }));
+
+/** How a card lays out its fields: short ones (a text, a number, one choice) next to each other share a row, and a
+ *  checkbox goes beside the label of the short field before it (Ritual by Casting time); the rest take the full width.
+ *  `own(field)`: a field the form draws itself (a monster's widgets), always on its own. */
+export type Block = { row: { field: Field; flag?: Field }[] } | { field: Field };
+const SHORT = new Set<Field["input"]>(["text", "number", "ref"]);
+export function layoutOf(fields: Field[], own: (field: Field) => boolean = () => false): Block[] {
+  const out: Block[] = [];
+  for (const field of fields) {
+    const last = out.at(-1);
+    const row = last && "row" in last ? last.row : null;
+    if (!own(field) && field.input === "bool" && row && !row.at(-1)!.flag) row.at(-1)!.flag = field;
+    else if (!own(field) && SHORT.has(field.input)) row ? row.push({ field }) : out.push({ row: [{ field }] });
+    else out.push({ field });
+  }
+  return out;
+}
 
 /** Every field, the ones inside groups too. */
 export const allFields = (fields: Field[]): Field[] => fields.flatMap((f) => (f.input === "group" ? allFields(f.fields) : [f]));

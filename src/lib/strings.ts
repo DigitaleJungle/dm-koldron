@@ -184,6 +184,7 @@ export const strings = {
 
   library: {
     title: "Library",
+    toStart: "Start screen",
     tabs: "Library sections",
     rulesTab: "Rules",
     contents: "Contents",
@@ -203,6 +204,9 @@ export const strings = {
   homebrew: {
     title: "Homebrew",
     books: "Homebrew books",
+    bookContents: (book: string) => `Contents of ${book}`,
+    addTo: (book: string) => `Add to ${book}`,
+    groupContents: (group: string, book: string) => `${group} in ${book}`,
     empty: "No homebrew yet.",
     newBook: "New book",
     off: "Off",
@@ -259,6 +263,7 @@ export const strings = {
     add: (label: string) => `Add to ${label}`,
     removeRef: (name: string) => `Remove ${name}`,
     monster: {
+      identity: "Size, type and alignment",
       alignment: "Alignment",
       defense: "Armor class and hit points",
       hitDice: "Hit dice",

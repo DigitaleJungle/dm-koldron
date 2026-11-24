@@ -29,7 +29,7 @@
   import { deleteEntry, openEntry, saveEntry, type Item, type Level as ClassLevel } from "./linked";
   import { title } from "$lib/views/library/catalog";
   import { modifier, STAT_BLOCK_PROFICIENCIES } from "$lib/views/library/entries/format";
-  import { allFields, getField, reference, sectionsOf, setField, type EntryType, type Field, type Source } from "./entryTypes";
+  import { allFields, getField, layoutOf, reference, sectionsOf, setField, type EntryType, type Field, type Source } from "./entryTypes";
   import { fill } from "./fill";
   import { attackText, bonusFor, detectLevel, usualFor, type Attack, type Level } from "./monster";
 
@@ -169,7 +169,7 @@
   // ---- A monster's worked-out values ----------------------------------------------------------------
   const monster = $derived(type.id === "monsters");
   /** The fields the monster form shows with its own widgets (MonsterField). */
-  const WIDGETS = new Set(["challenge", "defense", "abilities", "proficiencies", "damage", "languages"]);
+  const WIDGETS = new Set(["identity", "challenge", "defense", "speed", "abilities", "proficiencies", "damage", "senses", "languages"]);
   /** The action lists whose items can be written as attacks. */
   const ATTACKS = ["actions", "bonus_actions", "reactions", "legendary_actions"];
   let rules = $state<MonsterRules | null>(null);
@@ -286,11 +286,15 @@
         </div>
       {/if}
       {#key resets}
-        {#each section.fields as f (f.key)}
-          {#if monster && WIDGETS.has(f.key)}
-            <MonsterField key={f.key} bind:draft {rules} choices={choicesFor} bind:levels {pb} />
+        {#each layoutOf(section.fields, (f) => monster && WIDGETS.has(f.key)) as block, b (b)}
+          {#if "row" in block}
+            <div class="row" style:--columns={Math.min(4, Math.max(2, block.row.length))}>
+              {#each block.row as cell (cell.field.key)}{@render field(cell.field, cell.flag)}{/each}
+            </div>
+          {:else if monster && WIDGETS.has(block.field.key)}
+            <MonsterField field={block.field} bind:draft {rules} choices={choicesFor} bind:levels {pb} />
           {:else}
-            {@render field(f)}
+            {@render field(block.field)}
           {/if}
         {/each}
       {/key}
@@ -310,8 +314,21 @@
   {/if}
 {/snippet}
 
-<!-- One field of any kind; a group renders its fields the same way. -->
-{#snippet field(f: Field)}
+<!-- A short field's label, with the checkbox that sits beside it (`flag`), if any. -->
+{#snippet head(f: Field, flag?: Field)}
+  <div class="label-row">
+    <label for="{id}-in-{f.key}">{f.label}{#if "required" in f && f.required}{" "}<span class="muted">({t.required})</span>{/if}</label>
+    {#if flag}
+      <label class="check flag">
+        <input type="checkbox" checked={!!get(flag)} onchange={(e) => set(flag, e.currentTarget.checked || undefined)} />
+        {flag.label}
+      </label>
+    {/if}
+  </div>
+{/snippet}
+
+<!-- One field of any kind; a group renders its fields the same way. `flag`: a checkbox beside a short field's label. -->
+{#snippet field(f: Field, flag?: Field)}
   {#if f.input === "markdown"}
     <div class="field">
       <span>{f.label}</span>
@@ -324,30 +341,30 @@
       {f.label}
     </label>
   {:else if f.input === "number"}
-    <label class="field short">
-      <span>{f.label}{#if f.required}{" "}<span class="muted">({t.required})</span>{/if}</span>
-      <input type="number" min={f.min} step={f.step ?? 1} required={f.required} value={textOf(f)} oninput={(e) => set(f, Number.isNaN(e.currentTarget.valueAsNumber) ? undefined : e.currentTarget.valueAsNumber)} />
-    </label>
+    <div class="field">
+      {@render head(f, flag)}
+      <input id="{id}-in-{f.key}" type="number" min={f.min} step={f.step ?? 1} required={f.required} value={textOf(f)} oninput={(e) => set(f, Number.isNaN(e.currentTarget.valueAsNumber) ? undefined : e.currentTarget.valueAsNumber)} />
+    </div>
   {:else if f.input === "text"}
-    <label class="field">
-      <span>{f.label}</span>
-      <input value={textOf(f)} maxlength="200" autocomplete="off" list={f.suggest ? `${id}-${f.key}` : undefined} oninput={(e) => set(f, e.currentTarget.value)} />
+    <div class="field">
+      {@render head(f, flag)}
+      <input id="{id}-in-{f.key}" value={textOf(f)} maxlength="200" autocomplete="off" list={f.suggest ? `${id}-${f.key}` : undefined} oninput={(e) => set(f, e.currentTarget.value)} />
       {#if f.suggest}
         <datalist id="{id}-{f.key}">
           {#each choicesOf(f) as choice (choice.index)}<option value={choice.name}></option>{/each}
         </datalist>
       {/if}
-    </label>
+    </div>
   {:else if f.input === "ref"}
     {@const current = refsOf(f)[0]}
-    <label class="field">
-      <span>{f.label}</span>
-      <select value={current?.index ?? ""} required={f.required} onchange={(e) => set(f, e.currentTarget.value ? refTo(f, e.currentTarget.value) : undefined)}>
+    <div class="field">
+      {@render head(f, flag)}
+      <select id="{id}-in-{f.key}" value={current?.index ?? ""} required={f.required} onchange={(e) => set(f, e.currentTarget.value ? refTo(f, e.currentTarget.value) : undefined)}>
         <option value="">{t.none}</option>
         {#if current && !choicesOf(f).some((c) => c.index === current.index)}<option value={current.index}>{current.name}</option>{/if}
         {#each choicesOf(f) as choice (choice.index)}<option value={choice.index}>{choice.name}</option>{/each}
       </select>
-    </label>
+    </div>
   {:else if f.input === "refs"}
     {@const chosen = refsOf(f)}
     <div class="field">
@@ -536,8 +553,27 @@
     min-width: 0;
   }
 
-  .field.short {
-    max-width: var(--homebrew-number-width);
+  /* Short fields side by side (layoutOf): two to four to a row. */
+  .row {
+    display: grid;
+    grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4);
+    align-items: end;
+  }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  /* A checkbox beside a field's label (Ritual by Casting time). */
+  .check.flag {
+    gap: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-regular);
   }
 
   .group {

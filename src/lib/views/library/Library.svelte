@@ -1,4 +1,5 @@
 <script lang="ts">
+  import logo from "../../../../src-tauri/icons/64x64.png";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import BackButton from "$lib/components/BackButton.svelte";
@@ -120,6 +121,8 @@
 
 <div class="library" class:embedded>
   <header class="top">
+    <!-- The app's logo: the Start screen in one click (inside a campaign the sidebar has Home). -->
+    {#if !embedded}<a class="logo" href="/" aria-label={t.toStart}><img src={logo} alt="" /></a>{/if}
     {#if !embedded}<BackButton fallback={backTo} />{/if}
     <!-- Inside a campaign the contents column is always shown (and there are no addon tabs). Outside, the button keeps
          its place even when a tab has none, so the tabs never move. -->
@@ -198,6 +201,17 @@
     padding: var(--space-3) var(--space-5);
     border-bottom: var(--border-width) solid var(--color-border);
     background: var(--color-surface);
+  }
+
+  .logo {
+    flex: none;
+    display: flex;
+    border-radius: var(--radius-sm);
+  }
+
+  .logo img {
+    width: var(--logo-size);
+    height: var(--logo-size);
   }
 
   /* Always as wide as the column button, shown or not. */

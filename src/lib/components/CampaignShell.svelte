@@ -4,6 +4,7 @@
   // (remembered on this device); in a narrow one it's a drawer behind a menu button. While open, each screen's grip
   // (on hover or focus) moves it, by dragging or the arrow keys; one order for all campaigns, on this device.
   import type { Snippet } from "svelte";
+  import logo from "../../../src-tauri/icons/64x64.png";
   import { onMount } from "svelte";
   import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -134,7 +135,7 @@
     <div class="head">
       <!-- In the icon strip the text is hidden, so the label names the link. -->
       <a class="app-name" href="/" aria-label={strings.appName}>
-        <i class="ti ti-flask" aria-hidden="true"></i>
+        <img class="logo" src={logo} alt="" />
         <span class="text">{strings.appName}</span>
       </a>
       <button
@@ -246,6 +247,13 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-1);
+  }
+
+  /* The app's logo (its icon), as in the Library's top bar. */
+  .logo {
+    flex: none;
+    width: var(--logo-size);
+    height: var(--logo-size);
   }
 
   .app-name {

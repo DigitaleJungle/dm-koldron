@@ -138,12 +138,23 @@ fn choices(packs: &[&Pack], kind: &str, field: Option<&str>) -> Vec<Choice> {
     list
 }
 
-/// The Homebrew forms' choices, from the switched-on packs (`choices`).
+/// The choices of the switched-on packs (`on`). A Catalog category (classes, feats…) offers exactly what the Catalog
+/// shows; a rules list without a Catalog tab (damage types) falls back to every loaded pack (`all`) when no switched-on
+/// pack has it: it lives in the SRD's pack, and a form with nothing to pick from because it's switched off helps nobody.
+fn choices_or_loaded(on: &[&Pack], all: &[Pack], kind: &str, field: Option<&str>) -> Vec<Choice> {
+    let list = choices(on, kind, field);
+    if !list.is_empty() || catalog::KINDS.contains(&kind) {
+        return list;
+    }
+    choices(&all.iter().collect::<Vec<_>>(), kind, field)
+}
+
+/// The Homebrew forms' choices (`choices_or_loaded`).
 #[tauri::command]
 pub async fn homebrew_choices(app: AppHandle, kind: String, field: Option<String>) -> Result<Vec<Choice>, StorageError> {
     blocking(move || {
         let loaded = loaded(&app)?;
-        Ok(choices(&enabled(&loaded.0, &disabled(&app)?), &kind, field.as_deref()))
+        Ok(choices_or_loaded(&enabled(&loaded.0, &disabled(&app)?), &loaded.0, &kind, field.as_deref()))
     })
     .await
 }
@@ -206,8 +217,19 @@ fn most_common<T: Ord + Copy>(values: &[T]) -> Option<T> {
     .map(|(v, _)| v)
 }
 
-fn monster_rules(packs: &[&Pack]) -> MonsterRules {
-    let entries = |kind: &str| packs.iter().flat_map(move |p| p.entries.get(kind).into_iter().flatten()).collect::<Vec<_>>();
+fn entries_of<'a>(packs: impl IntoIterator<Item = &'a Pack>, kind: &str) -> Vec<&'a Map<String, Value>> {
+    packs.into_iter().flat_map(|p| p.entries.get(kind).into_iter().flatten()).collect()
+}
+
+/// The usual XP and PB come from the switched-on packs' monsters (`on`). The abilities of saves and skills come from
+/// their rules lists (ability scores, skills, proficiencies), every loaded pack's (`all`) when no switched-on pack has
+/// one, as the form's choices do (`choices_or_loaded`): they live in the SRD's pack, which may be switched off.
+fn monster_rules(on: &[&Pack], all: &[Pack]) -> MonsterRules {
+    let entries = |kind: &str| entries_of(on.iter().copied(), kind);
+    let rules = |kind: &str| {
+        let list = entries(kind);
+        if list.is_empty() { entries_of(all, kind) } else { list }
+    };
     let mut by_cr: Vec<(f64, Vec<u64>, Vec<i64>)> = Vec::new();
     for m in entries("monsters") {
         let Some(cr) = m.get("challenge_rating").and_then(Value::as_f64) else { continue };
@@ -231,13 +253,13 @@ fn monster_rules(packs: &[&Pack]) -> MonsterRules {
     let index = |v: Option<&Value>| v.and_then(|r| r.get("index")).and_then(Value::as_str).unwrap_or("").to_string();
     let own = |e: &Map<String, Value>| e.get("index").and_then(Value::as_str).unwrap_or("").to_string();
     // An ability score's monster field is its full name in lowercase ("Dexterity" → `dexterity`).
-    let field_of: BTreeMap<String, String> = entries("ability-scores")
+    let field_of: BTreeMap<String, String> = rules("ability-scores")
         .into_iter()
         .filter_map(|a| Some((own(a), a.get("full_name")?.as_str()?.to_lowercase())))
         .collect();
     let skill_ability: BTreeMap<String, String> =
-        entries("skills").into_iter().map(|s| (own(s), index(s.get("ability_score")))).collect();
-    let proficiency_abilities = entries("proficiencies")
+        rules("skills").into_iter().map(|s| (own(s), index(s.get("ability_score")))).collect();
+    let proficiency_abilities = rules("proficiencies")
         .into_iter()
         .filter_map(|p| {
             let target = index(p.get("reference"));
@@ -252,7 +274,7 @@ fn monster_rules(packs: &[&Pack]) -> MonsterRules {
 pub async fn homebrew_monster_rules(app: AppHandle) -> Result<MonsterRules, StorageError> {
     blocking(move || {
         let loaded = loaded(&app)?;
-        Ok(monster_rules(&enabled(&loaded.0, &disabled(&app)?)))
+        Ok(monster_rules(&enabled(&loaded.0, &disabled(&app)?), &loaded.0))
     })
     .await
 }
@@ -442,6 +464,16 @@ mod tests {
         assert_eq!(names(choices(&[&p], "spells", Some("components"))), ["M", "S", "V"]);
         assert_eq!(names(choices(&[&p], "spells", Some("school.name"))), ["Conjuration", "Evocation"]);
         assert!(choices(&[&p], "feats", None).is_empty());
+        // A rules list switched off still shows when no switched-on pack has it; a switched-on pack's wins.
+        p.entries.insert("damage-types".into(), list(json!([{ "index": "fire", "name": "Fire" }])));
+        let mut other = pack("mm", "MM", true);
+        other.entries.insert("damage-types".into(), list(json!([{ "index": "cold", "name": "Cold" }])));
+        let all = [p, other];
+        assert_eq!(names(choices_or_loaded(&[], &all, "damage-types", None)), ["Cold", "Fire"]);
+        assert_eq!(names(choices_or_loaded(&[&all[1]], &all, "damage-types", None)), ["Cold"]);
+        // A Catalog category offers only what the Catalog shows: the switched-on packs'.
+        assert!(choices_or_loaded(&[], &all, "spells", None).is_empty());
+        assert_eq!(names(choices_or_loaded(&[&all[0]], &all, "spells", None)), ["acid", "Bolt"]);
     }
 
     fn list(v: Value) -> Vec<Map<String, Value>> {
@@ -465,11 +497,19 @@ mod tests {
             { "index": "skill-stealth", "name": "Skill: Stealth", "reference": { "index": "stealth" } },
             { "index": "tool", "name": "Tool", "reference": { "index": "nope" } },
         ])));
-        let rules = monster_rules(&[&p]);
+        let rules = monster_rules(&[&p], &[]);
         assert_eq!(rules.challenges, [Challenge { cr: 0.25, xp: Some(50), pb: None }, Challenge { cr: 12.0, xp: Some(8400), pb: Some(4) }]);
         assert_eq!(rules.proficiency_abilities.get("saving-throw-dex").map(String::as_str), Some("dexterity"));
         assert_eq!(rules.proficiency_abilities.get("skill-stealth").map(String::as_str), Some("dexterity"));
         assert!(!rules.proficiency_abilities.contains_key("tool"));
+
+        // The SRD switched off: the abilities still come from its rules lists, the usual XP only from switched-on monsters.
+        let mut on = pack("mm", "MM", true);
+        on.entries.insert("monsters".into(), list(json!([{ "index": "z", "name": "Z", "challenge_rating": 1, "xp": 200 }])));
+        let all = [p, on];
+        let rules = monster_rules(&[&all[1]], &all);
+        assert_eq!(rules.challenges, [Challenge { cr: 1.0, xp: Some(200), pb: None }]);
+        assert_eq!(rules.proficiency_abilities.get("skill-stealth").map(String::as_str), Some("dexterity"));
     }
 
     #[test]

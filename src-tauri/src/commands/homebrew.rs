@@ -5,7 +5,8 @@ use crate::commands::packs::{disabled, enabled, homebrew_dir, homebrew_staging, 
 use crate::commands::addons::{dialog, picked_path};
 use crate::commands::images;
 use crate::commands::settings;
-use crate::packs::{self, NewPack, Pack, SCHEMA, TYPES};
+use crate::commands::catalog::{self, CatalogEntry};
+use crate::packs::{self, Manifest, NewPack, Pack, SCHEMA, TYPES};
 use crate::storage::{blocking, data_dir, write_atomic_bytes, StorageError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -143,6 +144,115 @@ pub async fn homebrew_choices(app: AppHandle, kind: String, field: Option<String
     blocking(move || {
         let loaded = loaded(&app)?;
         Ok(choices(&enabled(&loaded.0, &disabled(&app)?), &kind, field.as_deref()))
+    })
+    .await
+}
+
+/// A Homebrew form's live preview: the entry as the Catalog shows it, from `book` as it would be saved (not written), in
+/// place of the saved book, with the other switched-on packs (a subclass shows on its class's page: `kind` "classes").
+fn preview(packs: &[&Pack], book: Book, kind: &str, index: &str) -> Result<CatalogEntry, StorageError> {
+    let id = book.id.clone();
+    let manifest = Manifest {
+        schema: SCHEMA,
+        id: book.id,
+        name: book.name,
+        version: book.version,
+        license: book.license,
+        attribution: book.attribution,
+        ruleset: book.ruleset,
+        files: Vec::new(),
+    };
+    let draft = Pack { manifest, entries: book.entries, images: None, installed: true, homebrew: true };
+    let all: Vec<&Pack> = std::iter::once(&draft).chain(packs.iter().copied().filter(|p| p.manifest.id != id)).collect();
+    catalog::entry(&all, kind, &id, index)
+}
+
+#[tauri::command]
+pub async fn homebrew_preview(app: AppHandle, book: Book, kind: String, index: String) -> Result<CatalogEntry, StorageError> {
+    blocking(move || {
+        let loaded = loaded(&app)?;
+        preview(&enabled(&loaded.0, &disabled(&app)?), book, &kind, &index)
+    })
+    .await
+}
+
+/// The usual XP and proficiency bonus of the switched-on packs' monsters with this challenge rating (the most common).
+#[derive(Debug, Serialize, PartialEq)]
+pub struct Challenge {
+    pub cr: f64,
+    pub xp: Option<u64>,
+    pub pb: Option<i64>,
+}
+
+/// What the monster form works out from the packs: each challenge rating's usual XP and PB, and the ability (the
+/// monster's field, `dexterity`) of each saving throw and skill proficiency.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonsterRules {
+    pub challenges: Vec<Challenge>,
+    pub proficiency_abilities: BTreeMap<String, String>,
+}
+
+fn most_common<T: Ord + Copy>(values: &[T]) -> Option<T> {
+    let mut counts: BTreeMap<T, usize> = BTreeMap::new();
+    for v in values {
+        *counts.entry(*v).or_default() += 1;
+    }
+    // The most common; on a tie, the lowest.
+    counts.into_iter().fold(None, |best: Option<(T, usize)>, (v, n)| match best {
+        Some((_, m)) if m >= n => best,
+        _ => Some((v, n)),
+    })
+    .map(|(v, _)| v)
+}
+
+fn monster_rules(packs: &[&Pack]) -> MonsterRules {
+    let entries = |kind: &str| packs.iter().flat_map(move |p| p.entries.get(kind).into_iter().flatten()).collect::<Vec<_>>();
+    let mut by_cr: Vec<(f64, Vec<u64>, Vec<i64>)> = Vec::new();
+    for m in entries("monsters") {
+        let Some(cr) = m.get("challenge_rating").and_then(Value::as_f64) else { continue };
+        let at = match by_cr.iter().position(|(c, _, _)| *c == cr) {
+            Some(at) => at,
+            None => {
+                by_cr.push((cr, Vec::new(), Vec::new()));
+                by_cr.len() - 1
+            }
+        };
+        if let Some(xp) = m.get("xp").and_then(Value::as_u64) {
+            by_cr[at].1.push(xp);
+        }
+        if let Some(pb) = m.get("proficiency_bonus").and_then(Value::as_i64) {
+            by_cr[at].2.push(pb);
+        }
+    }
+    by_cr.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let challenges = by_cr.into_iter().map(|(cr, xp, pb)| Challenge { cr, xp: most_common(&xp), pb: most_common(&pb) }).collect();
+
+    let index = |v: Option<&Value>| v.and_then(|r| r.get("index")).and_then(Value::as_str).unwrap_or("").to_string();
+    let own = |e: &Map<String, Value>| e.get("index").and_then(Value::as_str).unwrap_or("").to_string();
+    // An ability score's monster field is its full name in lowercase ("Dexterity" → `dexterity`).
+    let field_of: BTreeMap<String, String> = entries("ability-scores")
+        .into_iter()
+        .filter_map(|a| Some((own(a), a.get("full_name")?.as_str()?.to_lowercase())))
+        .collect();
+    let skill_ability: BTreeMap<String, String> =
+        entries("skills").into_iter().map(|s| (own(s), index(s.get("ability_score")))).collect();
+    let proficiency_abilities = entries("proficiencies")
+        .into_iter()
+        .filter_map(|p| {
+            let target = index(p.get("reference"));
+            let ability = skill_ability.get(&target).unwrap_or(&target);
+            Some((own(p), field_of.get(ability)?.clone()))
+        })
+        .collect();
+    MonsterRules { challenges, proficiency_abilities }
+}
+
+#[tauri::command]
+pub async fn homebrew_monster_rules(app: AppHandle) -> Result<MonsterRules, StorageError> {
+    blocking(move || {
+        let loaded = loaded(&app)?;
+        Ok(monster_rules(&enabled(&loaded.0, &disabled(&app)?)))
     })
     .await
 }
@@ -332,6 +442,46 @@ mod tests {
         assert_eq!(names(choices(&[&p], "spells", Some("components"))), ["M", "S", "V"]);
         assert_eq!(names(choices(&[&p], "spells", Some("school.name"))), ["Conjuration", "Evocation"]);
         assert!(choices(&[&p], "feats", None).is_empty());
+    }
+
+    fn list(v: Value) -> Vec<Map<String, Value>> {
+        v.as_array().unwrap().iter().map(|e| e.as_object().unwrap().clone()).collect()
+    }
+
+    #[test]
+    fn monster_rules_come_from_the_packs() {
+        let mut p = pack("srd", "SRD", false);
+        p.entries.insert("monsters".into(), list(json!([
+            { "index": "a", "name": "A", "challenge_rating": 12, "xp": 8400, "proficiency_bonus": 4 },
+            { "index": "b", "name": "B", "challenge_rating": 12, "xp": 8000, "proficiency_bonus": 4 },
+            { "index": "c", "name": "C", "challenge_rating": 12, "xp": 8400, "proficiency_bonus": 4 },
+            { "index": "d", "name": "D", "challenge_rating": 0.25, "xp": 50 },
+            { "index": "e", "name": "E" },
+        ])));
+        p.entries.insert("ability-scores".into(), list(json!([{ "index": "dex", "name": "DEX", "full_name": "Dexterity" }])));
+        p.entries.insert("skills".into(), list(json!([{ "index": "stealth", "name": "Stealth", "ability_score": { "index": "dex" } }])));
+        p.entries.insert("proficiencies".into(), list(json!([
+            { "index": "saving-throw-dex", "name": "Saving Throw: DEX", "reference": { "index": "dex" } },
+            { "index": "skill-stealth", "name": "Skill: Stealth", "reference": { "index": "stealth" } },
+            { "index": "tool", "name": "Tool", "reference": { "index": "nope" } },
+        ])));
+        let rules = monster_rules(&[&p]);
+        assert_eq!(rules.challenges, [Challenge { cr: 0.25, xp: Some(50), pb: None }, Challenge { cr: 12.0, xp: Some(8400), pb: Some(4) }]);
+        assert_eq!(rules.proficiency_abilities.get("saving-throw-dex").map(String::as_str), Some("dexterity"));
+        assert_eq!(rules.proficiency_abilities.get("skill-stealth").map(String::as_str), Some("dexterity"));
+        assert!(!rules.proficiency_abilities.contains_key("tool"));
+    }
+
+    #[test]
+    fn the_preview_shows_the_draft_in_place_of_the_saved_book() {
+        let mut saved = pack("lore", "Lore", true);
+        saved.entries.insert("feats".into(), list(json!([{ "index": "grit", "name": "Grit", "description": "Old." }])));
+        let mut draft = book("lore", "Lore");
+        draft.entries.insert("feats".into(), list(json!([{ "index": "grit", "name": "Grit", "description": "**New.**" }])));
+        let shown = preview(&[&saved], draft, "feats", "grit").unwrap();
+        assert_eq!(shown.pack, "lore");
+        assert!(shown.html.contains("<strong>New.</strong>"), "{}", shown.html);
+        assert!(preview(&[], book("", "New"), "feats", "grit").is_err());
     }
 
     #[test]

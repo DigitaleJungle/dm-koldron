@@ -223,6 +223,11 @@
   --homebrew-bonus-width: 80px; /* a saving throw or skill bonus in a homebrew monster */
   --homebrew-picture-size: 88px; /* a homebrew form's picture tile, beside the name */
   --homebrew-form-width: 880px; /* the Homebrew tab's book and chapter forms: a readable line for long texts */
+  --homebrew-nav-width: 200px; /* a Homebrew form's "On this page" column */
+  --homebrew-preview-width: 640px; /* a Homebrew form's live preview dialog: a stat block's ability table fits */
+  --homebrew-preview-height: 80dvh; /* its tallest, the rest scrolls */
+  /* What an addon's tab keeps beside the Homebrew form: a reading-width page, its pane's padding and a scrollbar. */
+  --homebrew-beside-room: calc(var(--reading-width) + 2 * var(--space-5) + var(--space-4));
   --sheet-avatar-size: 72px;
   --sheet-stat-width: 88px;
   --sheet-hp-width: 272px;

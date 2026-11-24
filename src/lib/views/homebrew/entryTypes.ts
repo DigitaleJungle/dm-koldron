@@ -31,7 +31,9 @@ export type Field = { key: string; label: string } & (
   | { input: "levels" }
 );
 
-export type EntryType = { id: string; label: string; fields: Field[] };
+/** A card of the form: its fields by key, in order. The first card also has the name and picture. */
+export type Section = { id: string; label: string; keys: string[] };
+export type EntryType = { id: string; label: string; fields: Field[]; sections: Section[] };
 
 const c = strings.catalog.columns;
 const e = strings.entry;
@@ -40,6 +42,8 @@ const kinds = strings.catalog.categories;
 const m = strings.homebrew.monster;
 const num = (key: string, label: string, extra: { min?: number; step?: number | "any"; required?: boolean } = {}): Field => ({ key, label, input: "number", ...extra });
 const text = (key: string, label: string): Field => ({ key, label, input: "text" });
+const sec = strings.homebrew.sections;
+const card = (id: keyof typeof sec, keys: string[]): Section => ({ id, label: sec[id], keys });
 
 export const ENTRY_TYPES: EntryType[] = [
   {
@@ -59,6 +63,11 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "description", label: h.description, input: "markdown" },
       { key: "higher_level", label: h.higherLevel, input: "markdown" },
     ],
+    sections: [
+      card("basics", ["level", "school", "classes"]),
+      card("casting", ["casting_time", "ritual", "range", "components", "material", "duration", "concentration"]),
+      card("description", ["description", "higher_level"]),
+    ],
   },
   {
     id: "monsters",
@@ -76,9 +85,16 @@ export const ENTRY_TYPES: EntryType[] = [
       },
       { key: "abilities", label: e.abilityTable, input: "group", fields: ABILITY_KEYS.map((a) => num(a, e.abilities[a], { min: 1 })) },
       { key: "proficiencies", label: m.proficiencies, input: "bonuses", of: "proficiencies" },
-      { key: "damage_vulnerabilities", label: e.vulnerabilities, input: "tags", suggest: { kind: "damage-types", field: "index" } },
-      { key: "damage_resistances", label: e.resistances, input: "tags", suggest: { kind: "damage-types", field: "index" } },
-      { key: "damage_immunities", label: e.immunities, input: "tags", suggest: { kind: "damage-types", field: "index" } },
+      {
+        key: "damage",
+        label: m.damage,
+        input: "group",
+        fields: [
+          { key: "damage_vulnerabilities", label: e.vulnerabilities, input: "tags", suggest: { kind: "damage-types", field: "index" } },
+          { key: "damage_resistances", label: e.resistances, input: "tags", suggest: { kind: "damage-types", field: "index" } },
+          { key: "damage_immunities", label: e.immunities, input: "tags", suggest: { kind: "damage-types", field: "index" } },
+        ],
+      },
       { key: "condition_immunities", label: m.conditionImmunities, input: "refs", of: "conditions" },
       {
         key: "senses",
@@ -86,7 +102,7 @@ export const ENTRY_TYPES: EntryType[] = [
         input: "group",
         fields: [text("senses.darkvision", m.darkvision), text("senses.blindsight", m.blindsight), text("senses.tremorsense", m.tremorsense), text("senses.truesight", m.truesight), num("senses.passive_perception", m.passivePerception, { min: 0 })],
       },
-      { key: "languages", label: e.languages, input: "text" },
+      { key: "languages", label: e.languages, input: "text", suggest: { kind: "languages" } },
       { key: "challenge", label: e.cr, input: "group", fields: [num("challenge_rating", e.cr, { min: 0, step: "any" }), num("xp", m.xp, { min: 0 }), num("proficiency_bonus", m.pb)] },
       { key: "special_abilities", label: e.traits, input: "actions" },
       { key: "actions", label: e.actions, input: "actions" },
@@ -94,6 +110,15 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "reactions", label: e.reactions, input: "actions" },
       { key: "legendary_actions", label: e.legendaryActions, input: "actions" },
       { key: "description", label: h.description, input: "markdown" },
+    ],
+    sections: [
+      card("basics", ["size", "type", "alignment", "challenge"]),
+      card("combat", ["defense", "speed"]),
+      card("abilities", ["abilities", "proficiencies"]),
+      card("defenses", ["damage", "condition_immunities"]),
+      card("senses", ["senses", "languages"]),
+      card("traits", ["special_abilities", "actions", "bonus_actions", "reactions", "legendary_actions"]),
+      card("description", ["description"]),
     ],
   },
   {
@@ -107,6 +132,11 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "proficiency_choices.0.desc", label: h.proficiencyChoice, input: "text" },
       { key: "levels", label: h.levelTable, input: "levels" },
     ],
+    sections: [
+      card("basics", ["hit_die", "primary_ability.desc"]),
+      card("proficiencies", ["saving_throws", "proficiencies", "proficiency_choices.0.desc"]),
+      card("levels", ["levels"]),
+    ],
   },
   {
     id: "subclasses",
@@ -117,6 +147,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "description", label: h.description, input: "markdown" },
       { key: "features", label: strings.entry.features, input: "actions", text: "description", leveled: true },
     ],
+    sections: [card("basics", ["class", "summary"]), card("description", ["description"]), card("features", ["features"])],
   },
   {
     id: "species",
@@ -127,6 +158,7 @@ export const ENTRY_TYPES: EntryType[] = [
       num("speed", c.speed, { min: 0 }),
       { key: "traits", label: e.traits, input: "linked", of: "traits", text: "description", back: "species" },
     ],
+    sections: [card("basics", ["type", "size", "speed"]), card("speciesTraits", ["traits"])],
   },
   {
     id: "magic-items",
@@ -137,6 +169,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "attunement", label: c.attunement, input: "bool" },
       { key: "desc", label: h.description, input: "markdown", list: true },
     ],
+    sections: [card("basics", ["equipment_category", "rarity.name", "attunement"]), card("description", ["desc"])],
   },
   {
     id: "equipment",
@@ -148,6 +181,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "weight", label: c.weight, input: "number", min: 0, step: "any" },
       { key: "description", label: h.description, input: "markdown" },
     ],
+    sections: [card("basics", ["equipment_categories", "cost.quantity", "cost.unit", "weight"]), card("description", ["description"])],
   },
   {
     id: "feats",
@@ -156,6 +190,7 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "type", label: c.type, input: "text", suggest: { kind: "feats", field: "type" } },
       { key: "description", label: h.description, input: "markdown" },
     ],
+    sections: [card("basics", ["type"]), card("description", ["description"])],
   },
   {
     id: "backgrounds",
@@ -166,15 +201,20 @@ export const ENTRY_TYPES: EntryType[] = [
       { key: "proficiencies", label: h.proficiencies, input: "refs", of: "proficiencies" },
       { key: "description", label: h.description, input: "markdown" },
     ],
+    sections: [card("basics", ["ability_scores", "feat", "proficiencies"]), card("description", ["description"])],
   },
   {
     id: "conditions",
     label: kinds.conditions,
     fields: [{ key: "description", label: h.description, input: "markdown" }],
+    sections: [card("basics", []), card("description", ["description"])],
   },
 ];
 
 export const entryType = (id: string | null) => ENTRY_TYPES.find((t) => t.id === id);
+
+/** The cards with their fields. */
+export const sectionsOf = (type: EntryType) => type.sections.map((s) => ({ ...s, fields: s.keys.map((k) => type.fields.find((f) => f.key === k)!) }));
 
 /** Every field, the ones inside groups too. */
 export const allFields = (fields: Field[]): Field[] => fields.flatMap((f) => (f.input === "group" ? allFields(f.fields) : [f]));

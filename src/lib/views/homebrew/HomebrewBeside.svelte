@@ -165,7 +165,8 @@
 <style>
   .beside {
     flex: none;
-    width: min(calc(var(--homebrew-form-width) + 2 * var(--space-6)), 50%);
+    /* What the addon's page keeps a reading-width page (a PDF at 100%, A4 or Letter) fully in view; at least 40%. */
+    width: min(calc(var(--homebrew-form-width) + 2 * var(--space-6)), max(calc(100% - var(--homebrew-beside-room)), 40%));
     display: flex;
     flex-direction: column;
     min-height: 0;

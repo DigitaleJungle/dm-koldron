@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { CatalogEntry } from "./catalog";
 
 /** A pack entry as the pack schema has it (`packs/packs.md`). */
 export type PackEntry = Record<string, unknown> & { index: string; name: string };
@@ -49,4 +50,22 @@ export function putHomebrewPicture(book: string, bytes: Uint8Array): Promise<str
 /** Keeps book `from`'s picture `image` for book `to` too, and returns its name there. */
 export function copyHomebrewPicture(from: string, to: string, image: string): Promise<string> {
   return invoke("copy_homebrew_picture", { from, to, image });
+}
+
+/** A Homebrew form's live preview: the entry as the Catalog shows it, from `book` as it would be saved (not written).
+ *  A subclass shows on its class's page (`kind` "classes"). Rejects with a StorageError. */
+export function homebrewPreview(book: Book, kind: string, index: string): Promise<CatalogEntry> {
+  return invoke("homebrew_preview", { book, kind, index });
+}
+
+/** Mirrors `MonsterRules` in src-tauri/src/commands/homebrew.rs: from the switched-on packs, each challenge rating's
+ *  usual XP and proficiency bonus, and the ability (the monster field, `dexterity`) of each saving throw and skill. */
+export type MonsterRules = {
+  challenges: { cr: number; xp: number | null; pb: number | null }[];
+  proficiencyAbilities: Record<string, string>;
+};
+
+/** Rejects with a StorageError. */
+export function homebrewMonsterRules(): Promise<MonsterRules> {
+  return invoke("homebrew_monster_rules");
 }

@@ -143,6 +143,8 @@ pub fn run() {
             commands::homebrew::list_homebrew,
             commands::homebrew::save_homebrew,
             commands::homebrew::homebrew_choices,
+            commands::homebrew::homebrew_preview,
+            commands::homebrew::homebrew_monster_rules,
             commands::homebrew::export_homebrew,
             commands::homebrew::put_homebrew_picture,
             commands::homebrew::copy_homebrew_picture,

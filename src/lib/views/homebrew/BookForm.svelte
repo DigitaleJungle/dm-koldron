@@ -1,11 +1,13 @@
 <script lang="ts">
-  // A homebrew book's own fields (a new book before its first save). Save writes the whole book; Discard goes back to
-  // what was saved.
+  // A homebrew book's own fields (a new book before its first save), in the Homebrew layout (EditorShell) with one card.
+  // Save writes the whole book; Discard goes back to what was saved.
   import { untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { exportHomebrew, saveHomebrew, type Book } from "$lib/api/homebrew";
   import { notify } from "$lib/stores/notifications.svelte";
   import Menu from "$lib/components/Menu.svelte";
+  import EditorCard from "./EditorCard.svelte";
+  import EditorShell from "./EditorShell.svelte";
   import { ENTRY_TYPES } from "./entryTypes";
   import { errorMessage } from "$lib/api/storage";
   import { strings } from "$lib/strings";
@@ -64,37 +66,18 @@
   }
 </script>
 
-<form class="form" onsubmit={save}>
-  <label class="field">
-    <span>{t.book.name} <span class="muted">({t.required})</span></span>
-    <!-- svelte-ignore a11y_autofocus: a new book starts at its name -->
-    <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus={!book.id} />
-  </label>
-  <div class="row">
-    <label class="field">
-      <span>{t.book.version}</span>
-      <input bind:value={draft.version} required maxlength="20" autocomplete="off" />
-    </label>
-    <label class="field">
-      <span>{t.book.ruleset}</span>
-      <select bind:value={draft.ruleset} required>
-        {#each choices as ruleset (ruleset)}<option value={ruleset}>{ruleset}</option>{/each}
-      </select>
-    </label>
-  </div>
-  <label class="field">
-    <span>{t.book.license}</span>
-    <input bind:value={draft.license} required maxlength="100" autocomplete="off" />
-  </label>
-  <label class="field">
-    <span>{t.book.attribution}</span>
-    <textarea bind:value={draft.attribution} rows="2" maxlength="1000"></textarea>
-  </label>
-
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <div class="actions">
-    <button class="btn btn-primary" type="submit" disabled={saving || (!changed && !!book.id)}>{t.save}</button>
-    <button class="btn" type="button" disabled={saving || !changed} onclick={() => (draft = JSON.parse(saved))}>{t.discard}</button>
+<EditorShell
+  eyebrow={book.id ? t.editor.eyebrowEdit(t.editor.book) : t.editor.eyebrowNew(t.editor.book)}
+  title={draft.name.trim() || t.editor.unnamed}
+  {changed}
+  {saving}
+  saveDisabled={saving || (!changed && !!book.id)}
+  {error}
+  sections={[{ id: "details", label: t.sections.details, missing: !draft.name.trim() }]}
+  onsubmit={save}
+  ondiscard={() => (draft = JSON.parse(saved))}
+>
+  {#snippet actions()}
     {#if place}
       <a class="btn add" href={place({ chapter: "new" })}><i class="ti ti-plus" aria-hidden="true"></i>{t.book.addChapter}</a>
       <button class="btn" type="button" onclick={exportBook}><i class="ti ti-file-export" aria-hidden="true"></i>{t.export}</button>
@@ -104,21 +87,40 @@
         {/snippet}
       </Menu>
     {/if}
-  </div>
-</form>
+  {/snippet}
+  <EditorCard id="details" label={t.sections.details}>
+    <label class="field">
+      <span>{t.book.name} <span class="muted">({t.required})</span></span>
+      <!-- svelte-ignore a11y_autofocus: a new book starts at its name -->
+      <input bind:value={draft.name} required maxlength="100" autocomplete="off" autofocus={!book.id} />
+    </label>
+    <div class="row">
+      <label class="field">
+        <span>{t.book.version}</span>
+        <input bind:value={draft.version} required maxlength="20" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>{t.book.ruleset}</span>
+        <select bind:value={draft.ruleset} required>
+          {#each choices as ruleset (ruleset)}<option value={ruleset}>{ruleset}</option>{/each}
+        </select>
+      </label>
+    </div>
+    <label class="field">
+      <span>{t.book.license}</span>
+      <input bind:value={draft.license} required maxlength="100" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>{t.book.attribution}</span>
+      <textarea bind:value={draft.attribution} rows="2" maxlength="1000"></textarea>
+    </label>
+  </EditorCard>
+</EditorShell>
 
 <style>
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    max-width: var(--homebrew-form-width);
-    margin-inline: auto;
-  }
-
   .row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(var(--homebrew-number-width), 1fr));
     gap: var(--space-4);
   }
 
@@ -136,7 +138,7 @@
     min-height: var(--control-height);
     padding: 0 var(--space-3);
     border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: var(--color-surface);
     font-weight: var(--weight-regular);
   }
@@ -146,14 +148,7 @@
     resize: vertical;
   }
 
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
   .add {
-    margin-left: auto;
     color: inherit;
     text-decoration: none;
   }
@@ -161,9 +156,5 @@
   .muted {
     color: var(--color-text-muted);
     font-weight: var(--weight-regular);
-  }
-
-  .error {
-    color: var(--color-danger);
   }
 </style>

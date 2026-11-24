@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.3] - 2026-11-24
+
+### Changed
+
+- Homebrew forms have a new layout: a save bar on top with the status, the fields in cards that open and close, On this page on the right (links to the cards, Expand all / Collapse all, Delete), and the entry's live preview in a popup behind an eye button.
+- The homebrew monster form has ability tiles with a Save toggle, Prof. / Expert / Custom per skill, Vulnerable / Resistant / Immune per damage type, the average of the hit dice, the usual XP and proficiency bonus for its CR (from the packs), and actions that can be written as attacks.
+- The Homebrew form beside an addon's tab leaves room for a full PDF page at 100%.
+
+### Fixed
+
+- The encounter difficulty rating keeps working when the SRD is switched off, in Settings or in a campaign.
+
 ## [0.10.2] - 2026-11-23
 
 ### Added

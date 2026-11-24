@@ -10,15 +10,11 @@
   import { libraryHome } from "$lib/stores/campaigns.svelte";
   import { keepScroll } from "$lib/stores/history.svelte";
   import { strings } from "$lib/strings";
-  import { entryAddress, entryCategory, entryFacts, sectionAddress, type Category } from "./catalog";
+  import { entryAddress, entryCategory, sectionAddress, type Category } from "./catalog";
   import { listHomebrew, type Book } from "$lib/api/homebrew";
   import { entryType } from "$lib/views/homebrew/entryTypes";
   import type { Also } from "$lib/api/catalog";
-  import BackgroundDetails from "./entries/BackgroundDetails.svelte";
-  import ClassDetails from "./entries/ClassDetails.svelte";
-  import MonsterBlock from "./entries/MonsterBlock.svelte";
-  import SpeciesDetails from "./entries/SpeciesDetails.svelte";
-  import SpellDetails from "./entries/SpellDetails.svelte";
+  import EntryBody from "./EntryBody.svelte";
 
   let {
     category,
@@ -43,8 +39,6 @@
       .catch((e) => !stale && (error = errorMessage(e)));
     return () => (stale = true);
   });
-
-  const facts = $derived(loaded ? entryFacts(category, loaded) : []);
 
   // A rule section opens in the Rules tab; another entry on its own page. The pack shows when it's another one.
   const alsoHref = (a: Also) => (a.chapterIndex ? sectionAddress(a.pack, a.chapterIndex, a.index, libraryHome()) : entryAddress(a.kind, a.pack, a.index, libraryHome()));
@@ -104,28 +98,7 @@
         {/if}
       </div>
       <p class="source">{loaded.source}</p>
-      {#if category.id === "spells"}
-        <SpellDetails {loaded} />
-      {:else if category.id === "monsters"}
-        <MonsterBlock {loaded} />
-      {:else if category.id === "classes"}
-        <ClassDetails {loaded} />
-      {:else if category.id === "species"}
-        <SpeciesDetails {loaded} />
-      {:else if category.id === "backgrounds"}
-        <BackgroundDetails {loaded} />
-      {:else}
-        {#if facts.length}
-          <dl class="facts">
-            {#each facts as fact (fact.label)}
-              <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
-            {/each}
-          </dl>
-        {/if}
-        <!-- Rendered in Rust from the pack's text, with raw HTML, links and images removed (a tag stays a link). -->
-        {@html loaded.html}
-      {/if}
+      <EntryBody {category} {loaded} />
     </article>
     </TagPreview>
   {/if}

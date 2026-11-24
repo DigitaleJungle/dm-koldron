@@ -7,7 +7,7 @@ use crate::commands::sessions;
 use crate::packs::Pack;
 use crate::storage::{blocking, check_id, lock_update, to_json, write_atomic, StorageError};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -421,9 +421,14 @@ pub fn end_run_at(campaign_dir: &Path, id: &str) -> Result<(), StorageError> {
     }
 }
 
-/// The budget table of the first switched-on pack that has one (a ruleset's pack); empty when none has.
-pub fn budgets(packs: &[&Pack]) -> Vec<Budget> {
-    let Some(rows) = packs.iter().find_map(|p| p.entries.get("encounter-budgets")) else { return Vec::new() };
+/// The budget table of the first switched-on pack (`on`) that has one, else of the first loaded pack (`all`) that
+/// has one: it's a rules table, not content to show, so switching its pack off (the SRD's, which can't be removed)
+/// doesn't stop the difficulty rating. Empty when no loaded pack has one.
+pub fn budgets(on: &[&Pack], all: &[Pack]) -> Vec<Budget> {
+    fn table(p: &Pack) -> Option<&Vec<Map<String, Value>>> {
+        p.entries.get("encounter-budgets")
+    }
+    let Some(rows) = on.iter().find_map(|p| table(p)).or_else(|| all.iter().find_map(table)) else { return Vec::new() };
     // The loader checked every row's level and three whole numbers.
     let mut out: Vec<Budget> = rows.iter().filter_map(|r| serde_json::from_value(Value::Object(r.clone())).ok()).collect();
     out.sort_by_key(|b| b.level);
@@ -460,7 +465,11 @@ pub async fn set_encounter_map(app: AppHandle, campaign: String, id: String, pat
 
 #[tauri::command]
 pub async fn encounter_budgets(app: AppHandle, campaign: Option<String>) -> Result<Vec<Budget>, StorageError> {
-    blocking(move || Ok(budgets(&enabled(&loaded(&app)?.0, &disabled_in(&app, campaign.as_deref())?)))).await
+    blocking(move || {
+        let loaded = loaded(&app)?;
+        Ok(budgets(&enabled(&loaded.0, &disabled_in(&app, campaign.as_deref())?), &loaded.0))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -655,9 +664,10 @@ mod tests {
     #[test]
     fn the_srd_pack_brings_the_2024_budgets() {
         let (packs, _) = crate::packs::load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs")).unwrap();
-        let table = budgets(&packs.iter().collect::<Vec<_>>());
+        let table = budgets(&packs.iter().collect::<Vec<_>>(), &packs);
         assert_eq!(table.len(), 20);
         assert_eq!(table[0], Budget { level: 1, low: 50, moderate: 75, high: 100 });
-        assert!(budgets(&[]).is_empty());
+        assert_eq!(budgets(&[], &packs), table, "the SRD switched off still rates encounters");
+        assert!(budgets(&[], &[]).is_empty());
     }
 }

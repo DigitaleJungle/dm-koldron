@@ -1,18 +1,37 @@
 <script lang="ts">
-  // A homebrew entry of one type: its name, then the type's fields (entryTypes.ts). Choices and suggestions come from
-  // the switched-on packs. Fields the form doesn't show are kept. Save writes the whole book; Delete asks first.
+  // A homebrew entry of one type, in the Homebrew layout (EditorShell): its name and picture, then the type's fields in
+  // its cards (entryTypes.ts), with the live preview beside them. Choices and suggestions come from the switched-on
+  // packs. Fields the form doesn't show are kept. Save writes the whole book; Delete asks first. A monster has widgets of
+  // its own (MonsterField, and actions written as attacks).
   import { untrack } from "svelte";
-  import { copyHomebrewPicture, homebrewChoices, saveHomebrew, type Book, type Choice, type PackEntry } from "$lib/api/homebrew";
+  import {
+    copyHomebrewPicture,
+    homebrewChoices,
+    homebrewMonsterRules,
+    saveHomebrew,
+    type Book,
+    type Choice,
+    type MonsterRules,
+    type PackEntry,
+  } from "$lib/api/homebrew";
   import { errorMessage } from "$lib/api/storage";
   import OrderList from "$lib/components/OrderList.svelte";
   import RichText from "$lib/components/RichText.svelte";
+  import Segmented from "$lib/components/Segmented.svelte";
+  import AttackBuilder from "./AttackBuilder.svelte";
+  import EditorCard from "./EditorCard.svelte";
+  import EditorShell from "./EditorShell.svelte";
+  import EntryPreview from "./EntryPreview.svelte";
+  import MonsterField from "./MonsterField.svelte";
   import PictureField from "./PictureField.svelte";
   import { moveTo } from "$lib/components/sidebarOrder";
   import { strings } from "$lib/strings";
-  import { deleteEntry, openEntry, saveEntry, type Item, type Level } from "./linked";
-  import { STAT_BLOCK_PROFICIENCIES } from "$lib/views/library/entries/format";
-  import { allFields, getField, reference, setField, type EntryType, type Field, type Source } from "./entryTypes";
+  import { deleteEntry, openEntry, saveEntry, type Item, type Level as ClassLevel } from "./linked";
+  import { title } from "$lib/views/library/catalog";
+  import { modifier, STAT_BLOCK_PROFICIENCIES } from "$lib/views/library/entries/format";
+  import { allFields, getField, reference, sectionsOf, setField, type EntryType, type Field, type Source } from "./entryTypes";
   import { fill } from "./fill";
+  import { attackText, bonusFor, detectLevel, usualFor, type Attack, type Level } from "./monster";
 
   let {
     book,
@@ -89,6 +108,7 @@
     const source = sourceOf(f);
     return source ? (choices[sourceKey(source)] ?? []) : [];
   };
+  const choicesFor = (kind: string, field?: string) => choices[sourceKey({ kind, field })] ?? [];
 
   // ---- Field values --------------------------------------------------------------------------------
   type Ref = { index: string; name: string; url?: string };
@@ -119,7 +139,7 @@
     const value = get(f);
     return Array.isArray(value) ? value.filter((a): a is Item => typeof a?.name === "string") : [];
   };
-  const levelsOf = (f: Field): Level[] => {
+  const levelsOf = (f: Field): ClassLevel[] => {
     const value = get(f);
     return Array.isArray(value) ? value : [];
   };
@@ -131,6 +151,77 @@
   function toggleTag(f: Field, tag: string, on: boolean) {
     const tags = tagsOf(f).filter((v) => v !== tag);
     set(f, on ? [...tags, tag] : tags.length ? tags : undefined);
+  }
+
+  // ---- The cards ----------------------------------------------------------------------------------
+  const sections = $derived(sectionsOf(type));
+  const isEmpty = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+  const missing = (fields: Field[]) => allFields(fields).some((f) => "required" in f && f.required && isEmpty(get(f)));
+  const nav = $derived(sections.map((s, i) => ({ id: s.id, label: s.label, missing: (i === 0 && !draft.name.trim()) || missing(s.fields) })));
+
+  function discard() {
+    draft = JSON.parse(saved);
+    levels = {};
+    attacks = {};
+    resets++;
+  }
+
+  // ---- A monster's worked-out values ----------------------------------------------------------------
+  const monster = $derived(type.id === "monsters");
+  /** The fields the monster form shows with its own widgets (MonsterField). */
+  const WIDGETS = new Set(["challenge", "defense", "abilities", "proficiencies", "damage", "languages"]);
+  /** The action lists whose items can be written as attacks. */
+  const ATTACKS = ["actions", "bonus_actions", "reactions", "legendary_actions"];
+  let rules = $state<MonsterRules | null>(null);
+  $effect(() => {
+    if (monster) homebrewMonsterRules().then((r) => (rules = r), (e) => (error = t.loadError(errorMessage(e))));
+  });
+  const scoreOf = (ability: string) => (typeof draft[ability] === "number" ? (draft[ability] as number) : 10);
+  /** The proficiency bonus the bonuses are worked out with: the monster's, else the usual one for its CR. */
+  const pb = $derived(typeof draft.proficiency_bonus === "number" ? draft.proficiency_bonus : (usualFor(rules, draft.challenge_rating)?.pb ?? undefined));
+
+  /** Each saving throw's and skill's level (by proficiency index): read from its bonus once, then kept, so a
+   *  proficient or expert bonus follows its ability score and the proficiency bonus. */
+  let levels = $state<Record<string, Level>>({});
+  $effect(() => {
+    const rows = draft.proficiencies;
+    if (!monster || !rules || !Array.isArray(rows)) return;
+    for (const row of rows) {
+      const index = row?.proficiency?.index;
+      const ability = typeof index === "string" ? rules.proficiencyAbilities[index] : undefined;
+      if (!ability || typeof row.value !== "number") continue;
+      const mod = modifier(scoreOf(ability));
+      let level = untrack(() => levels[index]);
+      if (!level) {
+        if (pb === undefined) continue;
+        level = levels[index] = detectLevel(row.value, mod, pb);
+      }
+      if (level !== "custom" && pb !== undefined && row.value !== bonusFor(level, mod, pb)) row.value = bonusFor(level, mod, pb);
+    }
+  });
+
+  /** Actions written as attacks (by row); their text is written from the attack. */
+  let attacks = $state<Record<string, Attack>>({});
+  $effect(() => {
+    if (!monster) return;
+    for (const key of ATTACKS) {
+      for (const item of Array.isArray(draft[key]) ? (draft[key] as Item[]) : []) {
+        const attack = item && typeof item === "object" ? attacks[rowId(item)] : undefined;
+        if (!attack) continue;
+        const text = attackText(attack, modifier(scoreOf(attack.ability)), pb, title(attack.type));
+        if (item.desc !== text) item.desc = text;
+      }
+    }
+  });
+  function writeAs(item: Item, as: "attack" | "text") {
+    const row = rowId(item);
+    if (as === "attack") {
+      const type = choicesFor("damage-types", "index")[0]?.index ?? "";
+      attacks[row] = { kind: "melee", ability: "strength", reach: t.monster.defaultReach, dice: "1d6", type, extra: "" };
+      return;
+    }
+    // Free text keeps the attack's text, to edit.
+    delete attacks[row];
   }
 
   // ---- Save and delete -----------------------------------------------------------------------------
@@ -169,38 +260,55 @@
   }
 </script>
 
-<form class="form" onsubmit={save}>
-  <p class="label">{type.label}</p>
-  <div class="head">
-    <label class="field">
-      <span>{t.entryName} <span class="muted">({t.required})</span></span>
-      <!-- svelte-ignore a11y_autofocus: a new entry starts at its name -->
-      <input bind:value={draft.name} required maxlength="200" autocomplete="off" autofocus={!entry.index} />
-    </label>
-    <PictureField book={book.id} what={t.picture.it} bind:value={() => (typeof draft.image === "string" ? draft.image : undefined), (v) => setField(draft, "image", v)} />
-  </div>
-
-  {#key resets}
-    {#each type.fields as f (f.key)}{@render field(f)}{/each}
-  {/key}
-
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  <div class="actions">
-    <button class="btn btn-primary" type="submit" disabled={saving || (!changed && !!entry.index)}>{t.save}</button>
-    <button class="btn" type="button" disabled={saving || !changed} onclick={() => { draft = JSON.parse(saved); resets++; }}>{t.discard}</button>
-    {#if entry.index}
-      {#if deleting}
-        <span class="confirm end">
-          {t.deleteEntryQuestion(entry.name)}
-          <button class="btn small" type="button" onclick={() => (deleting = false)}>{t.cancel}</button>
-          <button class="btn small btn-danger" type="button" disabled={saving} onclick={remove}>{t.delete}</button>
-        </span>
-      {:else}
-        <button class="btn btn-danger end" type="button" disabled={saving} onclick={() => (deleting = true)}>{t.delete}</button>
+<EditorShell
+  eyebrow={entry.index ? t.editor.eyebrowEdit(type.label) : t.editor.eyebrowNew(type.label)}
+  title={draft.name.trim() || t.editor.unnamed}
+  {changed}
+  {saving}
+  saveDisabled={saving || (!changed && !!entry.index)}
+  {error}
+  sections={nav}
+  onsubmit={save}
+  ondiscard={discard}
+  deleter={entry.index ? deleter : undefined}
+>
+  {#snippet preview()}<EntryPreview {book} {type} {draft} />{/snippet}
+  {#each sections as section, i (section.id)}
+    <EditorCard id={section.id} label={section.label}>
+      {#if i === 0}
+        <div class="head">
+          <label class="field">
+            <span>{t.entryName} <span class="muted">({t.required})</span></span>
+            <!-- svelte-ignore a11y_autofocus: a new entry starts at its name -->
+            <input bind:value={draft.name} required maxlength="200" autocomplete="off" autofocus={!entry.index} />
+          </label>
+          <PictureField book={book.id} what={t.picture.it} bind:value={() => (typeof draft.image === "string" ? draft.image : undefined), (v) => setField(draft, "image", v)} />
+        </div>
       {/if}
-    {/if}
-  </div>
-</form>
+      {#key resets}
+        {#each section.fields as f (f.key)}
+          {#if monster && WIDGETS.has(f.key)}
+            <MonsterField key={f.key} bind:draft {rules} choices={choicesFor} bind:levels {pb} />
+          {:else}
+            {@render field(f)}
+          {/if}
+        {/each}
+      {/key}
+    </EditorCard>
+  {/each}
+</EditorShell>
+
+{#snippet deleter()}
+  {#if deleting}
+    <span class="confirm">
+      {t.deleteEntryQuestion(entry.name)}
+      <button class="btn small" type="button" onclick={() => (deleting = false)}>{t.cancel}</button>
+      <button class="btn small btn-danger" type="button" disabled={saving} onclick={remove}>{t.delete}</button>
+    </span>
+  {:else}
+    <button class="btn btn-danger" type="button" disabled={saving} onclick={() => (deleting = true)}>{t.delete}</button>
+  {/if}
+{/snippet}
 
 <!-- One field of any kind; a group renders its fields the same way. -->
 {#snippet field(f: Field)}
@@ -246,7 +354,7 @@
       <span id="{id}-{f.key}">{f.label}</span>
       <div class="chips" role="group" aria-labelledby="{id}-{f.key}">
         {#each chosen as ref (ref.index)}
-          <span class="chip">
+          <span class="chip-link">
             {ref.name}
             <button class="icon-btn" type="button" aria-label={t.removeRef(ref.name)} onclick={() => set(f, chosen.length > 1 ? chosen.filter((r) => r.index !== ref.index) : undefined)}>
               <i class="ti ti-x" aria-hidden="true"></i>
@@ -254,6 +362,7 @@
           </span>
         {/each}
         <select
+          class="chip-pick"
           aria-label={t.add(f.label)}
           value=""
           onchange={(e) => {
@@ -303,6 +412,7 @@
           </div>
         {/each}
         <select
+          class="chip-pick"
           aria-label={t.monster.addBonus}
           value=""
           onchange={(e) => {
@@ -318,7 +428,7 @@
       </div>
     </div>
   {:else if f.input === "actions" || f.input === "linked"}
-    {@render items(actionsOf(f), (list) => set(f, list.length ? list : undefined), f.label, f.input === "actions" ? f.text : undefined, f.input === "actions" && !!f.leveled)}
+    {@render items(actionsOf(f), (list) => set(f, list.length ? list : undefined), f.label, f.input === "actions" ? f.text : undefined, f.input === "actions" && !!f.leveled, monster && ATTACKS.includes(f.key))}
   {:else if f.input === "levels"}
     {@const rows = levelsOf(f)}
     <div class="field">
@@ -351,8 +461,9 @@
   {/if}
 {/snippet}
 
-<!-- Named texts in order (`list`), moved by their grip; `change` stores the new list. -->
-{#snippet items(list: Item[], change: (list: Item[]) => void, label: string, textKey = "desc", leveled = false)}
+<!-- Named texts in order (`list`), moved by their grip; `change` stores the new list. `attackable`: each can be written
+     as an attack instead (a monster's actions). -->
+{#snippet items(list: Item[], change: (list: Item[]) => void, label: string, textKey = "desc", leveled = false, attackable = false)}
   <div class="field">
     <span>{label}</span>
     {#if list.length}
@@ -373,11 +484,26 @@
                   oninput={(e) => (item.a.level = Number.isNaN(e.currentTarget.valueAsNumber) ? undefined : e.currentTarget.valueAsNumber)}
                 />
               {/if}
+              {#if attackable}
+                <Segmented
+                  label={t.monster.howWritten(item.label)}
+                  options={[
+                    { value: "attack", label: t.monster.attack },
+                    { value: "text", label: t.monster.freeText },
+                  ]}
+                  value={attacks[item.id] ? "attack" : "text"}
+                  onchange={(as) => writeAs(item.a, as)}
+                />
+              {/if}
               <button class="icon-btn" type="button" aria-label={t.action.remove(item.label)} onclick={() => change(list.filter((x) => x !== item.a))}>
                 <i class="ti ti-trash" aria-hidden="true"></i>
               </button>
             </div>
-            <RichText bind:value={() => (typeof item.a[textKey] === "string" ? item.a[textKey] : ""), (v) => (item.a[textKey] = v)} label={t.action.text(item.label)} extended markdown />
+            {#if attackable && attacks[item.id]}
+              <AttackBuilder bind:attack={attacks[item.id]} text={typeof item.a.desc === "string" ? item.a.desc : ""} damageTypes={choicesFor("damage-types", "index")} />
+            {:else}
+              <RichText bind:value={() => (typeof item.a[textKey] === "string" ? item.a[textKey] : ""), (v) => (item.a[textKey] = v)} label={t.action.text(item.label)} extended markdown />
+            {/if}
           </div>
         {/snippet}
       </OrderList>
@@ -387,14 +513,6 @@
 {/snippet}
 
 <style>
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    max-width: var(--homebrew-form-width);
-    margin-inline: auto;
-  }
-
   .field {
     display: flex;
     flex-direction: column;
@@ -455,16 +573,24 @@
     width: var(--homebrew-bonus-width);
   }
 
-  .form :global(.action-list) {
+  .field :global(.action-list) {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .form :global(.action-list > li) {
+  /* An item: its fields beside the grip, on the page's colour like the mockup's inset blocks. */
+  .field :global(.action-list > li) {
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
   }
 
   .action {
@@ -477,13 +603,18 @@
 
   .action-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }
 
   .action-head input {
-    flex: 1;
+    flex: 1 1 var(--homebrew-number-width);
     min-width: 0;
+  }
+
+  .action-head input.bonus {
+    flex: 0 0 var(--homebrew-bonus-width);
   }
 
   .add {
@@ -516,9 +647,15 @@
     min-height: var(--control-height);
     padding: 0 var(--space-3);
     border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: var(--color-surface);
     font-weight: var(--weight-regular);
+  }
+
+  select.chip-pick {
+    border-style: dashed;
+    background-color: transparent;
+    font-weight: var(--weight-bold);
   }
 
   .check {
@@ -535,31 +672,16 @@
     gap: var(--space-2) var(--space-4);
   }
 
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding-left: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-sunken);
+  .chip-link {
     font-weight: var(--weight-regular);
   }
 
   .confirm {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     font-size: var(--text-sm);
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .end {
-    margin-left: auto;
   }
 
   .small {
@@ -570,9 +692,5 @@
   .muted {
     color: var(--color-text-muted);
     font-weight: var(--weight-regular);
-  }
-
-  .error {
-    color: var(--color-danger);
   }
 </style>

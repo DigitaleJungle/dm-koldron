@@ -1,11 +1,13 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { CatalogEntry } from "$lib/api/catalog";
   import { strings } from "$lib/strings";
   import RefLink from "../RefLink.svelte";
   import { ABILITIES, ACTION_LISTS, challenge, damages, hitPoints, modifier, monsterHeader, proficiencies, senses, signed, speed } from "./format";
 
-  /** `brief`: only the main stats, everything above the traits (the encounter browser's hover card). */
-  let { loaded, brief = false }: { loaded: CatalogEntry; brief?: boolean } = $props();
+  /** `brief`: only the main stats, everything above the traits (the encounter browser's hover card). `hp`: shown in
+   * place of the HP value (the encounter builder's HP fields). */
+  let { loaded, brief = false, hp }: { loaded: CatalogEntry; brief?: boolean; hp?: Snippet } = $props();
   const t = strings.entry;
   const m = $derived(loaded.entry);
   // Lines with nothing to say are left out. Condition immunities are references after the damage immunities.
@@ -27,7 +29,7 @@
 <p class="subtitle">{monsterHeader(m)}</p>
 <dl class="facts">
   <dt>{t.ac}</dt><dd>{m.armor_class?.[0]?.value ?? ""}</dd>
-  <dt>{t.hp}</dt><dd>{hitPoints(m)}</dd>
+  <dt>{t.hp}</dt><dd>{#if hp}{@render hp()}{:else}{hitPoints(m)}{/if}</dd>
   <dt>{t.speed}</dt><dd>{speed(m.speed)}</dd>
 </dl>
 

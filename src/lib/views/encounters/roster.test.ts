@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatalogRow } from "$lib/api/catalog";
 import type { Character } from "$lib/api/characters";
 import { blankCharacter } from "$lib/views/characters/characters";
-import { addToRoster, characterLevel, encounterParty, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versions } from "./roster";
+import { addToRoster, asVersion, characterLevel, encounterParty, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versions, versionsByKey, withHp, withQuantity } from "./roster";
 
 const goblin = (pack: string, others: CatalogRow["others"] = []): CatalogRow => ({
   kind: "monsters",
@@ -58,6 +58,35 @@ describe("roster", () => {
     expect(characterLevel([])).toBeNull();
     expect(characterLevel(undefined)).toBeNull();
     expect(characterLevel([cls(Number.NaN)])).toBeNull();
+  });
+});
+
+describe("each monster's HP", () => {
+  const row = { pack: "srd", index: "goblin", name: "Goblin", source: "SRD", quantity: 3 };
+
+  it("sets one monster's HP and stores nothing past the last one set", () => {
+    expect(withHp(row, 1, 9).hp).toEqual([null, 9]);
+    expect(withHp(withHp(row, 1, 9), 1, null).hp).toEqual([]);
+  });
+
+  it("keeps the HP with its monsters when splitting or dropping some", () => {
+    const set = { ...row, quantity: 5, hp: [1, 2, 3, null, 5] };
+    expect(splitRow([set], 0).map((r) => r.hp)).toEqual([[1, 2, 3], [null, 5]]);
+    expect(withQuantity(set, 2).hp).toEqual([1, 2]);
+  });
+
+  it("switches to another pack's version with its own HP", () => {
+    const xmm = { ...goblin("xmm"), name: "Goblin Warrior" };
+    expect(asVersion({ ...row, hp: [4] }, xmm)).toMatchObject({ pack: "xmm", name: "Goblin Warrior", quantity: 3, hp: [] });
+  });
+});
+
+describe("versions by key", () => {
+  it("finds every version of a monster from any of them", () => {
+    const also = { kind: "monsters", pack: "xmm", source: "XMM", index: "goblin", name: "Goblin", chapterIndex: null, chapterName: null, fields: {} };
+    const map = versionsByKey([goblin("srd", [also])]);
+    expect(map.get("xmm/goblin")?.map((v) => v.pack)).toEqual(["srd", "xmm"]);
+    expect(map.get("srd/goblin")).toBe(map.get("xmm/goblin"));
   });
 });
 

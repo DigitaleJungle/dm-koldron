@@ -25,9 +25,32 @@ export function rowKeys(roster: { pack: string; index: string }[]): string[] {
 export function splitRow(roster: RosterEntry[], i: number): RosterEntry[] {
   const row = roster[i];
   if (!row || row.quantity < 2) return roster;
-  const second = Math.floor(row.quantity / 2);
-  return [...roster.slice(0, i), { ...row, quantity: row.quantity - second }, { ...row, quantity: second }, ...roster.slice(i + 1)];
+  const first = row.quantity - Math.floor(row.quantity / 2);
+  const hp = row.hp ?? [];
+  return [
+    ...roster.slice(0, i),
+    { ...row, quantity: first, hp: hp.slice(0, first) },
+    { ...row, quantity: row.quantity - first, hp: hp.slice(first) },
+    ...roster.slice(i + 1),
+  ];
 }
+
+/** The row with `quantity` monsters; HP set for monsters no longer there goes. */
+export const withQuantity = (row: RosterEntry, quantity: number): RosterEntry => ({ ...row, quantity, hp: (row.hp ?? []).slice(0, quantity) });
+
+/** The row with the `n`th monster's HP set, or back to its stat block's (null). */
+export function withHp(row: RosterEntry, n: number, hp: number | null): RosterEntry {
+  const list = Array.from({ length: row.quantity }, (_, i) => (i === n ? hp : (row.hp?.[i] ?? null)));
+  while (list.length && list[list.length - 1] === null) list.pop(); // untouched HP isn't stored
+  return { ...row, hp: list };
+}
+
+/** What a monster's HP is rolled with: "20d10 + 40" (`hit_points_roll`, with its CON), else its hit dice; "" for none. */
+export const hpDice = (m: Record<string, any> | undefined): string =>
+  typeof m?.hit_points_roll === "string" ? m.hit_points_roll : typeof m?.hit_dice === "string" ? m.hit_dice : "";
+
+/** The row as another pack's version of its monster: the same count, the stat block's HP. */
+export const asVersion = (row: RosterEntry, v: CatalogRow): RosterEntry => ({ ...row, pack: v.pack, index: v.index, name: v.name, source: v.source, hp: [] });
 
 /** The most of one monster in a roster; Rust refuses to save more. */
 export const MAX_QUANTITY = 999;
@@ -37,7 +60,7 @@ export function addToRoster(roster: RosterEntry[], monster: CatalogRow): RosterE
   const key = entryKey(monster);
   const found = roster.find((r) => entryKey(r) === key);
   return found
-    ? roster.map((r) => (r === found ? { ...r, quantity: Math.min(r.quantity + 1, MAX_QUANTITY) } : r))
+    ? roster.map((r) => (r === found ? withQuantity(r, Math.min(r.quantity + 1, MAX_QUANTITY)) : r))
     : [...roster, { pack: monster.pack, index: monster.index, name: monster.name, source: monster.source, quantity: 1 }];
 }
 
@@ -52,6 +75,11 @@ export function versions(row: CatalogRow): CatalogRow[] {
  */
 export function rowsByKey(rows: CatalogRow[]): Map<string, CatalogRow> {
   return new Map(rows.flatMap(versions).map((v) => [entryKey(v), v]));
+}
+
+/** Every version's key to all the versions of its monster (one for a monster in one pack). */
+export function versionsByKey(rows: CatalogRow[]): Map<string, CatalogRow[]> {
+  return new Map(rows.flatMap((r) => versions(r).map((v, _, all) => [entryKey(v), all] as const)));
 }
 
 /**

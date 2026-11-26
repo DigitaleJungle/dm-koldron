@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.5] - 2026-11-26
+
+### Added
+
+- Encounter builder: each monster's HP can be set in its stat block's HP line, or rolled from its hit dice with the dice button; Run starts each monster from it.
+- Run: while rolling initiative, each monster's HP can be typed over or rolled from its hit dice.
+
+### Changed
+
+- Encounter builder: a monster in more than one pack adds its first pack's version, and a dropdown on its tile switches the version.
+- Encounter builder: a Ready encounter's monster list has no Add column; Clear filters is an ✕ button.
+- Run is saved from Start on: leaving while rolling initiative starts again from the encounter as saved in Prepare.
+- Settings → Rules gives the pack name more room and no longer shows "Downloaded" beside Images.
+- Run: Damage, Heal and Temp HP empty the Amount field.
+
+### Fixed
+
+- Opening Run, or a running session, took many seconds.
+- Clear filters no longer moves the CR slider while dragging it.
+- Run no longer brings back monsters removed from the encounter.
+
 ## [0.10.4] - 2026-11-24
 
 ### Added

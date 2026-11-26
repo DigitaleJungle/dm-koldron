@@ -24,7 +24,7 @@
   import NotesPanel from "./NotesPanel.svelte";
   import { monsterPicture } from "$lib/stores/monsterPictures";
   import MonsterBlock from "$lib/views/library/entries/MonsterBlock.svelte";
-  import { encounterParty, entryKey, rowsByKey } from "./roster";
+  import { encounterParty, entryKey, hpDice, rowsByKey } from "./roster";
   import * as R from "./run";
 
   let { id }: { id: string } = $props();
@@ -41,8 +41,9 @@
   let encounter = $state<Encounter | null>(null);
   let characters = $state<Character[]>([]);
   let run = $state<Run | null>(null);
-  let monsters = $state<CatalogRow[]>([]);
-  let conditions = $state<CatalogRow[]>([]);
+  // Raw: hundreds of rows, only ever replaced whole, so no deep proxies.
+  let monsters = $state.raw<CatalogRow[]>([]);
+  let conditions = $state.raw<CatalogRow[]>([]);
   let lookupError = $state<string | null>(null);
 
   // A monster's whole entry, asked once per pack entry; rejects (and is asked again next time) when it can't load,
@@ -54,7 +55,7 @@
     return entries.get(key)!;
   }
 
-  catalogRows("monsters", ["challenge_rating", "type", "image"]).then(
+  catalogRows("monsters", ["challenge_rating", "type", "image", "hit_points_roll", "hit_dice"]).then(
     (rows) => (monsters = rows),
     (e) => (lookupError = t.lookupError(errorMessage(e))),
   );
@@ -68,19 +69,14 @@
     async ([e, saved, list]) => {
       encounter = e;
       characters = list.characters;
-      // Saved after the run: its monsters or party may have changed since.
-      const stale = !!saved && e.savedAt > saved.savedAt;
-      if (saved && saved.round === 0 && stale && e.status === "ready") {
-        // Still rolling initiative: start again from the encounter, keeping initiatives and whoever was added.
-        return commit(R.carryOver(await newRun(e, list.characters), saved, e.monsters));
-      }
-      if (saved) {
+      // Only a fight under way (past Start) is saved; an older file still rolling initiative starts afresh.
+      if (saved && saved.round > 0) {
         run = saved;
         const followed = R.followLinked(saved, list.characters, ownedFields);
         if (followed) commit(followed);
-        changedSince = stale;
-        // A fight already under way: continue it, or start it over.
-        if (saved.round > 0) await tick().then(() => resumeDialog?.showModal());
+        changedSince = e.savedAt > saved.savedAt; // its monsters or party may have changed since
+        // Continue it, or start it over.
+        await tick().then(() => resumeDialog?.showModal());
         return;
       }
       if (e.status !== "ready") return void (loadError = t.notReady);
@@ -104,10 +100,11 @@
     deathFailures: 0,
   };
 
-  /** A monster from its entry: its HP, AC and the DEX modifier as initiative bonus (when its pack is on). */
-  async function monsterCombatant(pack: string, index: string, name: string, group: string): Promise<Combatant> {
+  /** A monster from its entry: its HP (or `setHp`, set in Prepare), AC and the DEX modifier as initiative bonus (when
+   * its pack is on). */
+  async function monsterCombatant(pack: string, index: string, name: string, group: string, setHp: number | null = null): Promise<Combatant> {
     const m = (await entryOf(pack, index).catch(() => null))?.entry;
-    const hp = typeof m?.hit_points === "number" ? m.hit_points : 0;
+    const hp = setHp ?? (typeof m?.hit_points === "number" ? m.hit_points : 0);
     const ac = m?.armor_class?.[0]?.value;
     return {
       ...blank,
@@ -152,14 +149,16 @@
 
   /** Round 0: the roster's monsters (one roll per entry) and the encounter's party. */
   async function newRun(e: Encounter, list: Character[]): Promise<Run> {
-    const combatants: Combatant[] = [];
-    for (const m of R.rosterMonsters(e.monsters)) combatants.push(await monsterCombatant(m.pack, m.index, m.name, m.group));
+    // All at once: each lookup and roll is a trip to Rust, and one after another they add up.
+    const combatants = await Promise.all(R.rosterMonsters(e.monsters).map((m) => monsterCombatant(m.pack, m.index, m.name, m.group, m.hp)));
     // One roll per group.
-    for (const group of new Set(combatants.map((c) => c.group))) {
-      const members = combatants.filter((c) => c.group === group);
-      const total = await roll(members[0].initiativeBonus);
-      members.forEach((c) => (c.initiative = total));
-    }
+    await Promise.all(
+      [...new Set(combatants.map((c) => c.group))].map(async (group) => {
+        const members = combatants.filter((c) => c.group === group);
+        const total = await roll(members[0].initiativeBonus);
+        members.forEach((c) => (c.initiative = total));
+      }),
+    );
     for (const charId of encounterParty(e.partyMode, e.party, list)) {
       const c = list.find((x) => x.id === charId);
       if (c) combatants.push(characterCombatant(c));
@@ -189,10 +188,11 @@
    * link counts only while its addon is loaded; without it the character fights like any other. */
   const ownsField = (c: Combatant, field: string) => c.kind === "character" && ownedFields(characterById.get(c.character)).includes(field);
 
-  /** Shows the change at once and saves it after the saves before it. */
+  /** Shows the change at once and, once the fight has started, saves it after the saves before it. Rolling initiative
+   * isn't running yet: nothing is saved, so leaving then starts again from the encounter. */
   function commit(next: Run) {
     run = next;
-    if (ending) return; // End has saved and is removing the run: a save now would bring it back
+    if (ending || next.round === 0) return; // End has saved and is removing the run: a save now would bring it back
     const copy = $state.snapshot(next) as Run;
     saving = saving.then(() =>
       saveRun(campaign, id, copy).then(
@@ -219,6 +219,30 @@
   let separate = $state(new Set<string>());
   const isSeparate = (g: Group) => separate.has(g.key) || new Set(g.members.map((m) => m.initiative)).size > 1;
   const missing = $derived((run?.combatants ?? []).filter((c) => c.initiative === null).length);
+
+  /** Rolling initiative: a monster's HP typed over, as its current and max HP. Empty or out of range changes nothing,
+   * and the field shows the HP kept. */
+  function setSetupHp(c: Combatant, input: HTMLInputElement) {
+    const v = input.valueAsNumber;
+    if (run && Number.isInteger(v) && v >= 1 && v <= R.MAX_NUMBER) {
+      commit({ ...run, combatants: run.combatants.map((x) => (x.id === c.id ? { ...x, hp: v, maxHp: v } : x)) });
+    } else input.value = c.maxHp ? String(c.maxHp) : "";
+  }
+
+  /** Rolling initiative: rolls each monster of the group its own HP (its hit dice), as its current and max HP. */
+  let rollingHp = $state(false);
+  async function rollGroupHp(g: Group, dice: string) {
+    rollingHp = true;
+    try {
+      const rolls = await Promise.all(g.members.map(() => rollDice(dice)));
+      const hp = new Map(g.members.map((m, i) => [m.id, Math.min(R.MAX_NUMBER, Math.max(1, rolls[i].total))]));
+      if (run) commit({ ...run, combatants: run.combatants.map((c) => (hp.has(c.id) ? { ...c, hp: hp.get(c.id)!, maxHp: hp.get(c.id)! } : c)) });
+    } catch (e) {
+      saveError = t.rollError(errorMessage(e));
+    } finally {
+      rollingHp = false;
+    }
+  }
 
   const setInitiative = (ids: string[], value: number | null) =>
     run && commit({ ...run, combatants: run.combatants.map((c) => (ids.includes(c.id) ? { ...c, initiative: value } : c)) });
@@ -372,6 +396,7 @@
       changeSelected(() => after, t.logged.damage(c.name, shown) + end);
     } else if (kind === "heal") changeSelected((x) => R.heal(x, n), t.logged.heal(c.name, shown));
     else changeSelected((x) => R.giveTempHp(x, n), t.logged.temp(c.name, shown));
+    amount = null; // applied: the field is ready for the next amount
   }
 
   function toggleCondition(c: Combatant, condition: { index: string; name: string }) {
@@ -455,11 +480,15 @@
     restarting = true;
     try {
       await saving;
+      // Rolling initiative isn't saved, so the fight's file goes now.
+      await endRun(campaign, id);
       selectedId = null;
       separate = new Set();
       commit(await newRun(encounter, characters));
       changedSince = false;
       resumeDialog?.close();
+    } catch (e) {
+      saveError = t.saveError(errorMessage(e));
     } finally {
       restarting = false;
     }
@@ -559,11 +588,37 @@
         {#each groups as g (g.key)}
           {@const first = g.members[0]}
           {@const apart = isSeparate(g)}
+          {@const dice = hpDice(rowByKey.get(entryKey(first))?.fields)}
           <li class="setup-row">
             {@render hex(first)}
             <span class="setup-name">
               <strong>{groupName(g)}</strong>
               <span class="muted small">{t.bonus(signed(first.initiativeBonus))}</span>
+              <!-- Each monster's HP, from Prepare or its stat block; typed over here before the fight starts. -->
+              <span class="setup-hp" role="group" aria-label={t.setupHp}>
+                <span class="muted small" aria-hidden="true">{t.setupHp}</span>
+                {#each g.members as m (m.id)}
+                  <label class="hp-field">
+                    {#if g.members.length > 1}<span class="muted small" aria-hidden="true">{m.name.match(/ (\d+)$/)?.[1] ?? ""}</span>{/if}
+                    <input
+                      class="text-field dice hp-input"
+                      type="number"
+                      min="1"
+                      max={R.MAX_NUMBER}
+                      placeholder="–"
+                      aria-label={t.hpOf(m.name)}
+                      value={m.maxHp || ""}
+                      onchange={(e) => setSetupHp(m, e.currentTarget)}
+                    />
+                  </label>
+                {/each}
+                {#if dice}
+                  <span class="muted small">({dice})</span>
+                  <button class="icon-btn" aria-label={t.rollHp(groupName(g))} disabled={rollingHp} onclick={() => rollGroupHp(g, dice)}>
+                    <i class="ti ti-dice-5" aria-hidden="true"></i>
+                  </button>
+                {/if}
+              </span>
             </span>
             {#if g.members.length > 1}
               <label class="check">
@@ -1042,6 +1097,24 @@
     flex: 1;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .setup-hp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    margin-top: var(--space-1);
+  }
+
+  .hp-field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .hp-input {
+    width: var(--level-input-width);
   }
 
   .init-field {

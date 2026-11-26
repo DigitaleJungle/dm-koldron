@@ -572,13 +572,14 @@ export const strings = {
       sortBy: (column: string) => `Sort by ${column}`,
       add: "Add",
       addLabel: (name: string, source: string) => `Add ${name} (${source})`,
-      versions: (name: string) => `Versions of ${name}`,
       preview: (name: string) => `${name} stat block`,
       previewLoading: "Loading…",
     },
     details: {
       label: (name: string) => `${name} details`,
       close: "Close details",
+      hpOf: (name: string) => `HP of ${name}`,
+      rollHp: (name: string) => `Roll HP for ${name}`,
     },
     party: {
       title: "Party",
@@ -600,6 +601,7 @@ export const strings = {
       remove: (name: string) => `Remove ${name}`,
       split: (name: string) => `Split ${name} into two groups`,
       packOff: "Its pack is switched off",
+      version: (name: string) => `Which ${name}`,
     },
     meter: {
       title: "Difficulty",
@@ -637,6 +639,9 @@ export const strings = {
       rerollOne: (name: string) => `Re-roll ${name}`,
       separately: "Roll separately",
       initiativeOf: (name: string) => `${name} initiative`,
+      setupHp: "HP",
+      rollHp: (name: string) => `Roll HP for ${name}`,
+      hpOf: (name: string) => `HP of ${name}`,
       bonus: (bonus: string) => `Initiative ${bonus}`,
       begin: "Start",
       missing: (n: number) => `${n} without initiative`,
@@ -1142,7 +1147,6 @@ export const strings = {
         cancel: "Cancel",
         progress: (done: string, total: string) => `${done} of ${total}`,
         cancelDownload: "Cancel download",
-        allKept: "Downloaded",
         size: (bytes: number) =>
           new Intl.NumberFormat(undefined, { style: "unit", unit: "megabyte", maximumFractionDigits: 0 }).format(bytes / 1e6),
         done: (name: string, done: number) => `Downloaded ${new Intl.NumberFormat().format(done)} images of ${name}.`,

@@ -248,9 +248,6 @@
                 />
                 {ti.label}
               </label>
-              {#if !progress && imagesOn(pack.id) && packImages[pack.id].kept === packImages[pack.id].count}
-                <span class="muted">{ti.allKept}</span>
-              {/if}
             {/if}
           </span>
           {@render trash(pack)}
@@ -358,7 +355,7 @@
     display: grid;
     /* The name takes what's left and wraps when long; the other columns fit their widest value. */
     grid-template-columns: minmax(0, 1fr) repeat(5, auto);
-    column-gap: var(--space-5);
+    column-gap: var(--space-3);
     font-size: var(--text-sm);
   }
 

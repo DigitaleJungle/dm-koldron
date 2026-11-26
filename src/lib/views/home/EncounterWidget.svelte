@@ -41,7 +41,7 @@
   }
 
   // For its difficulty and pictures; without them the card shows no rating, and says why.
-  let monsters = $state<CatalogRow[]>([]);
+  let monsters = $state.raw<CatalogRow[]>([]);
   let budgets = $state<Budget[]>([]);
   let lookupError = $state<string | null>(null);
   const lookupFailed = (e: unknown) => (lookupError = strings.encounters.list.lookupError(errorMessage(e)));

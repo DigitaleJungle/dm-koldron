@@ -66,7 +66,7 @@
   // What the encounters and the party need; without it they show no rating or no one.
   let all = $state<Encounter[]>([]);
   let characters = $state<Character[] | null>(null);
-  let monsters = $state<CatalogRow[]>([]);
+  let monsters = $state.raw<CatalogRow[]>([]);
   let budgets = $state<Budget[]>([]);
   listEncounters(campaign).then((l) => (all = l.encounters), () => {});
   listCharacters(campaign).then((l) => (characters = l.characters), () => {});

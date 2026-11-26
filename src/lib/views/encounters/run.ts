@@ -7,39 +7,22 @@ import { entryKey, rowKeys } from "./roster";
 
 /**
  * The roster's monsters one by one, each with its group (its row's key: a split group is its own). A monster with
- * more than one in all is numbered on across its groups: Goblin 1–3, then Goblin 4–5.
+ * more than one in all is numbered on across its groups: Goblin 1–3, then Goblin 4–5. `hp`: the HP the DM set for that
+ * monster in Prepare, or null for its stat block's.
  */
-export function rosterMonsters(rows: RosterEntry[]): { pack: string; index: string; name: string; group: string }[] {
+export function rosterMonsters(rows: RosterEntry[]): { pack: string; index: string; name: string; group: string; hp: number | null }[] {
   const keys = rowKeys(rows);
   const totals = new Map<string, number>();
   for (const row of rows) totals.set(entryKey(row), (totals.get(entryKey(row)) ?? 0) + row.quantity);
   const numbered = new Map<string, number>();
   return rows.flatMap((row, i) =>
-    Array.from({ length: row.quantity }, () => {
+    Array.from({ length: row.quantity }, (_, j) => {
       const n = (numbered.get(entryKey(row)) ?? 0) + 1;
       numbered.set(entryKey(row), n);
-      return { pack: row.pack, index: row.index, name: (totals.get(entryKey(row)) ?? 1) > 1 ? `${row.name} ${n}` : row.name, group: keys[i] };
+      const name = (totals.get(entryKey(row)) ?? 1) > 1 ? `${row.name} ${n}` : row.name;
+      return { pack: row.pack, index: row.index, name, group: keys[i], hp: row.hp?.[j] ?? null };
     }),
   );
-}
-
-/**
- * A run still rolling initiative, rebuilt from the encounter after it changed (`fresh`), keeping from the `saved` one
- * what the encounter didn't bring: the initiative of whoever is still there (characters by character, monsters by
- * group and name), and everyone added with + Combatant, who has a group of its own (the party's characters have
- * none, and the roster's monsters their row's key).
- */
-export function carryOver(fresh: Run, saved: Run, roster: RosterEntry[]): Run {
-  const groups = new Set(rowKeys(roster));
-  const who = (c: Combatant) => (c.kind === "character" ? `c:${c.character}` : `m:${c.group}:${c.name}`);
-  const initiative = new Map(saved.combatants.map((c) => [who(c), c.initiative]));
-  const added = saved.combatants.filter((c) => c.group && !groups.has(c.group));
-  const combatants = fresh.combatants.map((c) => {
-    const kept = initiative.get(who(c));
-    // A character's initiative is typed in, so it's kept even when empty; a monster keeps its fresh roll then.
-    return c.kind === "character" ? { ...c, initiative: kept ?? null } : kept != null ? { ...c, initiative: kept } : c;
-  });
-  return { ...fresh, combatants: [...combatants, ...added] };
 }
 
 /** Highest initiative first; a tie goes to the higher bonus, then the name. Without initiative, last. */

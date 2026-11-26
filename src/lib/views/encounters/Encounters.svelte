@@ -26,7 +26,7 @@
   let list = $state<EncounterList | null>(null);
   let loadError = $state<string | null>(null);
   // What the cards need besides the encounters; without it the cards show no rating (and letters for pictures).
-  let monsters = $state<CatalogRow[]>([]);
+  let monsters = $state.raw<CatalogRow[]>([]);
   let characters = $state<Character[] | null>(null); // null until loaded (or when they can't be)
   let budgets = $state<Budget[]>([]);
   let lookupErrors = $state<string[]>([]);

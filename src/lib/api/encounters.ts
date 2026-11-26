@@ -2,8 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { campaigns } from "$lib/stores/campaigns.svelte";
 import type { Picture } from "$lib/api/campaigns";
 
-/** One roster row: a pack's monster and how many; name and source keep it readable when its pack is off. */
-export type RosterEntry = { pack: string; index: string; name: string; source: string; quantity: number };
+/** One roster row: a pack's monster and how many; name and source keep it readable when its pack is off. `hp`: each
+ * monster's HP as the DM set it, in order (at most `quantity`); missing or null: its stat block's. */
+export type RosterEntry = { pack: string; index: string; name: string; source: string; quantity: number; hp?: (number | null)[] };
 
 /** Draft while being prepared; Ready is locked in Prepare and can be run. */
 export type EncounterStatus = "draft" | "ready";

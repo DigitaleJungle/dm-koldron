@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Character } from "$lib/api/characters";
 import type { Combatant, Run } from "$lib/api/encounters";
-import { addCombatant, addLog, carryOver, damage, followLinked, giveTempHp, heal, health, initiativeNotation, inOrder, MAX_LOG, rosterMonsters, setDeathSave, stepTurn, toggleCondition } from "./run";
+import { addCombatant, addLog, damage, followLinked, giveTempHp, heal, health, initiativeNotation, inOrder, MAX_LOG, rosterMonsters, setDeathSave, stepTurn, toggleCondition } from "./run";
 
 const fighter = (name: string, initiative: number | null, extra: Partial<Combatant> = {}): Combatant => ({
   id: name,
@@ -140,30 +140,8 @@ describe("building from the encounter", () => {
     ]);
   });
 
-  it("keeps initiatives and whoever was added when rebuilt after the encounter changed", () => {
-    const roster = [row(1)];
-    const saved = run(
-      [
-        goblin("Goblin", 7, { group: "srd/goblin" }),
-        fighter("Mira", 15),
-        fighter("Gone", 13), // taken out of the party since: not brought back
-        fighter("Guest", 11, { group: "added-2" }),
-        fighter("Ally", 9, { kind: "custom", character: "", group: "added-3" }),
-        goblin("Wolf", 12, { group: "added-1" }),
-      ],
-      0,
-      0,
-    );
-    const fresh = run([goblin("Goblin", 3, { group: "srd/goblin" }), goblin("Orc", 5, { group: "srd/orc" }), fighter("Mira", null)], 0, 0);
-    const kept = carryOver(fresh, saved, [...roster, row(1, "orc")]);
-    expect(kept.combatants.map((c) => [c.name, c.initiative])).toEqual([
-      ["Goblin", 7],
-      ["Orc", 5],
-      ["Mira", 15],
-      ["Guest", 11],
-      ["Ally", 9],
-      ["Wolf", 12],
-    ]);
+  it("gives each monster the HP set in Prepare, else none", () => {
+    expect(rosterMonsters([{ ...row(3), hp: [12, null] }]).map((m) => m.hp)).toEqual([12, null, null]);
   });
 });
 

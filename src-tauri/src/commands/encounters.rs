@@ -18,6 +18,8 @@ const MAX_NAME_LEN: usize = 100;
 const MAX_QUANTITY: u32 = 999;
 const MAX_NOTE_LEN: usize = 20_000;
 const MAX_PINS: usize = 100;
+/// The most HP a roster monster can be given.
+const MAX_HP: u32 = 9999;
 /// The map is stored shrunk so its longest side is at most this many pixels.
 pub const MAP_MAX_SIDE: u32 = 2048;
 
@@ -31,6 +33,9 @@ pub struct RosterEntry {
     pub name: String,
     pub source: String,
     pub quantity: u32,
+    /// Each monster's HP as the DM set it, in order (at most `quantity`); missing or null: its stat block's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hp: Vec<Option<u32>>,
 }
 
 /// The DM's notes: a text (shown as "Notes"; stored as its first name, `description`) and the pins on the map.
@@ -125,6 +130,9 @@ fn check(encounter: &mut Encounter) -> Result<(), StorageError> {
     }
     if encounter.monsters.iter().any(|m| !(1..=MAX_QUANTITY).contains(&m.quantity)) {
         problems.push(format!("A quantity must be 1 to {MAX_QUANTITY}."));
+    }
+    if encounter.monsters.iter().any(|m| m.hp.len() > m.quantity as usize || m.hp.iter().flatten().any(|hp| !(1..=MAX_HP).contains(hp))) {
+        problems.push(format!("A monster's HP must be 1 to {MAX_HP}."));
     }
     if encounter.monsters.iter().any(|m| m.pack.is_empty() || m.index.is_empty()) {
         problems.push("Each monster needs its pack and index.".into());
@@ -500,7 +508,7 @@ mod tests {
     }
 
     fn goblins(quantity: u32) -> RosterEntry {
-        RosterEntry { pack: "srd".into(), index: "goblin-warrior".into(), name: "Goblin Warrior".into(), source: "SRD".into(), quantity }
+        RosterEntry { pack: "srd".into(), index: "goblin-warrior".into(), name: "Goblin Warrior".into(), source: "SRD".into(), quantity, hp: vec![] }
     }
 
     fn encounter(name: &str, monsters: Vec<RosterEntry>) -> Encounter {
@@ -533,6 +541,21 @@ mod tests {
         assert!(matches!(set_map(&dir, &saved.id, Some(&file)), Err(StorageError::Invalid(_))));
         assert_eq!(set_map(&dir, &saved.id, None).unwrap(), None);
         assert!(matches!(set_map(&dir, "nope", None), Err(StorageError::NotFound(_))));
+    }
+
+    #[test]
+    fn keeps_each_monsters_hp_and_checks_it() {
+        let dir = temp_dir("hp");
+        let set = RosterEntry { hp: vec![Some(12), None], ..goblins(3) };
+        let saved = save(&dir, encounter("Bridge", vec![set.clone()]), 1).unwrap();
+        assert_eq!(get(&dir, &saved.id).unwrap().monsters, vec![set]);
+        for hp in [vec![Some(0)], vec![Some(MAX_HP + 1)], vec![None; 4]] {
+            let bad = encounter("Bridge", vec![RosterEntry { hp, ..goblins(3) }]);
+            assert!(matches!(save(&dir, bad, 2), Err(StorageError::Invalid(_))));
+        }
+        // Untouched HP isn't written, so older files and new ones read the same.
+        let plain = save(&dir, encounter("Plain", vec![goblins(1)]), 3).unwrap();
+        assert!(!fs::read_to_string(dir.join(FOLDER).join(format!("{}.json", plain.id))).unwrap().contains("\"hp\""));
     }
 
     #[test]

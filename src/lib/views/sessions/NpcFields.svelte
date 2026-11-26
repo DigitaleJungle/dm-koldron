@@ -63,7 +63,7 @@
     ["cha", "charisma"],
   ] as const;
 
-  let creatures = $state<CatalogRow[] | null>(null);
+  let creatures = $state.raw<CatalogRow[] | null>(null);
   let creaturesError = $state<string | null>(null);
   // Loaded each time an NPC editor opens, so a pack switched on since shows (as in the encounter builder).
   catalogRows("monsters", ["armor_class", "hit_points", "hit_dice", "speed", "challenge_rating", "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]).then(

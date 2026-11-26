@@ -1,6 +1,7 @@
 // The loaded addons, plus what the app tells their background pages: whether something live (a running encounter or
 // session) is on screen, and a count that goes up whenever an addon saved a character, so screens showing
 // characters read them again.
+import { untrack } from "svelte";
 import { listAddons, type AddonSummary } from "$lib/api/addons";
 
 export const addons = $state<{ list: AddonSummary[]; live: number; charactersChanged: number }>({ list: [], live: 0, charactersChanged: 0 });
@@ -48,6 +49,7 @@ export function ownedFields(character: { linked?: string | null } | undefined): 
 
 /** For a screen that's live while shown: `$effect(goLive)`. */
 export function goLive(): () => void {
-  addons.live++;
-  return () => void addons.live--;
+  // Untracked: `++` reads `live`, so the effect would depend on what it changes and run again and again.
+  untrack(() => addons.live++);
+  return () => void untrack(() => addons.live--);
 }

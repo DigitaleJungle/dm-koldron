@@ -44,7 +44,7 @@
   afterNavigate(({ type }) => {
     if (type === "popstate") search = page.url.searchParams.get("q") ?? "";
   });
-  let rows = $state<CatalogRow[]>();
+  let rows = $state.raw<CatalogRow[]>();
   let error = $state<string>();
 
   $effect(() => {

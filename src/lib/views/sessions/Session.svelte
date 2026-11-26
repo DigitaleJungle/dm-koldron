@@ -104,7 +104,7 @@
   let all = $state<Encounter[] | null>(null);
   let encounterError = $state<string | null>(null);
   let characters = $state<Character[] | null>(null);
-  let monsters = $state<CatalogRow[]>([]);
+  let monsters = $state.raw<CatalogRow[]>([]);
   let budgets = $state<Budget[]>([]);
   listEncounters(campaign).then(
     (l) => (all = l.encounters),

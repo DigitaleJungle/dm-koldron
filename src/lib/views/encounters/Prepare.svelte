@@ -10,6 +10,7 @@
   import { catalogEntry, catalogRows, type CatalogEntry, type CatalogRow } from "$lib/api/catalog";
   import { listCharacters, type Character } from "$lib/api/characters";
   import { deleteEncounter, encounterBudgets, getEncounter, saveEncounter, setEncounterMap, type Budget, type Encounter, type Notes, type PartyMode, type RosterEntry } from "$lib/api/encounters";
+  import { rollDice } from "$lib/api/dice";
   import { errorMessage } from "$lib/api/storage";
   import { closeWindow, onCloseRequested } from "$lib/api/window";
   import { campaigns } from "$lib/stores/campaigns.svelte";
@@ -25,7 +26,7 @@
   import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
   import { monsterPicture } from "$lib/stores/monsterPictures";
-  import { addToRoster, characterLevel, encounterParty, entryKey, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versions } from "./roster";
+  import { addToRoster, asVersion, characterLevel, encounterParty, entryKey, hpDice, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versionsByKey, withHp, withQuantity } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
   let { id }: { id: string | null } = $props();
@@ -46,7 +47,7 @@
   }
   let characters = $state<Character[] | null>(null);
   let partyError = $state<string | null>(null);
-  let monsters = $state<CatalogRow[] | null>(null);
+  let monsters = $state.raw<CatalogRow[] | null>(null);
   let monsterError = $state<string | null>(null);
   let budgets = $state<Budget[]>([]);
   let budgetError = $state<string | null>(null);
@@ -263,8 +264,6 @@
     void [search, type, crMin, crMax, sort, descending];
     pageNumber = 1;
   });
-  /** The bundled row whose versions (the same monster in each pack) show under it, to add one of them. */
-  let opened = $state<string | null>(null);
   let monstersScroll: HTMLElement | undefined = $state();
   function toPage(n: number) {
     pageNumber = Math.min(pages, Math.max(1, n));
@@ -291,7 +290,7 @@
     const panel = browserPanel!.getBoundingClientRect();
     preview = { row, top: at.top, left: panel.right + 8 };
     const key = entryKey(row);
-    // By key, not identity: `preview` holds a proxy of the row, and a version row is made anew on each render.
+    // By key, not identity: `preview` holds a proxy of the row.
     const showing = () => !!preview && entryKey(preview.row) === key;
     if (!loadedEntries.has(key)) loadedEntries.set(key, catalogEntry("monsters", row.pack, row.index));
     [previewEntry, previewError, previewImage] = [null, null, null];
@@ -322,6 +321,8 @@
 
   // ---- Roster and difficulty ----------------------------------------------------------------------
   const byKey = $derived(rowsByKey(monsters ?? []));
+  /** A monster in more than one pack: its versions, for the tile's switch. */
+  const versionsOf = $derived(versionsByKey(monsters ?? []));
 
   // Clicking a tile opens its full stat block in a card under the tiles; again (or ✕) closes it.
   let detailsKey = $state<string | null>(null);
@@ -392,8 +393,43 @@
 
   const cardMotion = () => ({ start: 0.85, duration: reduceMotion() ? 0 : 200 });
 
-  function setQuantity(row: RosterEntry, quantity: number) {
-    roster = roster.map((r) => (r === row ? { ...r, quantity } : r));
+  const replaceRow = (row: RosterEntry, next: RosterEntry) => (roster = roster.map((r) => (r === row ? next : r)));
+  const setQuantity = (row: RosterEntry, quantity: number) => replaceRow(row, withQuantity(row, quantity));
+
+  /** Swaps a tile to another pack's version; its open stat block follows it. */
+  function switchVersion(i: number, key: string) {
+    const v = versionsOf.get(entryKey(roster[i]))?.find((x) => entryKey(x) === key);
+    if (!v) return;
+    const open = detailsKey === keys[i];
+    replaceRow(roster[i], asVersion(roster[i], v));
+    if (open) detailsKey = rowKeys(roster)[i];
+  }
+
+  /** The HP fields of the open tile: its monsters numbered on from earlier tiles of the same monster, as in Run. */
+  const detailsIndex = $derived(keys.indexOf(detailsKey ?? ""));
+  const hpFirst = $derived(
+    detailsRow ? roster.slice(0, detailsIndex).filter((r) => entryKey(r) === entryKey(detailsRow)).reduce((n, r) => n + r.quantity, 1) : 1,
+  );
+  const MAX_HP = 9999; // as Rust allows
+  let rollingHp = $state(false);
+  /** Rolls every monster of the tile its own HP, through the Rust dice parser. */
+  async function rollHp(row: RosterEntry, dice: string) {
+    rollingHp = true;
+    try {
+      const rolls = await Promise.all(Array.from({ length: row.quantity }, () => rollDice(dice)));
+      replaceRow(row, rolls.reduce((next, r, n) => withHp(next, n, Math.min(MAX_HP, Math.max(1, r.total))), row));
+    } catch (e) {
+      notify(errorMessage(e));
+    } finally {
+      rollingHp = false;
+    }
+  }
+  /** Out of range or empty: the stat block's HP, and the field shows what was kept. */
+  function setHp(row: RosterEntry, n: number, input: HTMLInputElement) {
+    const v = input.valueAsNumber;
+    const hp = Number.isInteger(v) && v >= 1 && v <= MAX_HP ? v : null;
+    replaceRow(row, withHp(row, n, hp));
+    input.value = hp === null ? "" : String(hp);
   }
 
   // ---- Delete ------------------------------------------------------------------------------------
@@ -442,6 +478,42 @@
       </button>
     {/if}
   </div>
+{/snippet}
+
+<!-- The open tile's HP, in its stat block's HP line: a field per monster (numbered on from earlier tiles of the same
+     monster, as in Run; empty: the stat block's HP), the dice and a button that rolls them for each. Run starts each
+     monster from it. -->
+{#snippet hpFields()}
+  {@const row = detailsRow!}
+  {@const m = detailsEntry!.entry}
+  {@const dice = hpDice(m)}
+  {@const numbered = row.quantity > 1 || hpFirst > 1}
+  <span class="hp-fields">
+    {#each { length: row.quantity }, n (n)}
+      <label class="hp-field">
+        {#if numbered}<span class="muted small" aria-hidden="true">{hpFirst + n}</span>{/if}
+        <input
+          class="text-field"
+          type="number"
+          min="1"
+          max={MAX_HP}
+          placeholder={typeof m.hit_points === "number" ? String(m.hit_points) : ""}
+          aria-label={t.details.hpOf(numbered ? `${row.name} ${hpFirst + n}` : row.name)}
+          disabled={locked}
+          value={row.hp?.[n] ?? ""}
+          onchange={(e) => setHp(row, n, e.currentTarget)}
+        />
+      </label>
+    {/each}
+    {#if dice}
+      <span class="muted">({dice})</span>
+      {#if !locked}
+        <button class="icon-btn" aria-label={t.details.rollHp(row.name)} disabled={rollingHp} onclick={() => rollHp(row, dice)}>
+          <i class="ti ti-dice-5" aria-hidden="true"></i>
+        </button>
+      {/if}
+    {/if}
+  </span>
 {/snippet}
 
 <!-- Shown right of the shell's search bar. -->
@@ -524,7 +596,10 @@
               <option value="">{t.browser.allTypes}</option>
               {#each types as option (option)}<option value={option}>{option}</option>{/each}
             </select>
-            {#if anyFilter}<button class="link" onclick={clearFilters}>{t.browser.clearFilters}</button>{/if}
+            <!-- Always laid out, so the CR slider doesn't change width under the pointer as the link comes and goes. -->
+            <button class="icon-btn clear" class:unused={!anyFilter} aria-label={t.browser.clearFilters} onclick={clearFilters}>
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
           </div>
           {#if matching.length === 0}
             <p class="muted">{t.browser.noMatches}</p>
@@ -532,7 +607,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions: hover only adds the preview; focus does the same from the keyboard -->
             <div class="monsters-scroll" bind:this={monstersScroll} onmouseleave={hidePreview} onscroll={hidePreview}>
               <table class="monsters">
-                <colgroup><col /><col class="col-cr" /><col class="col-type" /><col class="col-add" /></colgroup>
+                <colgroup><col /><col class="col-cr" /><col class="col-type" />{#if !locked}<col class="col-add" />{/if}</colgroup>
                 <thead>
                   <tr>
                     {#each [["name", t.browser.name], ["cr", t.browser.cr], ["type", t.browser.type]] as [column, label] (column)}
@@ -542,14 +617,14 @@
                         </button>
                       </th>
                     {/each}
-                    <th scope="col"><span class="sr-only">{t.browser.add}</span></th>
+                    <!-- A Ready encounter can't take monsters: no Add column. -->
+                    {#if !locked}<th scope="col"><span class="sr-only">{t.browser.add}</span></th>{/if}
                   </tr>
                 </thead>
                 <tbody>
                   {#snippet addButton(row: CatalogRow)}
                     <button
                       class="icon-btn add"
-                      disabled={locked}
                       aria-label={t.browser.addLabel(row.name, row.source)}
                       onfocus={(e) => showPreview(row, e.currentTarget)}
                       onblur={hidePreview}
@@ -560,41 +635,13 @@
                     </button>
                   {/snippet}
                   {#each onPage as m (entryKey(m))}
-                    {@const key = entryKey(m)}
                     <tr onmouseenter={(e) => showPreview(m, e.currentTarget)}>
                       <td>{m.name}</td>
                       <td class="muted small">{crText(crOf(m))}</td>
                       <td class="muted small">{typeOf(m)}</td>
-                      <td>
-                        {#if m.others.length}
-                          <!-- In more than one pack: pick the version to add, in the rows under it. -->
-                          <button
-                            class="icon-btn add"
-                            disabled={locked}
-                            aria-label={t.browser.versions(m.name)}
-                            aria-expanded={opened === key}
-                            onfocus={(e) => showPreview(m, e.currentTarget)}
-                            onblur={hidePreview}
-                            onkeydown={(e) => e.key === "Escape" && hidePreview()}
-                            onclick={() => (opened = opened === key ? null : key)}
-                          >
-                            <i class="ti {opened === key ? 'ti-chevron-up' : 'ti-plus'}" aria-hidden="true"></i>
-                          </button>
-                        {:else}
-                          {@render addButton(m)}
-                        {/if}
-                      </td>
+                      <!-- A monster in more than one pack adds its first pack's version; the tile switches it. -->
+                      {#if !locked}<td>{@render addButton(m)}</td>{/if}
                     </tr>
-                    {#if opened === key && !locked}
-                      {#each versions(m) as v (entryKey(v))}
-                        <tr class="version" onmouseenter={(e) => showPreview(v, e.currentTarget)}>
-                          <td>{v.source}</td>
-                          <td class="muted small">{crText(crOf(v))}</td>
-                          <td class="muted small">{typeOf(v)}</td>
-                          <td>{@render addButton(v)}</td>
-                        </tr>
-                      {/each}
-                    {/if}
                   {/each}
                 </tbody>
               </table>
@@ -630,13 +677,14 @@
                 {@const known = byKey.get(entryKey(row))}
                 {@const picture = pictures[entryKey(row)]}
                 {@const xp = rosterXp[i]}
+                {@const others = versionsOf.get(entryKey(row)) ?? []}
                 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions: the name is the keyboard's button; the whole tile is clickable for the mouse -->
                 <li
                   class="tile"
                   class:open={detailsKey === keys[i]}
                   transition:scale={cardMotion()}
                   animate:flip={{ duration: cardMotion().duration }}
-                  onclick={(e) => !(e.target as Element).closest("button") && toggleDetails(keys[i])}
+                  onclick={(e) => !(e.target as Element).closest("button, select") && toggleDetails(keys[i])}
                 >
                   {#if !locked}
                     <button class="icon-btn tile-remove" aria-label={t.roster.remove(row.name)} onclick={() => (roster = roster.filter((r) => r !== row))}>
@@ -675,8 +723,15 @@
                         <i class="ti ti-arrows-split" aria-hidden="true"></i>
                       </button>
                     {/if}
-                    <!-- Its pack is off: the source says where it came from. -->
-                    {#if !known}<p class="tile-meta">{row.source}</p>{/if}
+                    {#if others.length > 1 && !locked}
+                      <!-- In more than one pack: which one fights. -->
+                      <select class="tile-version" aria-label={t.roster.version(row.name)} value={entryKey(row)} onchange={(e) => switchVersion(i, e.currentTarget.value)}>
+                        {#each others as v (entryKey(v))}<option value={entryKey(v)}>{v.source}</option>{/each}
+                      </select>
+                    {:else if !known || others.length > 1}
+                      <!-- Its pack is off, or a Ready encounter's bundled monster: the source says which. -->
+                      <p class="tile-meta">{row.source}</p>
+                    {/if}
                     <!-- Without XP the monster doesn't count towards difficulty, so that stays visible. -->
                     {#if xp === null}
                       <p class="tile-meta warn">{known ? t.roster.unknownXp : `${t.roster.unknownXp} · ${t.roster.packOff}`}</p>
@@ -707,7 +762,7 @@
                 {:else if !detailsEntry}
                   <p class="muted">{t.browser.previewLoading}</p>
                 {:else}
-                  <TagPreview><MonsterBlock loaded={detailsEntry} /></TagPreview>
+                  <TagPreview><MonsterBlock loaded={detailsEntry} hp={hpFields} /></TagPreview>
                 {/if}
               {:else if topic === "party"}
                 <!-- Like a note, no ✕: the Party button (again), another one, or a monster closes it. A Ready
@@ -1044,6 +1099,24 @@
     font: var(--text-h2);
   }
 
+  /* Each monster's HP, in the stat block's HP line (the snippet keeps this component's styles). */
+  .hp-fields {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .hp-field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .hp-field input {
+    width: var(--level-input-width);
+  }
+
   /* Party / Custom at the top, where a note's title would be (clear of nothing: the party has no ✕). */
   .party-mode {
     display: flex;
@@ -1300,6 +1373,12 @@
     outline-offset: 2px;
   }
 
+  /* Which pack's version fights, for a monster in more than one. */
+  .tile-version {
+    max-width: 100%;
+    font: var(--text-body-sm);
+  }
+
   .tile-meta {
     display: flex;
     flex-wrap: wrap;
@@ -1452,16 +1531,6 @@
     text-align: right;
   }
 
-  /* A bundled monster's versions, indented under its row. */
-  .monsters .version td {
-    border-top: none;
-  }
-
-  .monsters .version td:first-child {
-    padding-left: var(--space-5);
-    color: var(--color-text-muted);
-  }
-
   .sort {
     display: inline-flex;
     gap: var(--space-1);
@@ -1523,13 +1592,9 @@
     gap: var(--space-2);
   }
 
-  .link {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--color-link);
-    text-decoration: underline;
-    cursor: pointer;
+  /* Hidden but still taking its room; not focusable or read out while hidden. */
+  .clear.unused {
+    visibility: hidden;
   }
 
   .muted {

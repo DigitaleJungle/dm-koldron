@@ -74,6 +74,15 @@ describe("filterOptions", () => {
     expect(filterOptions(rows, cls)).toEqual(["Cleric", "Sorcerer", "Wizard"]);
   });
 
+  it("puts values the order doesn't list after those it does, and a spell without a level in no level", () => {
+    const level = spells.filters.find((f) => f.id === "level")!;
+    expect(filterOptions([...rows, row("Odd", {})], level)).toEqual(["Cantrip", "1", "3"]);
+    expect(spells.columns.find((col) => col.id === "level")!.value(row("Odd", {}))).toBe("—");
+    const rarity = categoryById("magic-items").filters.find((f) => f.id === "rarity")!;
+    const items = [row("Orb", { rarity: { name: "Mythic" } }), row("Ring", { rarity: { name: "Common" } })];
+    expect(filterOptions(items, rarity)).toEqual(["Common", "Mythic"]);
+  });
+
   it("monster CR bands and sizes", () => {
     const monsters = categoryById("monsters");
     const m = [row("Rat", { challenge_rating: 0.125, size: "Tiny" }), row("Ogre", { challenge_rating: 2, size: "Large" }), row("Mage", { challenge_rating: 6, size: "Medium or small" })];

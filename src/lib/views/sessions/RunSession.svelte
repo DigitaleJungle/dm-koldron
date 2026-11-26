@@ -64,23 +64,30 @@
   );
 
   // What the encounters and the party need; without it they show no rating or no one.
-  let all = $state<Encounter[]>([]);
+  // Null until loaded, so a scene's encounters don't read as deleted meanwhile.
+  let all = $state<Encounter[] | null>(null);
+  let encounterError = $state<string | null>(null);
   let characters = $state<Character[] | null>(null);
   let monsters = $state.raw<CatalogRow[]>([]);
   let budgets = $state<Budget[]>([]);
-  listEncounters(campaign).then((l) => (all = l.encounters), () => {});
-  listCharacters(campaign).then((l) => (characters = l.characters), () => {});
+  let lookupErrors = $state<string[]>([]);
+  const lookupFailed = (text: (reason: string) => string) => (e: unknown) => lookupErrors.push(text(errorMessage(e)));
+  listEncounters(campaign).then(
+    (l) => (all = l.encounters),
+    (e) => (encounterError = strings.sessions.encounters.loadError(errorMessage(e))),
+  );
+  listCharacters(campaign).then((l) => (characters = l.characters), lookupFailed(strings.encounters.party.loadError));
   // A running session is live (addons are told, e.g. to sync more often).
   $effect(goLive);
-  catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), () => {});
-  encounterBudgets().then((b) => (budgets = b), () => {});
+  catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), lookupFailed(strings.encounters.list.lookupError));
+  encounterBudgets().then((b) => (budgets = b), lookupFailed(strings.encounters.meter.budgetError));
 
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
   const party = $derived(encounterParty("party", [], characters).flatMap((cid) => characterById.get(cid) ?? []));
   const npcById = $derived(new Map((world?.npcs ?? []).map((n) => [n.id, n])));
   const locationById = $derived(new Map((world?.locations ?? []).map((l) => [l.id, l])));
-  const encounterById = $derived(new Map(all.map((e) => [e.id, e])));
+  const encounterById = $derived(new Map((all ?? []).map((e) => [e.id, e])));
 
   // ---- The current scene -------------------------------------------------------------------------
   const scene = $derived(session ? currentScene(session) : null);
@@ -312,6 +319,7 @@
   <p class="status muted" role="status">{strings.sessions.loading}</p>
 {:else}
   <div class="run">
+    {#each lookupErrors as error (error)}<p class="error small" role="alert">{error}</p>{/each}
     {#if party.length > 0}
       <header class="head">
         <ul class="party" aria-label={t.party}>
@@ -359,6 +367,11 @@
         {#if scene && scene.encounterIds.length > 0}
           <section class="encounters" aria-label={t.encounters}>
             <span class="label"><i class="ti ti-swords" aria-hidden="true"></i> {t.encounters}</span>
+            {#if encounterError}
+              <p class="error small" role="alert">{encounterError}</p>
+            {:else if all === null}
+              <p class="muted" role="status">{strings.sessions.loading}</p>
+            {:else}
             {#each scene.encounterIds as eid (eid)}
               {@const e = encounterById.get(eid)}
               {#if e}
@@ -376,6 +389,7 @@
                 <p class="muted">{strings.sessions.encounters.missing}</p>
               {/if}
             {/each}
+            {/if}
           </section>
         {/if}
       </div>
@@ -583,6 +597,10 @@
 <style>
   .status {
     padding: var(--space-5);
+  }
+
+  .error {
+    color: var(--color-danger);
   }
 
   .bar {

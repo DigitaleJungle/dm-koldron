@@ -18,8 +18,8 @@ const MAX_NAME_LEN: usize = 100;
 const MAX_QUANTITY: u32 = 999;
 const MAX_NOTE_LEN: usize = 20_000;
 const MAX_PINS: usize = 100;
-/// The most HP a roster monster can be given.
-const MAX_HP: u32 = 9999;
+/// The most HP a roster monster can be given: Run's limit (`MAX_NUMBER` in run.ts).
+const MAX_HP: u32 = 99_999;
 /// The map is stored shrunk so its longest side is at most this many pixels.
 pub const MAP_MAX_SIDE: u32 = 2048;
 

@@ -15,7 +15,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const FILE: &str = "world.json";
+pub const FILE: &str = "world.json";
 /// `World::version` once every session's own locations and NPCs have moved here.
 const MIGRATED: u32 = 1;
 const MAX_NAME_LEN: usize = 100;

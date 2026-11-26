@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.10.6] - 2026-11-27
+
+### Changed
+
+- Addons can only install or remove packs they installed themselves; packs from another addon or from Update rules are left alone.
+- Addon network requests and downloads follow redirects to https:// addresses only.
+- A monster's HP in the encounter builder can be up to 99999, the same as in Run.
+- An encounter or location map holds at most 100 pins.
+
+### Fixed
+
+- Saving a session no longer removes its scenes' locations and NPCs when the campaign's world file is missing (for example, a sync not finished).
+- A running session no longer shows "Deleted encounter" while its encounters load.
+- The session screens show an error when the characters, monsters or encounter budgets can't be loaded.
+- Moving between the Library and a campaign with its own rules no longer redoes the monster grouping each time, and opening a stat block is faster.
+- A spell without a level shows "—" in the Catalog; filter values a pack adds come after the usual ones.
+- Homebrew monster hit dice take whole numbers only.
+- A damaged settings file's first saved copy is never replaced by a later one.
+
 ## [0.10.5] - 2026-11-26
 
 ### Added

@@ -242,8 +242,11 @@ pub async fn addon_install_pack(app: AppHandle, addon: String, pack: NewPack) ->
             if loaded(&app)?.0.iter().any(|p| p.homebrew && p.manifest.id == id) {
                 return Err(StorageError::Invalid(format!("A homebrew book already has the id \"{id}\".")));
             }
-            let staging = data_dir(&app)?.join("packs-staging").join(&addon);
             let installed = installed_dir(&app)?;
+            if foreign_pack(&installed, id, &addon) {
+                return Err(StorageError::Invalid(format!("\"{id}\" is a pack another addon installed.")));
+            }
+            let staging = data_dir(&app)?.join("packs-staging").join(&addon);
             let id = packs::install(&installed, &staging, &pack)?.manifest.id;
             reload();
             // Which addon installed it, for `packs.putImages`; it goes with the folder when the pack is replaced or removed.
@@ -256,11 +259,14 @@ pub async fn addon_install_pack(app: AppHandle, addon: String, pack: NewPack) ->
     .await
 }
 
-/// `packs.remove`: an installed pack only; a bundled one with the same id comes back.
+/// `packs.remove`: a pack this addon installed only; a bundled one with the same id comes back.
 #[tauri::command]
 pub async fn addon_remove_pack(app: AppHandle, addon: String, pack: String) -> Result<(), StorageError> {
     blocking(move || {
         require(self::addon(&app, &addon)?, "packs:write")?;
+        if !installed_by(&installed_dir(&app)?, &pack, &addon) {
+            return Err(StorageError::Invalid(format!("\"{pack}\" isn't a pack this addon installed.")));
+        }
         remove_installed(&app, &pack)
     })
     .await
@@ -278,6 +284,12 @@ const IMAGE_TYPES: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
 
 fn installed_by(installed: &Path, pack: &str, addon: &str) -> bool {
     check_id(pack, "pack").is_ok() && fs::read_to_string(installed.join(pack).join(PACK_OWNER)).is_ok_and(|owner| owner == addon)
+}
+
+/// `packs.install` can't replace `pack`: it's installed, by another addon or by Update rules. An invalid id isn't
+/// foreign: the pack's validation reports it.
+fn foreign_pack(installed: &Path, pack: &str, addon: &str) -> bool {
+    check_id(pack, "pack").is_ok() && installed.join(pack).exists() && !installed_by(installed, pack, addon)
 }
 
 /// `packs.setProgress` may show progress on `pack`: one this addon installed, or one not installed yet (its first import).
@@ -407,7 +419,8 @@ pub async fn addon_fetch(app: AppHandle, addon: String, url: String, method: Opt
         let headers = headers.unwrap_or_default();
         check_headers(&headers)?;
         static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-        let agent = AGENT.get_or_init(|| ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(120))).build().into());
+        // https_only: a redirect can't take the request to plain http.
+        let agent = AGENT.get_or_init(|| ureq::Agent::config_builder().https_only(true).timeout_global(Some(Duration::from_secs(120))).build().into());
         let failed = |e: ureq::Error| StorageError::Io(format!("{}: {e}", shown_url(&url)));
         let mut response = match method.as_deref().unwrap_or("GET") {
             "GET" => headers.iter().fold(agent.get(&url), |r, (k, v)| r.header(k, v)).call(),
@@ -1228,6 +1241,7 @@ pub async fn addon_download_file(app: AppHandle, addon: String, folder: String, 
         // A big book may take a while, but one file 30 minutes at most.
         let agent = AGENT.get_or_init(|| {
             ureq::Agent::config_builder()
+                .https_only(true) // a redirect can't take the download to plain http
                 .timeout_connect(Some(Duration::from_secs(20)))
                 .timeout_recv_response(Some(Duration::from_secs(60)))
                 .timeout_recv_body(Some(Duration::from_secs(30 * 60)))
@@ -1800,6 +1814,11 @@ mod tests {
         assert!(!installed_by(&installed, "mine", "other"));
         assert!(!installed_by(&installed, "bundled-copy", "importer"), "no owner: by hand or bundled");
         assert!(!installed_by(&installed, "../mine", "importer"));
+        assert!(!foreign_pack(&installed, "mine", "importer"), "its own: replaced");
+        assert!(!foreign_pack(&installed, "not-yet", "importer"), "a first install");
+        assert!(foreign_pack(&installed, "mine", "other"), "another addon's");
+        assert!(foreign_pack(&installed, "bundled-copy", "importer"), "no owner: Update rules or by hand");
+        assert!(!foreign_pack(&installed, "My Pack", "importer"), "an invalid id: left to the validation");
         assert!(may_show_progress(&installed, "mine", "importer"));
         assert!(may_show_progress(&installed, "not-yet", "importer"), "a first import");
         assert!(!may_show_progress(&installed, "mine", "other"));

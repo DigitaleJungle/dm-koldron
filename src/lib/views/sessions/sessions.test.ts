@@ -28,7 +28,6 @@ import {
   parseDate,
   parseTime,
   readyToRun,
-  readyCount,
   removeEntry,
   removeGroup,
   dropParent,
@@ -209,9 +208,8 @@ describe("sessions", () => {
     expect(w.npcs[1].parent).toBe("harbour");
   });
 
-  it("counts the checklist across the session and its scenes, and the ready scenes", () => {
+  it("counts the checklist across the session and its scenes", () => {
     expect(checkCounts(session())).toEqual({ done: 1, total: 2 });
-    expect(readyCount([{ ready: true }, { ready: false }, { ready: true }])).toBe(2);
   });
 
   it("offers the encounters that are ready to run, by name", () => {

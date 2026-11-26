@@ -181,13 +181,28 @@ fn also_for(packs: &[&Pack], kind: &str, pack: &Pack, entry: &Map<String, Value>
         return Vec::new();
     }
     let packs: Vec<&Pack> = packs.iter().copied().filter(|p| !p.homebrew).collect();
+    // Every entry's name is compared on each call, so each name's `norm` is worked out once.
+    static NORMS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
+    let mut norms = NORMS.lock().unwrap_or_else(|p| p.into_inner());
     let candidates: Vec<(&Pack, &str, &Map<String, Value>)> = KINDS
         .iter()
         .copied()
         .chain(["rule-sections"])
         .flat_map(|k| packs.iter().flat_map(move |p| list(p, k).iter().map(move |e| (*p, k, e))))
-        .filter(|(_, _, e)| norm(text(e, "name")) == name)
+        .filter(|(_, _, e)| {
+            let n = text(e, "name");
+            match norms.get(n) {
+                Some(normed) => *normed == name,
+                None => {
+                    let normed = norm(n);
+                    let same = normed == name;
+                    norms.insert(n.to_string(), normed);
+                    same
+                }
+            }
+        })
         .collect();
+    drop(norms);
     let is_me = |(p, k, e): &(&Pack, &str, &Map<String, Value>)| {
         p.manifest.id == pack.manifest.id && *k == kind && text(e, "index") == text(entry, "index")
     };
@@ -369,21 +384,24 @@ pub async fn catalog_rows(app: AppHandle, kind: String, fields: Vec<String>, cam
     .await
 }
 
-/// Per kind: which packs were loaded (a reload makes a new `Loaded`) and switched on, and their `keepers`.
-type KeeperCache = Mutex<HashMap<String, (Weak<Loaded>, Vec<String>, Arc<Vec<usize>>)>>;
+/// Per kind and set of switched-on packs (the app's, a campaign's): which packs were loaded (a reload makes a new
+/// `Loaded`) and their `keepers`. Kept per set, so moving between the Library and a campaign with its own packs
+/// doesn't work them out again.
+type KeeperCache = Mutex<HashMap<(String, Vec<String>), (Weak<Loaded>, Arc<Vec<usize>>)>>;
 static KEEPERS: LazyLock<KeeperCache> = LazyLock::new(Default::default);
 
 /// `keepers` for these packs, worked out again only when the packs were reloaded or other packs are switched on.
 fn cached_keepers(cache: &KeeperCache, loaded: &Arc<Loaded>, kind: &str, ids: Vec<String>, compute: impl FnOnce() -> Vec<usize>) -> Arc<Vec<usize>> {
     let mut cache = cache.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some((was, was_ids, keeper)) = cache.get(kind)
+    let key = (kind.to_string(), ids);
+    if let Some((was, keeper)) = cache.get(&key)
         && Weak::ptr_eq(was, &Arc::downgrade(loaded))
-        && *was_ids == ids
     {
         return keeper.clone();
     }
     let keeper = Arc::new(compute());
-    cache.insert(kind.to_string(), (Arc::downgrade(loaded), ids, keeper.clone()));
+    cache.retain(|_, (was, _)| was.strong_count() > 0); // packs since reloaded: their sets go
+    cache.insert(key, (Arc::downgrade(loaded), keeper.clone()));
     keeper
 }
 
@@ -542,9 +560,14 @@ mod tests {
         assert_eq!(calls.get(), 2, "another pack switched on");
         cached_keepers(&cache, &first, "spells", vec!["srd".into(), "mm".into()], compute);
         assert_eq!(calls.get(), 3, "per kind");
+        cached_keepers(&cache, &first, "monsters", vec!["srd".into()], compute);
+        assert_eq!(calls.get(), 3, "back to the first packs (a campaign's): still kept");
         let reloaded: Arc<Loaded> = Arc::new((Vec::new(), Vec::new()));
         cached_keepers(&cache, &reloaded, "monsters", vec!["srd".into(), "mm".into()], compute);
         assert_eq!(calls.get(), 4, "a reload");
+        drop(first);
+        cached_keepers(&cache, &reloaded, "spells", vec!["srd".into()], compute);
+        assert_eq!(cache.lock().unwrap().len(), 2, "the first packs' sets go once they're gone");
     }
 
     #[test]

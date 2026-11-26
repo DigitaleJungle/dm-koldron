@@ -118,8 +118,10 @@
   const hitDice = $derived(parseHitDice(draft.hit_dice));
   const conMod = $derived(mod("constitution"));
   const average = $derived(hitDice ? averageHp(hitDice.count, hitDice.die, conMod) : undefined);
+  /** Whole dice only ("2.5d8" can't be read back or rolled); cleared, the field goes. */
   function setHitDice(count: number, die: number) {
-    setField(draft, "hit_dice", count > 0 ? `${count}d${die}${hitDice?.rest ?? ""}` : undefined);
+    const whole = Math.trunc(count);
+    setField(draft, "hit_dice", whole > 0 ? `${whole}d${die}${hitDice?.rest ?? ""}` : undefined);
   }
   const usual = $derived(usualFor(rules, draft.challenge_rating));
 </script>
@@ -218,6 +220,7 @@
             type="number"
             class="dice count"
             min="1"
+            step="1"
             aria-label={m.hitDiceCount}
             value={hitDice?.count ?? ""}
             oninput={(ev) => setHitDice(Number.isNaN(ev.currentTarget.valueAsNumber) ? 0 : ev.currentTarget.valueAsNumber, hitDice?.die ?? 8)}

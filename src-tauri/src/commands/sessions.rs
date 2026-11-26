@@ -258,6 +258,11 @@ fn prune(session: &mut Session, world: &World) {
     if session.started.is_some() {
         session.played_scenes = Some(session.played_scene_ids.len() as u32);
     }
+    // An empty world is more likely a missing file (a restore, a sync not finished) than every entry deleted: the links
+    // stay, as `world::clean_pictures` keeps the pictures.
+    if world.locations.is_empty() && world.npcs.is_empty() {
+        return;
+    }
     let locations: HashSet<&str> = world.locations.iter().map(|l| l.id.as_str()).collect();
     let npcs: HashSet<&str> = world.npcs.iter().map(|n| n.id.as_str()).collect();
     for scene in &mut session.scenes {
@@ -578,11 +583,23 @@ mod tests {
         world_with_links(&dir);
         let saved = save(&dir, full(), 1).unwrap();
         assert_eq!(saved.scenes[0].location_id.as_deref(), Some("ossuary"));
-        world::save(&dir, World::default()).unwrap(); // both removed
+        // Both removed (another location is left, so the world isn't empty).
+        let chapel = World { locations: vec![Location { id: "chapel".into(), name: "Chapel".into(), ..Location::default() }], ..World::default() };
+        world::save(&dir, chapel).unwrap();
         assert_eq!(list(&dir).unwrap().sessions[0].npc_ids, Vec::<String>::new()); // never shown
         let saved = save(&dir, saved, 2).unwrap();
         assert_eq!((saved.scenes[0].location_id.clone(), saved.scenes[0].npc_ids.clone()), (None, vec![]));
         assert_eq!(saved.scenes[0].encounter_ids, ["e1"]); // encounters are the builder's
+    }
+
+    #[test]
+    fn keeps_links_when_the_world_is_empty_or_missing() {
+        let dir = temp_dir("prune-empty");
+        world_with_links(&dir);
+        let saved = save(&dir, full(), 1).unwrap();
+        fs::remove_file(dir.join(world::FILE)).unwrap(); // e.g. a sync not finished
+        let saved = save(&dir, saved, 2).unwrap();
+        assert_eq!((saved.scenes[0].location_id.as_deref(), saved.scenes[0].npc_ids.clone()), (Some("ossuary"), vec!["abbot".to_string()]));
     }
 
     #[test]

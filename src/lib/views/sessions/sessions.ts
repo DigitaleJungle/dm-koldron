@@ -193,9 +193,6 @@ export function checkCounts(session: Session): { done: number; total: number } {
   return { done: all.filter((c) => c.done).length, total: all.length };
 }
 
-/** How many scenes are ready. */
-export const readyCount = (scenes: Pick<Scene, "ready">[]): number => scenes.filter((s) => s.ready).length;
-
 /** The campaign's encounters that are ready to run, by name. */
 export const readyToRun = (encounters: Encounter[]): Encounter[] =>
   encounters.filter((e) => e.status === "ready").toSorted((a, b) => a.name.localeCompare(b.name));

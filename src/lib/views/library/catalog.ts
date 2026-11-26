@@ -24,7 +24,8 @@ export const title = (s: string) => s.replace(/[-_]/g, " ").replace(/\b\w/g, (ch
 const num = (n: unknown) => (typeof n === "number" ? n : Number.NaN);
 const sortNum = (n: unknown) => (Number.isNaN(num(n)) ? -1 : num(n));
 
-const levelLabel = (level: number) => (level === 0 ? strings.catalog.cantrip : String(level));
+// A pack's spell may have no level: then "—", and no Level filter value.
+const levelLabel = (level: unknown) => (level === 0 ? strings.catalog.cantrip : typeof level === "number" ? String(level) : none);
 const LEVELS = [strings.catalog.cantrip, "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 const FRACTIONS: Record<number, string> = { 0.125: "1/8", 0.25: "1/4", 0.5: "1/2" };
@@ -70,7 +71,7 @@ export const CATEGORIES: Category[] = [
       { id: "tags", label: c.tags, value: (r) => spellTags(r.fields).join(", ") || none },
     ],
     filters: [
-      { id: "level", label: c.level, values: (r) => [levelLabel(r.fields.level)], order: LEVELS },
+      { id: "level", label: c.level, values: (r) => (typeof r.fields.level === "number" ? [levelLabel(r.fields.level)] : []), order: LEVELS },
       { id: "school", label: c.school, values: (r) => names([r.fields.school]) },
       { id: "class", label: c.class, values: (r) => names(r.fields.classes) },
       { id: "other", label: c.other, values: (r) => spellTags(r.fields) },
@@ -177,7 +178,9 @@ export const entryCategory = (kind: string) => ENTRY_CATEGORIES.find((cat) => ca
 /** The options a filter offers for these rows: the values present, in the filter's order (else alphabetical). */
 export function filterOptions(rows: CatalogRow[], filter: Filter): string[] {
   const found = [...new Set(rows.flatMap(filter.values))];
-  const rank = (v: string) => (filter.order ? filter.order.indexOf(v) : -1);
+  // A value the order doesn't list comes after those it does.
+  const order = filter.order ?? [];
+  const rank = (v: string) => (order.includes(v) ? order.indexOf(v) : order.length);
   return found.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 

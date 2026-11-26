@@ -73,10 +73,10 @@ pub fn load(path: &Path) -> Result<AppSettings, StorageError> {
         Err(e) => return Err(e.into()),
     };
     serde_json::from_str(&text).or_else(|e| {
-        // Keep the bad file, so the next save never destroys something we couldn't read; once is enough (every
-        // command that reads the settings comes here while it stays damaged).
+        // Keep the bad file, so the next save never destroys something we couldn't read. Only the first: it still has
+        // the user's own settings, and a later damaged file (after defaults were saved) mustn't replace it.
         let copy = path.with_extension("corrupt.json");
-        if fs::read(&copy).ok().as_deref() != Some(text.as_bytes()) {
+        if !copy.exists() {
             fs::copy(path, &copy)?;
         }
         Err(StorageError::Corrupt(e.to_string()))
@@ -156,6 +156,10 @@ mod tests {
         let saved = update(&path, serde_json::json!({ "theme": "dark" })).unwrap();
         assert_eq!(saved, AppSettings { theme: Theme::Dark, ..AppSettings::default() });
         assert_eq!(load(&path).unwrap(), saved);
+        assert_eq!(fs::read_to_string(path.with_extension("corrupt.json")).unwrap(), "{ nope");
+        // Damaged again later: the first copy, with the user's own settings, stays.
+        fs::write(&path, "{ again").unwrap();
+        assert!(matches!(load(&path), Err(StorageError::Corrupt(_))));
         assert_eq!(fs::read_to_string(path.with_extension("corrupt.json")).unwrap(), "{ nope");
     }
 }

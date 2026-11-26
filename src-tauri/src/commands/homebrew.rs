@@ -371,6 +371,10 @@ pub async fn put_homebrew_picture(app: AppHandle, request: ipc::Request<'_>) -> 
 #[tauri::command]
 pub async fn copy_homebrew_picture(app: AppHandle, from: String, to: String, image: String) -> Result<String, StorageError> {
     blocking(move || {
+        // Only another homebrew book's folder: `from` becomes part of the path.
+        if !loaded(&app)?.0.iter().any(|p| p.homebrew && p.manifest.id == from) {
+            return Err(StorageError::NotFound(format!("There's no homebrew book \"{from}\".")));
+        }
         let bytes = std::fs::read(images::file_for(&data_dir(&app)?.join(images::DIR).join(&from), &image))?;
         keep_picture(&app, &to, &bytes)
     })

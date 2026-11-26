@@ -110,9 +110,11 @@
     (l) => (all = l.encounters),
     (err) => (encounterError = t.encounters.loadError(errorMessage(err))),
   );
-  listCharacters(campaign).then((l) => (characters = l.characters), () => {});
-  catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), () => {});
-  encounterBudgets().then((b) => (budgets = b), () => {});
+  let lookupErrors = $state<string[]>([]);
+  const lookupFailed = (text: (reason: string) => string) => (e: unknown) => lookupErrors.push(text(errorMessage(e)));
+  listCharacters(campaign).then((l) => (characters = l.characters), lookupFailed(strings.encounters.party.loadError));
+  catalogRows("monsters", ["xp", "image"]).then((rows) => (monsters = rows), lookupFailed(strings.encounters.list.lookupError));
+  encounterBudgets().then((b) => (budgets = b), lookupFailed(strings.encounters.meter.budgetError));
 
   const byKey = $derived(rowsByKey(monsters));
   const characterById = $derived(new Map((characters ?? []).map((c) => [c.id, c])));
@@ -400,6 +402,7 @@
   <p class="status muted" role="status">{t.loading}</p>
 {:else}
   <div class="session">
+    {#each lookupErrors as error (error)}<p class="error small" role="alert">{error}</p>{/each}
     <header class="head">
       {#if party.length > 0}
         <div class="party" aria-label={t.party} role="img">

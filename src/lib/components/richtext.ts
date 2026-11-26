@@ -43,7 +43,7 @@ export const tagAddress = (tag: Tag, base?: string) => hitAddress({ ...tag, sour
 
 /**
  * The allowed subset of `value` as HTML. `links`: give each tag its address (to show it; Catalog entries in the Library
- * at `base`), else keep only its data (to store it). Needs a DOM (the window), so it isn't unit-tested.
+ * at `base`), else keep only its data (to store it). Needs a DOM (the window; jsdom in the tests).
  */
 export function cleanHtml(value: string, { links = false, base }: { links?: boolean; base?: string } = {}): string {
   const doc = new DOMParser().parseFromString(`<body>${toHtml(value)}</body>`, "text/html");

@@ -26,6 +26,7 @@
   import CharacterCard from "$lib/views/characters/CharacterCard.svelte";
   import { difficulty, monsterXp } from "./difficulty";
   import { monsterPicture } from "$lib/stores/monsterPictures";
+  import { MAX_NUMBER } from "./run";
   import { addToRoster, asVersion, characterLevel, encounterParty, entryKey, hpDice, MAX_QUANTITY, rowKeys, rowsByKey, splitRow, versionsByKey, withHp, withQuantity } from "./roster";
 
   /** The saved encounter to open, or null for a new one. */
@@ -410,7 +411,7 @@
   const hpFirst = $derived(
     detailsRow ? roster.slice(0, detailsIndex).filter((r) => entryKey(r) === entryKey(detailsRow)).reduce((n, r) => n + r.quantity, 1) : 1,
   );
-  const MAX_HP = 9999; // as Rust allows
+  const MAX_HP = MAX_NUMBER; // the same limit as Run's, and Rust's
   let rollingHp = $state(false);
   /** Rolls every monster of the tile its own HP, through the Rust dice parser. */
   async function rollHp(row: RosterEntry, dice: string) {

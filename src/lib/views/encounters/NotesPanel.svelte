@@ -145,7 +145,10 @@
     pan = null;
   }
 
+  /** The most pins a map keeps: Rust refuses to save more (`MAX_PINS` in encounters.rs). */
+  const MAX_PINS = 100;
   function addPin(at: { x: number; y: number }) {
+    if (notes.pins.length >= MAX_PINS) return;
     notes.pins.push({ ...at, title: "", text: "" });
     select(notes.pins.length - 1);
   }

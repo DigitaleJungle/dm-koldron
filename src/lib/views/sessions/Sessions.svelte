@@ -42,7 +42,11 @@
     (l) => (list = l),
     (e) => (loadError = t.loadError(errorMessage(e))),
   );
-  listCharacters(campaign).then((l) => (characters = l.characters), () => {}); // without it, no party line
+  let charactersError = $state<string | null>(null); // without the characters, no party line
+  listCharacters(campaign).then(
+    (l) => (characters = l.characters),
+    (e) => (charactersError = strings.encounters.party.loadError(errorMessage(e))),
+  );
   const world = new WorldDraft(campaign);
 
   const parts = $derived(overview(list?.sessions ?? []));
@@ -268,6 +272,7 @@
         {#if list.unreadable.length > 0}
           <p class="message error" role="alert">{t.unreadable(list.unreadable.join(", "))}</p>
         {/if}
+        {#if charactersError}<p class="message error" role="alert">{charactersError}</p>{/if}
 
         {#if parts.next}
           {@const s = parts.next}

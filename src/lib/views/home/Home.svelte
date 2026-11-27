@@ -1,6 +1,6 @@
 <script lang="ts">
   // A campaign's Home: its widgets (Party, Next session, Previous session, Random encounter) in a grid of three
-  // columns, each one, two or three columns wide. A widget moves by dragging its grip onto another (the others make
+  // columns, each one, two or three columns wide. A widget moves by dragging its top row onto another (the others make
   // room as it goes; Escape puts it back) and resizes by dragging its right edge, which snaps to whole columns; its ⋯
   // menu does both from the keyboard, and Remove takes it off Home (a dashed slot at the grid's end puts it back). The layout is saved in the campaign's folder as soon as it changes.
   import { tick } from "svelte";
@@ -209,8 +209,10 @@
           <!-- No visible title: the content says what it is; screen readers hear its name. -->
           <section class="widget" aria-label={title(id)}>
             {#if !locked}
-              <header>
-                <span class="grip" draggable="true" role="img" aria-label={t.move(title(id))} ondragstart={(e) => onDragStart(e, id)} ondragend={onDragEnd}>
+              <!-- The whole row is the handle (left of the ⋯ menu), so it's easy to grab; the grip only shows it. -->
+              <!-- svelte-ignore a11y_no_static_element_interactions: dragging is for the mouse; the ⋯ menu's Move left / right does it from the keyboard -->
+              <header draggable="true" ondragstart={(e) => onDragStart(e, id)} ondragend={onDragEnd}>
+                <span class="grip" role="img" aria-label={t.move(title(id))}>
                   <i class="ti ti-grip-vertical" aria-hidden="true"></i>
                 </span>
                 <span class="spacer"></span>
@@ -359,6 +361,14 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2)) 0;
+    padding: var(--space-1) var(--space-2) 0;
+    border-radius: var(--radius-sm);
+    cursor: grab;
+  }
+
+  header:hover .grip {
+    color: var(--color-text);
   }
 
   .spacer {
@@ -369,12 +379,8 @@
     display: grid;
     place-items: center;
     margin-left: calc(-1 * var(--space-2));
+    font-size: var(--icon-size-lg);
     color: var(--color-text-muted);
-    cursor: grab;
-  }
-
-  .grip:hover {
-    color: var(--color-text);
   }
 
   .body {

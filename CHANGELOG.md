@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.7] - 2026-11-27
+
+### Changed
+
+- Home: a widget can be dragged by its whole top row, left of the ⋯ menu, and the grip is bigger.
+
 ## [0.10.6] - 2026-11-27
 
 ### Changed
